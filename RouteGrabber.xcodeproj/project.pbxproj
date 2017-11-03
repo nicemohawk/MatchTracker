@@ -14,6 +14,7 @@
 		B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */; };
 		B599D6721FAAF00E006EAABC /* RouteGrabberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* RouteGrabberTests.swift */; };
 		B599D67D1FAAF00E006EAABC /* RouteGrabberUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* RouteGrabberUITests.swift */; };
+		B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5A707B61FAAF23400622F5E /* HealthKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +48,8 @@
 		B599D6781FAAF00E006EAABC /* RouteGrabberUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RouteGrabberUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D67C1FAAF00E006EAABC /* RouteGrabberUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGrabberUITests.swift; sourceTree = "<group>"; };
 		B599D67E1FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RouteGrabber.entitlements; sourceTree = "<group>"; };
+		B5A707B61FAAF23400622F5E /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +85,7 @@
 				B599D6701FAAF00E006EAABC /* RouteGrabberTests */,
 				B599D67B1FAAF00E006EAABC /* RouteGrabberUITests */,
 				B599D65A1FAAF00D006EAABC /* Products */,
+				B5A707B51FAAF23400622F5E /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -97,6 +102,7 @@
 		B599D65B1FAAF00D006EAABC /* RouteGrabber */ = {
 			isa = PBXGroup;
 			children = (
+				B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */,
 				B599D65C1FAAF00D006EAABC /* AppDelegate.swift */,
 				B599D65E1FAAF00D006EAABC /* ViewController.swift */,
 				B599D6601FAAF00D006EAABC /* Main.storyboard */,
@@ -123,6 +129,14 @@
 				B599D67E1FAAF00E006EAABC /* Info.plist */,
 			);
 			path = RouteGrabberUITests;
+			sourceTree = "<group>";
+		};
+		B5A707B51FAAF23400622F5E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B5A707B61FAAF23400622F5E /* HealthKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -194,6 +208,11 @@
 					B599D6581FAAF00D006EAABC = {
 						CreatedOnToolsVersion = 9.1;
 						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.HealthKit = {
+								enabled = 1;
+							};
+						};
 					};
 					B599D66C1FAAF00E006EAABC = {
 						CreatedOnToolsVersion = 9.1;
@@ -426,14 +445,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = RouteGrabber/RouteGrabber.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = RouteGrabber/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.1;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 4.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -441,14 +462,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = RouteGrabber/RouteGrabber.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = RouteGrabber/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.1;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 4.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
