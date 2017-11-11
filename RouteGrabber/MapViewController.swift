@@ -49,7 +49,7 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         mapView.add(overlay, level: .aboveRoads)
 
         // rough map zoom
-        let span = MKCoordinateSpanMake(0.2, 0.2)
+        let span = MKCoordinateSpanMake(0.1, 0.1)
         let region = MKCoordinateRegionMake(mappableWorkout.locations[0].coordinate, span)
         mapView.setRegion(region, animated: false)
     }
@@ -71,7 +71,7 @@ class MapViewController: UIViewController, MKMapViewDelegate {
 
         if overlay.isKind(of: MKPolyline.self) {
             // use MKOverlayPathRenderer for display -- TODO: subclass to add curves
-            let overlayRenderer =  MKOverlayPathRenderer(overlay: overlay)
+            let overlayRenderer =  MKPolylineRenderer(overlay: overlay)
 
             overlayRenderer.strokeColor = UIColor.purple
             overlayRenderer.lineWidth = 4.0
