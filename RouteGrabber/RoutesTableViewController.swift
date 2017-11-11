@@ -61,15 +61,23 @@ class RoutesTableViewController: UITableViewController {
 
         // add basic route info to the cell
         let workout = mappableWorkouts[indexPath.row]
-
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .short
+        dateFormatter.timeStyle = .short
         cell.textLabel?.text = dateFormatter.string(from: workout.workout.startDate)
         cell.detailTextLabel?.text = "\(workout.locations.count) locations"
 
-        print("\(workout.locations.count) locations")
-
         return cell
+    }
+
+    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        return 88.0
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let workout = mappableWorkouts[indexPath.row]
+        let mapViewController = MapViewController(mappableWorkout: workout)
+        navigationController?.pushViewController(mapViewController, animated: true)
     }
 
     /*

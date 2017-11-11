@@ -14,6 +14,7 @@
 		B599D6721FAAF00E006EAABC /* RouteGrabberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* RouteGrabberTests.swift */; };
 		B599D67D1FAAF00E006EAABC /* RouteGrabberUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* RouteGrabberUITests.swift */; };
 		B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5A707B61FAAF23400622F5E /* HealthKit.framework */; };
+		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */; };
 		C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4CB05111FB642CC00E15074 /* MappableWorkout.swift */; };
 /* End PBXBuildFile section */
@@ -50,6 +51,7 @@
 		B599D67E1FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RouteGrabber.entitlements; sourceTree = "<group>"; };
 		B5A707B61FAAF23400622F5E /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
 		C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutesTableViewController.swift; sourceTree = "<group>"; };
 		C4CB05111FB642CC00E15074 /* MappableWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MappableWorkout.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -107,6 +109,7 @@
 				B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */,
 				B599D65C1FAAF00D006EAABC /* AppDelegate.swift */,
 				C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */,
+				C43B69221FB678BC009DF4E9 /* MapViewController.swift */,
 				C4CB05111FB642CC00E15074 /* MappableWorkout.swift */,
 				B599D6601FAAF00D006EAABC /* Main.storyboard */,
 				B599D6631FAAF00D006EAABC /* Assets.xcassets */,
@@ -284,6 +287,7 @@
 				C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */,
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,
 				C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */,
+				C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
