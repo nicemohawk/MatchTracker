@@ -38,9 +38,6 @@ class MapViewController: UIViewController, MKMapViewDelegate {
             mapView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
             ])
 
-        // add locations to map on a bezier curve
-
-
         // convert our CLLocations to CLLocationCoordinate2D
         var locationCoordinates = [CLLocationCoordinate2D]()
         for location in mappableWorkout.locations {
@@ -51,10 +48,10 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         let overlay = MKPolyline(coordinates: locationCoordinates, count: locationCoordinates.count)
         mapView.add(overlay, level: .aboveRoads)
 
+        // rough map zoom
         let span = MKCoordinateSpanMake(0.2, 0.2)
         let region = MKCoordinateRegionMake(mappableWorkout.locations[0].coordinate, span)
         mapView.setRegion(region, animated: false)
-
     }
 
     /*
@@ -71,13 +68,18 @@ class MapViewController: UIViewController, MKMapViewDelegate {
     // MARK: - Map View Delegate Methods
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-        // use MKOverlayPathRenderer for display -- TODO: subclass to add curves
-        let overlayRenderer =  MKOverlayPathRenderer(overlay: overlay)
 
-        overlayRenderer.lineWidth = 4.0
-        overlayRenderer.strokeColor = UIColor.purple
+        if overlay.isKind(of: MKPolyline.self) {
+            // use MKOverlayPathRenderer for display -- TODO: subclass to add curves
+            let overlayRenderer =  MKOverlayPathRenderer(overlay: overlay)
 
-        return overlayRenderer
+            overlayRenderer.strokeColor = UIColor.purple
+            overlayRenderer.lineWidth = 4.0
+
+            return overlayRenderer
+        }
+
+        return MKOverlayRenderer()
     }
 }
 
