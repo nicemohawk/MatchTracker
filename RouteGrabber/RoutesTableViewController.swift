@@ -100,6 +100,8 @@ class RoutesTableViewController: UITableViewController {
 
         self.mappableWorkouts = [MappableWorkout]()
 
+
+
         loadWorkouts { workouts in
             for workout in workouts {
                 // get route from workout
@@ -108,6 +110,8 @@ class RoutesTableViewController: UITableViewController {
                     self.loadRouteLocations(route: route) { locations in
                         let newMappableWorkout = MappableWorkout(workout: workout, locations: locations)
                         self.mappableWorkouts.append(newMappableWorkout)
+
+                        // TODO: reload tableView data here
                     }
                 })
             }
