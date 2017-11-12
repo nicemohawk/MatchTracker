@@ -100,8 +100,6 @@ class RoutesTableViewController: UITableViewController {
 
         self.mappableWorkouts = [MappableWorkout]()
 
-
-
         loadWorkouts { workouts in
             for workout in workouts {
                 // get route from workout
@@ -119,11 +117,11 @@ class RoutesTableViewController: UITableViewController {
     }
 
     func loadWorkouts(completion: @escaping (_ workouts: [HKWorkout]) -> Void) {
-
         // Query for all workouts
+
         let workoutType = HKObjectType.workoutType()
-        let predicate = HKQuery.predicateForWorkouts(with: .running)
-        let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
+        //let predicate = HKQuery.predicateForWorkouts(with: .running)
+        let query = HKSampleQuery(sampleType: workoutType, predicate: nil, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
             guard let workouts = results as? [HKWorkout] else {
                 print("An error occured: \(error?.localizedDescription ?? "Unknown")")
                 return
@@ -136,24 +134,28 @@ class RoutesTableViewController: UITableViewController {
     }
 
     func findRoute(workout: HKWorkout, completion: @escaping (_ route: HKWorkoutRoute) -> Void) {
-
         // Query for workout's routes
+
         let routeType = HKSeriesType.workoutRoute()
         let workoutPredicate = HKQuery.predicateForObjects(from: workout)
         let routeQuery = HKSampleQuery(sampleType: routeType, predicate: workoutPredicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
-            guard let route = results?.first as? HKWorkoutRoute else {
+            guard let routes = results as? [HKWorkoutRoute] else {
                 print("An error occured fetching the route: \(error?.localizedDescription ?? "Workout has no routes")")
                 return
             }
 
             print("We found at least one route")
-            completion(route)
+
+            for route in routes {
+                completion(route)
+            }
         }
 
         self.healthStore.execute(routeQuery)
     }
 
     private func loadRouteLocations(route: HKWorkoutRoute, completion: @escaping (_ locations: [CLLocation]) -> Void) {
+        // query healthkit for CLLocations from route data
         var locations = [CLLocation]()
 
         let locationQuery = HKWorkoutRouteQuery(route: route) { _, locationResults, done, error in
