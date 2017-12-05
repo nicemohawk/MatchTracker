@@ -110,6 +110,8 @@ class RoutesTableViewController: UITableViewController {
                         self.mappableWorkouts.append(newMappableWorkout)
 
                         // TODO: reload tableView data here
+                        // TODO: add these rows as they get processed
+
                     }
                 })
             }

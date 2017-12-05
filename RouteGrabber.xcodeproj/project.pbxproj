@@ -13,6 +13,8 @@
 		B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */; };
 		B599D6721FAAF00E006EAABC /* RouteGrabberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* RouteGrabberTests.swift */; };
 		B599D67D1FAAF00E006EAABC /* RouteGrabberUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* RouteGrabberUITests.swift */; };
+		B5A1728F1FBE30F3003E71EC /* Alamofire.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; };
+		B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5A707B61FAAF23400622F5E /* HealthKit.framework */; };
 		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */; };
@@ -20,6 +22,20 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		B5357F331FBA16EF00B884AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = "Packages::Packages::Product";
+			remoteInfo = Packages;
+		};
+		B5357F351FBA16EF00B884AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = "Alamofire::Alamofire::Product";
+			remoteInfo = Alamofire;
+		};
 		B599D66E1FAAF00E006EAABC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
@@ -34,9 +50,31 @@
 			remoteGlobalIDString = B599D6581FAAF00D006EAABC;
 			remoteInfo = RouteGrabber;
 		};
+		B5A172911FBE30F3003E71EC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = "Alamofire::Alamofire";
+			remoteInfo = Alamofire;
+		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		B5A1728E1FBE30CD003E71EC /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
 		B599D6591FAAF00D006EAABC /* RouteGrabber.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RouteGrabber.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D65C1FAAF00D006EAABC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		B599D6611FAAF00D006EAABC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
@@ -51,6 +89,7 @@
 		B599D67E1FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RouteGrabber.entitlements; sourceTree = "<group>"; };
 		B5A707B61FAAF23400622F5E /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		B5A8B5C81FB817F9005E7C2E /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
 		C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutesTableViewController.swift; sourceTree = "<group>"; };
 		C4CB05111FB642CC00E15074 /* MappableWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MappableWorkout.swift; sourceTree = "<group>"; };
@@ -62,6 +101,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */,
+				B5A1728F1FBE30F3003E71EC /* Alamofire.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,9 +122,28 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		B5357F2A1FBA16C000B884AE /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				B5A8B5C81FB817F9005E7C2E /* Package.swift */,
+				B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		B5357F2D1FBA16EF00B884AE /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B5357F341FBA16EF00B884AE /* Packages.framework */,
+				B5357F361FBA16EF00B884AE /* Alamofire.framework */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		B599D6501FAAF00D006EAABC = {
 			isa = PBXGroup;
 			children = (
+				B5357F2A1FBA16C000B884AE /* Packages */,
 				B599D65B1FAAF00D006EAABC /* RouteGrabber */,
 				B599D6701FAAF00E006EAABC /* RouteGrabberTests */,
 				B599D67B1FAAF00E006EAABC /* RouteGrabberUITests */,
@@ -155,10 +214,12 @@
 				B599D6551FAAF00D006EAABC /* Sources */,
 				B599D6561FAAF00D006EAABC /* Frameworks */,
 				B599D6571FAAF00D006EAABC /* Resources */,
+				B5A1728E1FBE30CD003E71EC /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B5A172921FBE30F3003E71EC /* PBXTargetDependency */,
 			);
 			name = RouteGrabber;
 			productName = RouteGrabber;
@@ -243,6 +304,12 @@
 			mainGroup = B599D6501FAAF00D006EAABC;
 			productRefGroup = B599D65A1FAAF00D006EAABC /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = B5357F2D1FBA16EF00B884AE /* Products */;
+					ProjectRef = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				B599D6581FAAF00D006EAABC /* RouteGrabber */,
@@ -251,6 +318,23 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		B5357F341FBA16EF00B884AE /* Packages.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = Packages.framework;
+			remoteRef = B5357F331FBA16EF00B884AE /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		B5357F361FBA16EF00B884AE /* Alamofire.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = Alamofire.framework;
+			remoteRef = B5357F351FBA16EF00B884AE /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		B599D6571FAAF00D006EAABC /* Resources */ = {
@@ -319,6 +403,11 @@
 			isa = PBXTargetDependency;
 			target = B599D6581FAAF00D006EAABC /* RouteGrabber */;
 			targetProxy = B599D6791FAAF00E006EAABC /* PBXContainerItemProxy */;
+		};
+		B5A172921FBE30F3003E71EC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Alamofire;
+			targetProxy = B5A172911FBE30F3003E71EC /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -396,6 +485,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 3.0;
 			};
 			name = Debug;
 		};
@@ -445,6 +535,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_VERSION = 3.0;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -452,6 +543,7 @@
 		B599D6821FAAF00E006EAABC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RouteGrabber/RouteGrabber.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -469,6 +561,7 @@
 		B599D6831FAAF00E006EAABC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RouteGrabber/RouteGrabber.entitlements;
 				CODE_SIGN_STYLE = Automatic;
