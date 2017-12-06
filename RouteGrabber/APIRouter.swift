@@ -60,6 +60,54 @@ struct Router {
 
                 // TODO: send up data from HKWorkout that isn't in the CLLocation data
 
+                // debug
+                // just send up the first workout with its first location coordinate
+
+
+                if workouts.count > 0 {
+                    let workout = workouts[0]
+                    if workout.locations.count > 0 {
+                        var locationsArray: [[String : Any]] = [[String : Any]]()
+                        for location in workout.locations {
+                            var coordinateDict = [String : Any]()
+                            coordinateDict["latitude"] = location.coordinate.latitude
+                            coordinateDict["longitude"] = location.coordinate.longitude
+
+                            var locationDict = [String : Any]()
+                            locationDict["coordinate"] = coordinateDict
+
+                            locationsArray.append(locationDict)
+                        }
+
+//                        let location = workout.locations[0]
+//
+//                        var coordinateDict = [String : Any]()
+//                        coordinateDict["latitude"] = location.coordinate.latitude
+//                        coordinateDict["longitude"] = location.coordinate.longitude
+//                        return coordinateDict
+//                        locationsArray.append(coordinateDict)
+
+                        print("Number of locations: \(locationsArray.count)")
+                        // 1299 > x > 1300
+                        let smallerLocationsArray: [[String : Any]] = Array(locationsArray[0..<1301])
+
+                        print("Sending up locations: \(smallerLocationsArray) \n Done listing locations before sendoff")
+
+                        var params = [String : Any]()
+                        params["locations"] = smallerLocationsArray
+                        return params
+
+
+                    } else {
+                        print("No locations this time")
+                    }
+
+                } else {
+                    print("No workouts this time")
+                }
+
+
+
                 var workoutsArray = [[String : Any]]()
                 for mappableWorkout in workouts {
                     var locationsArray = [[String : Any]]()
@@ -88,7 +136,8 @@ struct Router {
                 }
 
                 var parameters = [String : Any]()
-                parameters["cllLocations"] = workoutsArray
+//                parameters["cllLocations"] = workoutsArray
+                parameters["data"] = "hello world"
 
                 return parameters
             }

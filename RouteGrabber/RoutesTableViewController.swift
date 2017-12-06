@@ -103,7 +103,9 @@ class RoutesTableViewController: UITableViewController {
         }
 
         var testWorkout: [MappableWorkout] = [MappableWorkout]()
-        testWorkout.append(self.mappableWorkouts[0])
+        if self.mappableWorkouts.count > 0 {
+            testWorkout.append(self.mappableWorkouts[0])
+        }
         AppDelegate.dataSource.post(workouts: testWorkout) { (success, error) in
 
         }
@@ -163,7 +165,7 @@ class RoutesTableViewController: UITableViewController {
                 return
             }
 
-            print("We found at least one route")
+//            print("We found at least one route")
 
             for route in routes {
                 completion(route)
