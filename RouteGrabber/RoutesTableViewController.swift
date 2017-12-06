@@ -93,10 +93,27 @@ class RoutesTableViewController: UITableViewController {
     // MARK: - Getting Routes
 
     @objc func updateTableView(sender: UIButton) {
+
+        if mappableWorkouts.count > 0 {
+            let workout = mappableWorkouts[0]
+            let locations = workout.locations
+            let oneLocation = locations[0]
+            print("We found a location")
+            print(oneLocation)
+        }
+
+        var testWorkout: [MappableWorkout] = [MappableWorkout]()
+        testWorkout.append(self.mappableWorkouts[0])
+        AppDelegate.dataSource.post(workouts: testWorkout) { (success, error) in
+
+        }
+
         self.tableView.reloadData()
     }
 
     @objc func getRoutesAction(sender: UIButton) {
+
+
 
         self.mappableWorkouts = [MappableWorkout]()
 

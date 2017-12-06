@@ -14,6 +14,3 @@ struct MappableWorkout {
     var workout: HKWorkout
     var locations: [CLLocation]
 }
-
-
-// um

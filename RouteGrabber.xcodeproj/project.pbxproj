@@ -16,9 +16,11 @@
 		B5A1728F1FBE30F3003E71EC /* Alamofire.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; };
 		B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5A707B61FAAF23400622F5E /* HealthKit.framework */; };
+		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
 		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */; };
 		C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4CB05111FB642CC00E15074 /* MappableWorkout.swift */; };
+		C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F5BC941FD74BB300EEC216 /* APIRouter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,9 +92,11 @@
 		B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RouteGrabber.entitlements; sourceTree = "<group>"; };
 		B5A707B61FAAF23400622F5E /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		B5A8B5C81FB817F9005E7C2E /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
+		C42706281FCCA34A00A745A9 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
 		C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutesTableViewController.swift; sourceTree = "<group>"; };
 		C4CB05111FB642CC00E15074 /* MappableWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MappableWorkout.swift; sourceTree = "<group>"; };
+		C4F5BC941FD74BB300EEC216 /* APIRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRouter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -167,6 +171,8 @@
 			children = (
 				B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */,
 				B599D65C1FAAF00D006EAABC /* AppDelegate.swift */,
+				C42706281FCCA34A00A745A9 /* DataSource.swift */,
+				C4F5BC941FD74BB300EEC216 /* APIRouter.swift */,
 				C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */,
 				C43B69221FB678BC009DF4E9 /* MapViewController.swift */,
 				C4CB05111FB642CC00E15074 /* MappableWorkout.swift */,
@@ -369,8 +375,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */,
+				C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */,
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,
 				C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */,
+				C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */,
 				C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -549,7 +557,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = RouteGrabber/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 11.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.2;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -567,7 +575,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = RouteGrabber/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 11.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.2;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
