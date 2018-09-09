@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B57F6D2A213E4C3200C4AECC /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57F6D29213E4C3200C4AECC /* HealthKit.framework */; };
 		B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D65C1FAAF00D006EAABC /* AppDelegate.swift */; };
 		B599D6621FAAF00D006EAABC /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6601FAAF00D006EAABC /* Main.storyboard */; };
 		B599D6641FAAF00D006EAABC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B599D6631FAAF00D006EAABC /* Assets.xcassets */; };
@@ -15,7 +16,6 @@
 		B599D67D1FAAF00E006EAABC /* RouteGrabberUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* RouteGrabberUITests.swift */; };
 		B5A1728F1FBE30F3003E71EC /* Alamofire.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; };
 		B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5A707B61FAAF23400622F5E /* HealthKit.framework */; };
 		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
 		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* RoutesTableViewController.swift */; };
@@ -77,6 +77,7 @@
 
 /* Begin PBXFileReference section */
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
+		B57F6D29213E4C3200C4AECC /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		B599D6591FAAF00D006EAABC /* RouteGrabber.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RouteGrabber.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D65C1FAAF00D006EAABC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		B599D6611FAAF00D006EAABC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
@@ -90,7 +91,6 @@
 		B599D67C1FAAF00E006EAABC /* RouteGrabberUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGrabberUITests.swift; sourceTree = "<group>"; };
 		B599D67E1FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B5A707B41FAAF23400622F5E /* RouteGrabber.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RouteGrabber.entitlements; sourceTree = "<group>"; };
-		B5A707B61FAAF23400622F5E /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		B5A8B5C81FB817F9005E7C2E /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		C42706281FCCA34A00A745A9 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
@@ -104,8 +104,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B5A707B71FAAF23400622F5E /* HealthKit.framework in Frameworks */,
 				B5A1728F1FBE30F3003E71EC /* Alamofire.framework in Frameworks */,
+				B57F6D2A213E4C3200C4AECC /* HealthKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -205,7 +205,7 @@
 		B5A707B51FAAF23400622F5E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				B5A707B61FAAF23400622F5E /* HealthKit.framework */,
+				B57F6D29213E4C3200C4AECC /* HealthKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -275,15 +275,21 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 0910;
-				LastUpgradeCheck = 0910;
+				LastUpgradeCheck = 0940;
 				ORGANIZATIONNAME = "Nice Mohawk Limited";
 				TargetAttributes = {
 					B599D6581FAAF00D006EAABC = {
 						CreatedOnToolsVersion = 9.1;
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 0;
+							};
 							com.apple.HealthKit = {
 								enabled = 1;
+							};
+							com.apple.Keychain = {
+								enabled = 0;
 							};
 						};
 					};
@@ -453,6 +459,7 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
@@ -460,6 +467,7 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
@@ -511,6 +519,7 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
@@ -518,6 +527,7 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
@@ -554,13 +564,15 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RouteGrabber/RouteGrabber.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = RouteGrabber/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 11.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.4;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -572,13 +584,15 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RouteGrabber/RouteGrabber.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = RouteGrabber/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 11.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.4;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
