@@ -29,6 +29,12 @@
 	</dict>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Reading workout data</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We will read your location while performing a workout to create a workout route</string>
+	<key>NSLocationUsageDescription</key>
+	<string>We will read your location while performing a workout to create a workout route</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We will read your location while performing a workout to create a workout route</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

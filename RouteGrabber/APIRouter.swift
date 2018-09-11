@@ -11,8 +11,11 @@ import Alamofire
 
 enum Constants {
     struct API {
-//        static let serverPrefix = "https://match-tracks.service.nicemohawk.com"
+        #if RELEASE
+        static let serverPrefix = "https://match-tracks.service.nicemohawk.com"
+        #else
         static let serverPrefix = "http://10.0.1.10:8080"
+        #endif
         static let secretKey = "hi-bob"
         // TODO: keep secret keys out of version control
     }

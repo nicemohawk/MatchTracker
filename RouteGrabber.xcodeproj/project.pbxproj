@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7B2145C3B80035914D /* Interface.storyboard */; };
+		B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7E2145C3BB0035914D /* Assets.xcassets */; };
+		B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B53B0F8B2145C3BC0035914D /* InterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8A2145C3BC0035914D /* InterfaceController.swift */; };
+		B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */; };
+		B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8E2145C3BC0035914D /* NotificationController.swift */; };
+		B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F902145C3BC0035914D /* Assets.xcassets */; };
+		B53B0F962145C3BC0035914D /* Match Tracker.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B53B0F792145C3B80035914D /* Match Tracker.app */; };
+		B53B0FA42145C4110035914D /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B53B0FA32145C4110035914D /* HealthKit.framework */; };
 		B57F6D2A213E4C3200C4AECC /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57F6D29213E4C3200C4AECC /* HealthKit.framework */; };
 		B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D65C1FAAF00D006EAABC /* AppDelegate.swift */; };
 		B599D6621FAAF00D006EAABC /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6601FAAF00D006EAABC /* Main.storyboard */; };
@@ -38,6 +47,20 @@
 			remoteGlobalIDString = "Alamofire::Alamofire::Product";
 			remoteInfo = Alamofire;
 		};
+		B53B0F872145C3BC0035914D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B53B0F842145C3BC0035914D;
+			remoteInfo = "Match Tracker Extension";
+		};
+		B53B0F942145C3BC0035914D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B53B0F782145C3B80035914D;
+			remoteInfo = "Match Tracker";
+		};
 		B599D66E1FAAF00E006EAABC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
@@ -62,6 +85,28 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		B53B0F9F2145C3BC0035914D /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B53B0FA12145C3BC0035914D /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				B53B0F962145C3BC0035914D /* Match Tracker.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B5A1728E1FBE30CD003E71EC /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -77,6 +122,19 @@
 
 /* Begin PBXFileReference section */
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
+		B53B0F792145C3B80035914D /* Match Tracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Match Tracker.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B53B0F7C2145C3B80035914D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Interface.storyboard; sourceTree = "<group>"; };
+		B53B0F7E2145C3BB0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B53B0F802145C3BB0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Match Tracker Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B53B0F8A2145C3BC0035914D /* InterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterfaceController.swift; sourceTree = "<group>"; };
+		B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDelegate.swift; sourceTree = "<group>"; };
+		B53B0F8E2145C3BC0035914D /* NotificationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationController.swift; sourceTree = "<group>"; };
+		B53B0F902145C3BC0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B53B0F922145C3BC0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B53B0F932145C3BC0035914D /* PushNotificationPayload.apns */ = {isa = PBXFileReference; lastKnownFileType = text; path = PushNotificationPayload.apns; sourceTree = "<group>"; };
+		B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Match Tracker Extension.entitlements"; sourceTree = "<group>"; };
+		B53B0FA32145C4110035914D /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS4.3.sdk/System/Library/Frameworks/HealthKit.framework; sourceTree = DEVELOPER_DIR; };
 		B57F6D29213E4C3200C4AECC /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		B599D6591FAAF00D006EAABC /* RouteGrabber.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RouteGrabber.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D65C1FAAF00D006EAABC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -100,6 +158,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B53B0F822145C3BC0035914D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B53B0FA42145C4110035914D /* HealthKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B599D6561FAAF00D006EAABC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -144,11 +210,37 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B53B0F7A2145C3B80035914D /* Match Tracker */ = {
+			isa = PBXGroup;
+			children = (
+				B53B0F7B2145C3B80035914D /* Interface.storyboard */,
+				B53B0F7E2145C3BB0035914D /* Assets.xcassets */,
+				B53B0F802145C3BB0035914D /* Info.plist */,
+			);
+			path = "Match Tracker";
+			sourceTree = "<group>";
+		};
+		B53B0F892145C3BC0035914D /* Match Tracker Extension */ = {
+			isa = PBXGroup;
+			children = (
+				B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */,
+				B53B0F8A2145C3BC0035914D /* InterfaceController.swift */,
+				B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */,
+				B53B0F8E2145C3BC0035914D /* NotificationController.swift */,
+				B53B0F902145C3BC0035914D /* Assets.xcassets */,
+				B53B0F922145C3BC0035914D /* Info.plist */,
+				B53B0F932145C3BC0035914D /* PushNotificationPayload.apns */,
+			);
+			path = "Match Tracker Extension";
+			sourceTree = "<group>";
+		};
 		B599D6501FAAF00D006EAABC = {
 			isa = PBXGroup;
 			children = (
 				B5357F2A1FBA16C000B884AE /* Packages */,
 				B599D65B1FAAF00D006EAABC /* RouteGrabber */,
+				B53B0F7A2145C3B80035914D /* Match Tracker */,
+				B53B0F892145C3BC0035914D /* Match Tracker Extension */,
 				B599D6701FAAF00E006EAABC /* RouteGrabberTests */,
 				B599D67B1FAAF00E006EAABC /* RouteGrabberUITests */,
 				B599D65A1FAAF00D006EAABC /* Products */,
@@ -162,6 +254,8 @@
 				B599D6591FAAF00D006EAABC /* RouteGrabber.app */,
 				B599D66D1FAAF00E006EAABC /* RouteGrabberTests.xctest */,
 				B599D6781FAAF00E006EAABC /* RouteGrabberUITests.xctest */,
+				B53B0F792145C3B80035914D /* Match Tracker.app */,
+				B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -205,6 +299,7 @@
 		B5A707B51FAAF23400622F5E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				B53B0FA32145C4110035914D /* HealthKit.framework */,
 				B57F6D29213E4C3200C4AECC /* HealthKit.framework */,
 			);
 			name = Frameworks;
@@ -213,6 +308,40 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B53B0F782145C3B80035914D /* Match Tracker */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker" */;
+			buildPhases = (
+				B53B0F772145C3B80035914D /* Resources */,
+				B53B0F9F2145C3BC0035914D /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B53B0F882145C3BC0035914D /* PBXTargetDependency */,
+			);
+			name = "Match Tracker";
+			productName = "Match Tracker";
+			productReference = B53B0F792145C3B80035914D /* Match Tracker.app */;
+			productType = "com.apple.product-type.application.watchapp2";
+		};
+		B53B0F842145C3BC0035914D /* Match Tracker Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker Extension" */;
+			buildPhases = (
+				B53B0F812145C3BC0035914D /* Sources */,
+				B53B0F822145C3BC0035914D /* Frameworks */,
+				B53B0F832145C3BC0035914D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Match Tracker Extension";
+			productName = "Match Tracker Extension";
+			productReference = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */;
+			productType = "com.apple.product-type.watchkit2-extension";
+		};
 		B599D6581FAAF00D006EAABC /* RouteGrabber */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "RouteGrabber" */;
@@ -221,11 +350,13 @@
 				B599D6561FAAF00D006EAABC /* Frameworks */,
 				B599D6571FAAF00D006EAABC /* Resources */,
 				B5A1728E1FBE30CD003E71EC /* Embed Frameworks */,
+				B53B0FA12145C3BC0035914D /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				B5A172921FBE30F3003E71EC /* PBXTargetDependency */,
+				B53B0F952145C3BC0035914D /* PBXTargetDependency */,
 			);
 			name = RouteGrabber;
 			productName = RouteGrabber;
@@ -274,10 +405,26 @@
 		B599D6511FAAF00D006EAABC /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 0910;
+				LastSwiftUpdateCheck = 0940;
 				LastUpgradeCheck = 0940;
 				ORGANIZATIONNAME = "Nice Mohawk Limited";
 				TargetAttributes = {
+					B53B0F782145C3B80035914D = {
+						CreatedOnToolsVersion = 9.4.1;
+						ProvisioningStyle = Automatic;
+					};
+					B53B0F842145C3BC0035914D = {
+						CreatedOnToolsVersion = 9.4.1;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.BackgroundModes.watchos.extension = {
+								enabled = 1;
+							};
+							com.apple.HealthKit.watchos = {
+								enabled = 1;
+							};
+						};
+					};
 					B599D6581FAAF00D006EAABC = {
 						CreatedOnToolsVersion = 9.1;
 						ProvisioningStyle = Automatic;
@@ -327,6 +474,8 @@
 				B599D6581FAAF00D006EAABC /* RouteGrabber */,
 				B599D66C1FAAF00E006EAABC /* RouteGrabberTests */,
 				B599D6771FAAF00E006EAABC /* RouteGrabberUITests */,
+				B53B0F782145C3B80035914D /* Match Tracker */,
+				B53B0F842145C3BC0035914D /* Match Tracker Extension */,
 			);
 		};
 /* End PBXProject section */
@@ -349,6 +498,23 @@
 /* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
+		B53B0F772145C3B80035914D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */,
+				B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B53B0F832145C3BC0035914D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B599D6571FAAF00D006EAABC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -376,6 +542,16 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B53B0F812145C3BC0035914D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */,
+				B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */,
+				B53B0F8B2145C3BC0035914D /* InterfaceController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B599D6551FAAF00D006EAABC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -408,6 +584,16 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		B53B0F882145C3BC0035914D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B53B0F842145C3BC0035914D /* Match Tracker Extension */;
+			targetProxy = B53B0F872145C3BC0035914D /* PBXContainerItemProxy */;
+		};
+		B53B0F952145C3BC0035914D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B53B0F782145C3B80035914D /* Match Tracker */;
+			targetProxy = B53B0F942145C3BC0035914D /* PBXContainerItemProxy */;
+		};
 		B599D66F1FAAF00E006EAABC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B599D6581FAAF00D006EAABC /* RouteGrabber */;
@@ -426,6 +612,14 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
+		B53B0F7B2145C3B80035914D /* Interface.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				B53B0F7C2145C3B80035914D /* Base */,
+			);
+			name = Interface.storyboard;
+			sourceTree = "<group>";
+		};
 		B599D6601FAAF00D006EAABC /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -445,6 +639,88 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		B53B0F972145C3BC0035914D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				IBSC_MODULE = Match_Tracker_Extension;
+				INFOPLIST_FILE = "Match Tracker/Info.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 4.3;
+			};
+			name = Debug;
+		};
+		B53B0F982145C3BC0035914D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				IBSC_MODULE = Match_Tracker_Extension;
+				INFOPLIST_FILE = "Match Tracker/Info.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 4.3;
+			};
+			name = Release;
+		};
+		B53B0F992145C3BC0035914D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = "Match Tracker Extension/Match Tracker Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				INFOPLIST_FILE = "Match Tracker Extension/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber.watchkitapp.watchkitextension;
+				PRODUCT_NAME = "${TARGET_NAME}";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 4.3;
+			};
+			name = Debug;
+		};
+		B53B0F9A2145C3BC0035914D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = "Match Tracker Extension/Match Tracker Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				INFOPLIST_FILE = "Match Tracker Extension/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.RouteGrabber.watchkitapp.watchkitextension;
+				PRODUCT_NAME = "${TARGET_NAME}";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 4.3;
+			};
+			name = Release;
+		};
 		B599D67F1FAAF00E006EAABC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -667,6 +943,24 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B53B0F992145C3BC0035914D /* Debug */,
+				B53B0F9A2145C3BC0035914D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B53B0F972145C3BC0035914D /* Debug */,
+				B53B0F982145C3BC0035914D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "RouteGrabber" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

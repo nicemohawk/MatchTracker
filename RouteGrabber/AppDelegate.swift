@@ -7,16 +7,27 @@
 //
 
 import UIKit
+import WatchConnectivity
 import Alamofire
+import CoreLocation
+
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
 
     var window: UIWindow?
     static let dataSource: DataSource = DataSource()
+    lazy var locationManager = CLLocationManager()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplicationLaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+
+        if WCSession.isSupported() {
+            let session = WCSession.default
+            session.delegate = self
+            session.activate()
+        }
+
         return true
     }
 
@@ -42,6 +53,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
+    // MARK: - WCSessionDelegate
+
+    func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
+        print("Got Session Message: \(message)")
+        
+        if let shouldRequestLocation = message["requestLocation"] as? Bool, shouldRequestLocation == true {
+            DispatchQueue.main.async {
+                self.locationManager.requestAlwaysAuthorization()
+            }
+        }
+    }
+
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        if let error = error {
+            print(error.localizedDescription)
+        }
+    }
+
+    func sessionDidBecomeInactive(_ session: WCSession) {
+        print("WCSession inactived")
+    }
+
+    func sessionDidDeactivate(_ session: WCSession) {
+        print("WCSession deactived")
+    }
 
 }
 
