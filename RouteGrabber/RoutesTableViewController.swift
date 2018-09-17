@@ -21,17 +21,7 @@ class RoutesTableViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let readTypes: Set<HKObjectType> = [HKWorkoutType.workoutType(), HKSeriesType.workoutRoute()]
-        healthStore.requestAuthorization(toShare: [], read: readTypes) { (success, error) in
-            if success {
-                self.isAuthorized = true
-            } else {
-                self.isAuthorized = false
-                print("error authorizating HealthStore. You're probably on iPad. \(String(describing: error?.localizedDescription))")
-            }
-        }
-
-        
+        requestHealthKitAccess()
 
         let routeButton = UIBarButtonItem(title: "Get Routes", style: .plain, target: self, action: #selector(RoutesTableViewController.getRoutesAction(sender:)))
         navigationItem.setRightBarButton(routeButton, animated: false)
@@ -116,9 +106,6 @@ class RoutesTableViewController: UITableViewController {
     }
 
     @objc func getRoutesAction(sender: UIButton) {
-
-
-
         self.mappableWorkouts = [MappableWorkout]()
 
         loadWorkouts { workouts in
@@ -130,6 +117,7 @@ class RoutesTableViewController: UITableViewController {
                         let newMappableWorkout = MappableWorkout(workout: workout, locations: locations)
                         self.mappableWorkouts.append(newMappableWorkout)
 
+                        self.tableView.insertRows(at: [IndexPath(row: self.tableView.numberOfRows(inSection: 0), section: 0)], with: .automatic)
                         // TODO: reload tableView data here
                         // TODO: add these rows as they get processed
 
@@ -196,4 +184,26 @@ class RoutesTableViewController: UITableViewController {
         healthStore.execute(locationQuery)
     }
 
+    func requestHealthKitAccess() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return
+        }
+
+        let allTypes = Set([HKObjectType.workoutType(),
+                            HKSeriesType.workoutRoute(),
+                            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+                            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+                            HKObjectType.quantityType(forIdentifier: .heartRate)!])
+
+        healthStore.requestAuthorization(toShare: allTypes, read: allTypes) { (success, error) in
+            guard success else {
+                // Handle the error here.
+                print("Error authorizating HealthStore \(String(describing: error?.localizedDescription))")
+                self.isAuthorized = false
+                return
+            }
+
+            self.isAuthorized = true
+        }
+    }
 }
