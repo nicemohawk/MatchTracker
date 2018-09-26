@@ -113,16 +113,16 @@ class RoutesTableViewController: UITableViewController {
                 // get route from workout
                 self.findRoute(workout: workout, completion: { (route) in
                     // get locations
-                    self.loadRouteLocations(route: route) { locations in
+                    self.loadRouteLocations(route: route, completion: { locations in
                         let newMappableWorkout = MappableWorkout(workout: workout, locations: locations)
                         self.mappableWorkouts.append(newMappableWorkout)
 
-                        self.tableView.insertRows(at: [IndexPath(row: self.tableView.numberOfRows(inSection: 0), section: 0)], with: .automatic)
-                        // TODO: reload tableView data here
-                        // TODO: add these rows as they get processed
-
-                    }
+                        DispatchQueue.main.async {
+                            self.tableView.reloadData()
+                        }
+                    })
                 })
+
             }
         }
     }

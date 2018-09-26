@@ -87,8 +87,8 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
     }
 
     fileprivate func startWorkout() {
-
         let workoutConfiguration = HKWorkoutConfiguration()
+
         workoutConfiguration.locationType = .outdoor
         workoutConfiguration.activityType = .soccer
 
@@ -99,11 +99,9 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
 //        session.startDate = Date()
 
         currentWorkoutSession = session
-        healthStore.start(session)
-
         routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: HKDevice.local())
 
-//        routeBuilder.
+        healthStore.start(session)
     }
 
     fileprivate func stopWorkout() {
@@ -136,7 +134,20 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
         healthStore.save(workout) { success, error in
             if success {
                 print("Workout Saved.")
-//                self.addSamples(toWorkout: workout)
+                //                self.addSamples(toWorkout: workout)
+
+                self.routeBuilder?.finishRoute(with: workout, metadata: nil) { (newRoute, error) in
+                    guard newRoute != nil else {
+                        // Handle any errors here.
+                        print(error?.localizedDescription ?? "unknown error")
+                        return
+                    }
+
+                    print("route saved")
+                    // Optional: Do something with the route here.
+
+                    self.routeBuilder = nil
+                }
             } else {
                 print("Unable to save workout: \(String(describing: error?.localizedDescription))")
             }
@@ -176,6 +187,12 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
         guard !filteredLocations.isEmpty else { return }
 
         // add to workout route?
+        routeBuilder?.insertRouteData(filteredLocations) { (success, error) in
+            if !success {
+                // Handle any errors here.
+                print("Route builder: error inserting route data: \(error?.localizedDescription ?? "no error object")")
+            }
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -188,6 +205,7 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
             print("Location: Authorized Always")
         case .notDetermined:
             print("Location: Not Determined: \(status.rawValue)")
+            startOrRequestLocationUpdates()
         default:
             print("Location: Not Authorized: \(status.rawValue)")
         }
@@ -234,12 +252,12 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
             print("paused workout")
 //            pauseAccumulatingData()
 
-        case .ended:
+        case .ended, .stopped:
             print("stopped workout")
 //            stopAccumulatingData()
             saveWorkout()
 
-        case .notStarted:
+        default:
             break
         }
     }

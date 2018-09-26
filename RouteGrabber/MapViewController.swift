@@ -46,11 +46,11 @@ class MapViewController: UIViewController, MKMapViewDelegate {
 
         // add to MKPolyline for display
         let overlay = MKPolyline(coordinates: locationCoordinates, count: locationCoordinates.count)
-        mapView.add(overlay, level: .aboveRoads)
+        mapView.addOverlay(overlay, level: .aboveRoads)
 
         // rough map zoom
-        let span = MKCoordinateSpanMake(0.1, 0.1)
-        let region = MKCoordinateRegionMake(mappableWorkout.locations[0].coordinate, span)
+        let span = MKCoordinateSpan.init(latitudeDelta: 0.1, longitudeDelta: 0.1)
+        let region = MKCoordinateRegion.init(center: mappableWorkout.locations[0].coordinate, span: span)
         mapView.setRegion(region, animated: false)
     }
 
