@@ -1,15 +1,15 @@
 //
-//  RouteGrabberTests.swift
-//  RouteGrabberTests
+//  MatchTrackerTests.swift
+//  MatchTrackerTests
 //
 //  Created by Ben Lachman on 11/2/17.
 //  Copyright © 2017 Nice Mohawk Limited. All rights reserved.
 //
 
 import XCTest
-@testable import RouteGrabber
+@testable import MatchTracker
 
-class RouteGrabberTests: XCTestCase {
+class MatchTrackerTests: XCTestCase {
     
     override func setUp() {
         super.setUp()

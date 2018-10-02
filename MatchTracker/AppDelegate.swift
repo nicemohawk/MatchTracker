@@ -1,6 +1,6 @@
 //
 //  AppDelegate.swift
-//  RouteGrabber
+//  MatchTracker
 //
 //  Created by Ben Lachman on 11/2/17.
 //  Copyright © 2017 Nice Mohawk Limited. All rights reserved.
