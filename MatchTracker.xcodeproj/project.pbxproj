@@ -124,6 +124,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
 		B53B0F792145C3B80035914D /* Match Tracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Match Tracker.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B53B0F7C2145C3B80035914D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Interface.storyboard; sourceTree = "<group>"; };
@@ -242,6 +243,7 @@
 		B599D6501FAAF00D006EAABC = {
 			isa = PBXGroup;
 			children = (
+				B52D86B8216558430034810C /* README.md */,
 				B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */,
 				B5357F2A1FBA16C000B884AE /* Packages */,
 				B599D65B1FAAF00D006EAABC /* MatchTracker */,
