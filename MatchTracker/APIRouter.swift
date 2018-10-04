@@ -6,19 +6,24 @@
 //  Copyright © 2017 Nice Mohawk Limited. All rights reserved.
 //
 
+import UIKit
 import Foundation
 import Alamofire
+import CloudKit
 
-enum Constants {
+
+enum Environment {
     struct API {
         #if RELEASE
         static let serverPrefix = "https://match-tracks.service.nicemohawk.com"
         #else
         static let serverPrefix = "http://10.0.1.10:8080"
         #endif
-        static let secretKey = "hi-bob"
-        // TODO: keep secret keys out of version control
+
+        static var secretKey = "smarmy"
     }
+
+    static var deviceUUID = UIDevice.current.identifierForVendor
 }
 
 protocol Requestable: URLRequestConvertible {
@@ -30,12 +35,12 @@ protocol Requestable: URLRequestConvertible {
 
 extension Requestable {
     func asURLRequest() throws -> URLRequest {
-        let URLString = Constants.API.serverPrefix + self.path
+        let URLString = Environment.API.serverPrefix + self.path
 
         var mutableRequest = URLRequest(url: URL(string: URLString)!)
         mutableRequest.httpMethod = method.rawValue
 
-        mutableRequest.setValue("APIKey " + Constants.API.secretKey, forHTTPHeaderField: "Authorization")
+        mutableRequest.setValue("APIKey " + Environment.API.secretKey, forHTTPHeaderField: "Authorization")
         mutableRequest.setValue(String(true), forHTTPHeaderField: "private")
         mutableRequest.setValue("application/json", forHTTPHeaderField: "content-type")
 
@@ -61,7 +66,8 @@ struct Router {
         }
 
         var path: String {
-            return "/devices/3cb65576-6bfd-4abb-ad23-168b7efda562/sessions"
+            return "/devices/" + (Environment.deviceUUID?.uuidString ?? "3cb65576-6bfd-4abb-ad23-168b7efda562") + "/sessions"
+//            "/devices/3cb65576-6bfd-4abb-ad23-168b7efda562/sessions"
         }
         
         var parameters: [String : Any]? {

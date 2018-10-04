@@ -131,10 +131,10 @@ class RoutesTableViewController: UITableViewController {
         // Query for all workouts
 
         let workoutType = HKObjectType.workoutType()
-        //let predicate = HKQuery.predicateForWorkouts(with: .running)
+        let predicate = HKQuery.predicateForWorkouts(with: .soccer)
         let dateSortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
 
-        let query = HKSampleQuery(sampleType: workoutType, predicate: nil, limit: HKObjectQueryNoLimit, sortDescriptors: [dateSortDescriptor]) { _, results, error in
+        let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [dateSortDescriptor]) { _, results, error in
             guard let workouts = results as? [HKWorkout] else {
                 print("An error occured: \(error?.localizedDescription ?? "Unknown")")
                 return

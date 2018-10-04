@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86BC2165BF0E0034810C /* CloudKit.framework */; };
+		B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86C92165CFD10034810C /* Locksmith.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7B2145C3B80035914D /* Interface.storyboard */; };
 		B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7E2145C3BB0035914D /* Assets.xcassets */; };
 		B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -35,6 +37,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		B52D86C82165CFD10034810C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = "Locksmith::Locksmith::Product";
+			remoteInfo = Locksmith;
+		};
 		B5357F331FBA16EF00B884AE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
@@ -115,6 +124,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */,
 				B58B3EF7215BF43900F73281 /* Packages.framework in Embed Frameworks */,
 				B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */,
 			);
@@ -125,6 +135,7 @@
 
 /* Begin PBXFileReference section */
 		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		B52D86BC2165BF0E0034810C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
 		B53B0F792145C3B80035914D /* Match Tracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Match Tracker.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B53B0F7C2145C3B80035914D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Interface.storyboard; sourceTree = "<group>"; };
@@ -175,6 +186,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */,
 				B5AB2B16215214A6003CC1AC /* Packages.framework in Frameworks */,
 				B57FDAA6216422CB00EFBDB5 /* HealthKit.framework in Frameworks */,
 			);
@@ -210,6 +222,7 @@
 			isa = PBXGroup;
 			children = (
 				B5357F361FBA16EF00B884AE /* Alamofire.framework */,
+				B52D86C92165CFD10034810C /* Locksmith.framework */,
 				B5357F341FBA16EF00B884AE /* Packages.framework */,
 			);
 			name = Products;
@@ -306,6 +319,7 @@
 		B5A707B51FAAF23400622F5E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				B52D86BC2165BF0E0034810C /* CloudKit.framework */,
 				B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */,
 				B53B0FA32145C4110035914D /* HealthKit.framework */,
 			);
@@ -447,6 +461,12 @@
 							com.apple.Keychain = {
 								enabled = 0;
 							};
+							com.apple.Push = {
+								enabled = 1;
+							};
+							com.apple.iCloud = {
+								enabled = 1;
+							};
 						};
 					};
 					B599D66C1FAAF00E006EAABC = {
@@ -492,6 +512,13 @@
 /* End PBXProject section */
 
 /* Begin PBXReferenceProxy section */
+		B52D86C92165CFD10034810C /* Locksmith.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = Locksmith.framework;
+			remoteRef = B52D86C82165CFD10034810C /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
 		B5357F341FBA16EF00B884AE /* Packages.framework */ = {
 			isa = PBXReferenceProxy;
 			fileType = wrapper.framework;
@@ -908,7 +935,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = MatchTrackerTests/Info.plist;
+				INFOPLIST_FILE = "Match Tracker Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -929,7 +956,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = MatchTrackerTests/Info.plist;
+				INFOPLIST_FILE = "Match Tracker Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -949,7 +976,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = MatchTrackerUITests/Info.plist;
+				INFOPLIST_FILE = "Match Tracker UI Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -969,7 +996,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = MatchTrackerUITests/Info.plist;
+				INFOPLIST_FILE = "Match Tracker UI Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

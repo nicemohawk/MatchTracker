@@ -92,6 +92,8 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
             self.locationManager.requestAlwaysAuthorization()
             self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
         }
+
+        setTitle("")
     }
 
     override func didDeactivate() {
@@ -128,8 +130,9 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
                     } else if let error = error {
                         print("Error finishing workout: \(error.localizedDescription)")
                     }
-
                 }
+            } else {
+                print("not successful")
             }
 
             if let error = error {
@@ -159,7 +162,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
     // MARK: - Route/Location tracking
 
     fileprivate func finishRoute(forWorkout workout: HKWorkout) {
-        DispatchQueue.main.async {
+        DispatchQueue.main.sync {
             self.stopLocationUpdates()
         }
 

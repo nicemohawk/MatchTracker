@@ -10,6 +10,8 @@ import UIKit
 import WatchConnectivity
 import Alamofire
 import CoreLocation
+import CloudKit
+import Locksmith
 
 
 @UIApplicationMain
@@ -26,6 +28,35 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
             let session = WCSession.default
             session.delegate = self
             session.activate()
+        }
+
+        let publicCloudKitDatabase = CKContainer.default().publicCloudDatabase
+        let recordID = CKRecord.ID(recordName: "default")
+
+        publicCloudKitDatabase.fetch(withRecordID: recordID) { (record, error) in
+            if let keyRecord = record {
+                guard let key = keyRecord["apiKey"] as? String else {
+                    print("Unable to get APIKey")
+                    return
+                }
+
+                Environment.API.secretKey = key
+
+                do {
+                    try Locksmith.updateData(data: ["apiKey" : key], forUserAccount: "match-tracker")
+                } catch {
+                    print("unable to save key to keychain")
+                }
+            } else {
+                if let error = error {
+                    print(error.localizedDescription)
+                }
+
+                //retreive from keychain
+                if let key = Locksmith.loadDataForUserAccount(userAccount: "match-tracker")?["apiKey"] as? String {
+                    Environment.API.secretKey = key
+                }
+            }
         }
 
         return true
@@ -61,6 +92,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
         if let shouldRequestLocation = message["requestLocation"] as? Bool, shouldRequestLocation == true {
             DispatchQueue.main.async {
                 self.locationManager.requestAlwaysAuthorization()
+                self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
             }
         }
     }

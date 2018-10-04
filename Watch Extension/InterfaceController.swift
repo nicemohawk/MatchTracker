@@ -66,7 +66,10 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         if let error = error {
             print("WCSession: " + error.localizedDescription)
+            return
         }
+
+        session.sendMessage(["requestLocation" : true], replyHandler: nil, errorHandler: nil)
     }
 
 //    func sessionDidBecomeInactive(_ session: WCSession) {

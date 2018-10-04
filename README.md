@@ -2,4 +2,4 @@
 
 To get started: `./generate-packages-project.rb`
 
-Then open the Xcode project.
+Then open the Xcode MatchTracker project.

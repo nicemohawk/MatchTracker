@@ -9,6 +9,15 @@
           "revision": "61a780f3b58ee0d2bb76fdb7b89dbc9751d521d7",
           "version": "4.7.3"
         }
+      },
+      {
+        "package": "Locksmith",
+        "repositoryURL": "https://github.com/matthewpalmer/Locksmith.git",
+        "state": {
+          "branch": null,
+          "revision": "49b08bf8fa16ff8d7ce41609a2adbc6b5237f65f",
+          "version": "4.0.0"
+        }
       }
     ]
   },

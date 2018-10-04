@@ -19,7 +19,7 @@
                             <fontDescription key="font" style="UICTFontTextStyleTitle2"/>
                             <connections>
                                 <action selector="startMatch" destination="AgC-eL-Hgc" id="RVa-ai-hHJ"/>
-                                <segue destination="Ngw-5g-BAW" kind="push" id="Yga-3A-7Ij"/>
+                                <segue destination="Ngw-5g-BAW" kind="modal" id="Yga-3A-7Ij"/>
                             </connections>
                         </button>
                     </items>
@@ -53,7 +53,7 @@
         <!--Workout Interface Controller-->
         <scene sceneID="chb-EP-V39">
             <objects>
-                <controller hidesWhenLoading="NO" fullScreen="YES" id="Ngw-5g-BAW" customClass="WorkoutInterfaceController" customModule="Match_Tracker" customModuleProvider="target">
+                <controller hidesWhenLoading="NO" id="Ngw-5g-BAW" customClass="WorkoutInterfaceController" customModule="Match_Tracker" customModuleProvider="target">
                     <items>
                         <group width="1" alignment="left" layout="vertical" id="qc9-NS-2At">
                             <items>
