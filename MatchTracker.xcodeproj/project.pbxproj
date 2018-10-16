@@ -16,7 +16,7 @@
 		B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */; };
 		B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8E2145C3BC0035914D /* NotificationController.swift */; };
 		B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F902145C3BC0035914D /* Assets.xcassets */; };
-		B53B0F962145C3BC0035914D /* Match Tracker.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B53B0F792145C3B80035914D /* Match Tracker.app */; };
+		B53B0F962145C3BC0035914D /* MatchTracker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B53B0F792145C3B80035914D /* MatchTracker Watch App.app */; };
 		B53B0FA42145C4110035914D /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B53B0FA32145C4110035914D /* HealthKit.framework */; };
 		B57FDAA6216422CB00EFBDB5 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */; };
 		B58B3EF7215BF43900F73281 /* Packages.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F341FBA16EF00B884AE /* Packages.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -113,7 +113,7 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				B53B0F962145C3BC0035914D /* Match Tracker.app in Embed Watch Content */,
+				B53B0F962145C3BC0035914D /* MatchTracker Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -137,7 +137,7 @@
 		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B52D86BC2165BF0E0034810C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
-		B53B0F792145C3B80035914D /* Match Tracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Match Tracker.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B53B0F792145C3B80035914D /* MatchTracker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "MatchTracker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B53B0F7C2145C3B80035914D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Interface.storyboard; sourceTree = "<group>"; };
 		B53B0F7E2145C3BB0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B53B0F802145C3BB0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -277,7 +277,7 @@
 				B599D6591FAAF00D006EAABC /* MatchTracker.app */,
 				B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */,
 				B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */,
-				B53B0F792145C3B80035914D /* Match Tracker.app */,
+				B53B0F792145C3B80035914D /* MatchTracker Watch App.app */,
 				B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */,
 			);
 			name = Products;
@@ -331,9 +331,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B53B0F782145C3B80035914D /* Match Tracker */ = {
+		B53B0F782145C3B80035914D /* MatchTracker Watch App */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker" */;
+			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */;
 			buildPhases = (
 				B53B0F772145C3B80035914D /* Resources */,
 				B55AE2332175A478004E14CF /* Update Build Number */,
@@ -344,9 +344,9 @@
 			dependencies = (
 				B53B0F882145C3BC0035914D /* PBXTargetDependency */,
 			);
-			name = "Match Tracker";
+			name = "MatchTracker Watch App";
 			productName = "Match Tracker";
-			productReference = B53B0F792145C3B80035914D /* Match Tracker.app */;
+			productReference = B53B0F792145C3B80035914D /* MatchTracker Watch App.app */;
 			productType = "com.apple.product-type.application.watchapp2";
 		};
 		B53B0F842145C3BC0035914D /* Match Tracker Extension */ = {
@@ -356,6 +356,7 @@
 				B53B0F812145C3BC0035914D /* Sources */,
 				B53B0F822145C3BC0035914D /* Frameworks */,
 				B53B0F832145C3BC0035914D /* Resources */,
+				B5D27CB7217680F600B79CF1 /* Update Build Number */,
 			);
 			buildRules = (
 			);
@@ -509,7 +510,7 @@
 				B599D6581FAAF00D006EAABC /* MatchTracker */,
 				B599D66C1FAAF00E006EAABC /* MatchTrackerTests */,
 				B599D6771FAAF00E006EAABC /* MatchTrackerUITests */,
-				B53B0F782145C3B80035914D /* Match Tracker */,
+				B53B0F782145C3B80035914D /* MatchTracker Watch App */,
 				B53B0F842145C3BC0035914D /* Match Tracker Extension */,
 			);
 		};
@@ -620,6 +621,24 @@
 			shellPath = /bin/sh;
 			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
 		};
+		B5D27CB7217680F600B79CF1 /* Update Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Update Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -673,7 +692,7 @@
 		};
 		B53B0F952145C3BC0035914D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B53B0F782145C3B80035914D /* Match Tracker */;
+			target = B53B0F782145C3B80035914D /* MatchTracker Watch App */;
 			targetProxy = B53B0F942145C3BC0035914D /* PBXContainerItemProxy */;
 		};
 		B599D66F1FAAF00E006EAABC /* PBXTargetDependency */ = {
@@ -1065,7 +1084,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker" */ = {
+		B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B53B0F972145C3BC0035914D /* Debug */,
