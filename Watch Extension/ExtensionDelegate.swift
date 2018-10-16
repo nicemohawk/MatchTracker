@@ -50,7 +50,7 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
         func handleActiveWorkoutRecovery() {
             HKHealthStore().recoverActiveWorkoutSession { (session, error) in
                 if let recoveredSession = session {
-                    WKExtension.shared().rootInterfaceController?.presentController(withName: "WorkoutInterfaceController", context: recoveredSession)
+                    WKInterfaceController.reloadRootControllers(withNamesAndContexts: [(name: "WorkoutDisplay", context: recoveredSession)])
                 }
             }
         }

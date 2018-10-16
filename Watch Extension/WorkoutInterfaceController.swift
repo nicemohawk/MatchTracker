@@ -50,7 +50,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
             do {
                 workoutSession = try HKWorkoutSession(healthStore: healthStore, configuration: workoutConfiguration)
             } catch {
-                dismiss()
+                self.closeWorkoutDisplay()
                 return
             }
         }
@@ -76,9 +76,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
                     print(error.localizedDescription)
                 }
 
-                DispatchQueue.main.async {
-                    self.dismiss()
-                }
+                self.closeWorkoutDisplay()
             }
         })
     }
@@ -108,20 +106,29 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
     @IBAction func pauseResume() {
         if workoutSession.state == .running {
             workoutSession.pause()
+
+            // TODO: should we stop location tracking here, or just stop recording it?
+            DispatchQueue.main.async {
+                self.locationManager.stopUpdatingLocation()
+            }
         } else {
             workoutSession.resume()
+            DispatchQueue.main.async {
+                self.locationManager.startUpdatingLocation()
+            }
         }
     }
 
     @IBAction func stopWorkout() {
+        DispatchQueue.main.async {
+            self.locationManager.stopUpdatingLocation()
+        }
+
         workoutSession.end()
 
         workoutBuilder.endCollection(withEnd: Date()) { (success, error) in
             if success {
                 self.workoutBuilder.finishWorkout { (workout, error) in
-                    DispatchQueue.main.async {
-                        self.dismiss()
-                    }
 
                     if let workout = workout {
                         print("Workout completed: \(workout)")
@@ -138,6 +145,14 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
             if let error = error {
                 print("Error ending collection: \(error.localizedDescription)")
             }
+        }
+
+        self.closeWorkoutDisplay()
+    }
+
+    func closeWorkoutDisplay() {
+        DispatchQueue.main.async {
+            WKInterfaceController.reloadRootControllers(withNames: ["StartMatch"], contexts: nil)
         }
     }
     
@@ -162,7 +177,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
     // MARK: - Route/Location tracking
 
     fileprivate func finishRoute(forWorkout workout: HKWorkout) {
-        DispatchQueue.main.sync {
+        DispatchQueue.main.async {
             self.stopLocationUpdates()
         }
 
@@ -218,6 +233,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
 
         guard !filteredLocations.isEmpty else { return }
 
+        print(filteredLocations)
         // add to workout route?
         routeBuilder.insertRouteData(filteredLocations) { (success, error) in
             if success {
@@ -263,18 +279,22 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
         print("\(quantityType.identifier) update")
 
         let formatter = MeasurementFormatter()
+        formatter.numberFormatter.maximumFractionDigits = 2
         let calories = HKUnit.largeCalorie()
         let miles = HKUnit.mile()
         let bpm = HKUnit.count().unitDivided(by: HKUnit.minute())
 
         switch quantityType.identifier {
         case HKQuantityTypeIdentifier.heartRate.rawValue:
-            heartRateLabel.setText(formatter.numberFormatter.string(from: NSNumber(value: statistics.mostRecentQuantity()!.doubleValue(for: bpm))))
+            if let bpm = statistics.mostRecentQuantity()?.doubleValue(for: bpm), bpm > 1 {
+                heartRateLabel.setText(formatter.numberFormatter.string(from: NSNumber(value:bpm)))
+            }
 
         case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
             let measurement = Measurement(value: statistics.sumQuantity()!.doubleValue(for: calories), unit: UnitEnergy.calories)
 
             formatter.unitOptions = [.providedUnit]
+            formatter.numberFormatter.maximumFractionDigits = 0
             caloriesLabel.setText(formatter.string(from: measurement))
 
         case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:

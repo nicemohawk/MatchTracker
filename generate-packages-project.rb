@@ -12,6 +12,7 @@ project.targets.each do |target|
   target.build_configurations.each do |config|
     config.build_settings['DEFINES_MODULE'] = 'YES'
     config.build_settings['SDKROOT'] = 'iphoneos'
+    config.build_settings['CURRENT_PROJECT_VERSION'] = '1.0'
 
     # Remove this line if you prefer to link the dependencies dynamically
     # You will also need to embed the framework with the app bundle

@@ -23,14 +23,13 @@ class RoutesTableViewController: UITableViewController {
 
         requestHealthKitAccess()
 
-        let routeButton = UIBarButtonItem(title: "Get Routes", style: .plain, target: self, action: #selector(RoutesTableViewController.getRoutesAction(sender:)))
+        let routeButton = UIBarButtonItem(title: "Get Matches", style: .plain, target: self, action: #selector(RoutesTableViewController.getRoutesAction(sender:)))
 
         navigationItem.setRightBarButton(routeButton, animated: false)
-        navigationItem.title = "Heatmapper"
+        navigationItem.title = "MatchTracker"
 
-        let refreshButton = UIBarButtonItem(title: "Update", style: .plain, target: self, action: #selector(RoutesTableViewController.updateTableView(sender:)))
-        navigationItem.setLeftBarButton(refreshButton, animated: false)
-
+//        let refreshButton = UIBarButtonItem(title: "Update", style: .plain, target: self, action: #selector(RoutesTableViewController.updateTableView(sender:)))
+//        navigationItem.setLeftBarButton(refreshButton, animated: false)
     }
 
     override func didReceiveMemoryWarning() {

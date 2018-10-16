@@ -29,6 +29,7 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         // Do any additional setup after loading the view.
         mapView.translatesAutoresizingMaskIntoConstraints = false
         mapView.delegate = self
+        mapView.mapType = .hybrid
         view.addSubview(mapView)
 
         NSLayoutConstraint.activate([
@@ -49,7 +50,7 @@ class MapViewController: UIViewController, MKMapViewDelegate {
         mapView.addOverlay(overlay, level: .aboveRoads)
 
         // rough map zoom
-        let span = MKCoordinateSpan.init(latitudeDelta: 0.1, longitudeDelta: 0.1)
+        let span = MKCoordinateSpan.init(latitudeDelta: 0.01, longitudeDelta: 0.01)
         let region = MKCoordinateRegion.init(center: mappableWorkout.locations[0].coordinate, span: span)
         mapView.setRegion(region, animated: false)
     }

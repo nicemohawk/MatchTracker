@@ -38,10 +38,6 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
             if let error = error {
                 print("HK authorization error: \(String(describing:error))")
             }
-
-            if !success {
-                self.dismiss()
-            }
         }
     }
 
@@ -55,6 +51,13 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
         super.didDeactivate()
     }
 
+    @IBAction func startMatchAction() {
+//        WKInterfaceController.reloadRootControllers(withNamesAndContexts: [(name: "WorkoutDisplay", context: nil)])
+        
+        WKInterfaceController.reloadRootControllers(withNames: ["WorkoutDisplay"], contexts: nil)
+    }
+
+    
     // MARK: - WCSessionDelegate
 
     func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {

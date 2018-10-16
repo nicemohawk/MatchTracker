@@ -150,6 +150,7 @@
 		B53B0F932145C3BC0035914D /* PushNotificationPayload.apns */ = {isa = PBXFileReference; lastKnownFileType = text; path = PushNotificationPayload.apns; sourceTree = "<group>"; };
 		B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Match Tracker Extension.entitlements"; sourceTree = "<group>"; };
 		B53B0FA32145C4110035914D /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS4.3.sdk/System/Library/Frameworks/HealthKit.framework; sourceTree = DEVELOPER_DIR; };
+		B55AE22C2175A42E004E14CF /* update_build_number.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = update_build_number.sh; sourceTree = "<group>"; };
 		B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatchTracker.entitlements; sourceTree = "<group>"; };
 		B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		B599D6591FAAF00D006EAABC /* MatchTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatchTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -258,12 +259,13 @@
 			children = (
 				B52D86B8216558430034810C /* README.md */,
 				B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */,
-				B5357F2A1FBA16C000B884AE /* Packages */,
+				B55AE22C2175A42E004E14CF /* update_build_number.sh */,
 				B599D65B1FAAF00D006EAABC /* MatchTracker */,
 				B53B0F7A2145C3B80035914D /* Watch App */,
 				B53B0F892145C3BC0035914D /* Watch Extension */,
 				B599D6701FAAF00E006EAABC /* MatchTracker Tests */,
 				B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */,
+				B5357F2A1FBA16C000B884AE /* Packages */,
 				B599D65A1FAAF00D006EAABC /* Products */,
 				B5A707B51FAAF23400622F5E /* Frameworks */,
 			);
@@ -333,6 +335,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker" */;
 			buildPhases = (
+				B55AE2332175A478004E14CF /* Build Number */,
 				B53B0F772145C3B80035914D /* Resources */,
 				B53B0F9F2145C3BC0035914D /* Embed App Extensions */,
 			);
@@ -369,6 +372,7 @@
 			buildPhases = (
 				B599D6551FAAF00D006EAABC /* Sources */,
 				B599D6561FAAF00D006EAABC /* Frameworks */,
+				B55AE2322175A450004E14CF /* Update Build Number */,
 				B599D6571FAAF00D006EAABC /* Resources */,
 				B5A1728E1FBE30CD003E71EC /* Embed Frameworks */,
 				B53B0FA12145C3BC0035914D /* Embed Watch Content */,
@@ -578,6 +582,45 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		B55AE2322175A450004E14CF /* Update Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Update Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
+		};
+		B55AE2332175A478004E14CF /* Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B53B0F812145C3BC0035914D /* Sources */ = {
