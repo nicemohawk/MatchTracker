@@ -265,8 +265,8 @@
 				B53B0F892145C3BC0035914D /* Watch Extension */,
 				B599D6701FAAF00E006EAABC /* MatchTracker Tests */,
 				B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */,
-				B5357F2A1FBA16C000B884AE /* Packages */,
 				B599D65A1FAAF00D006EAABC /* Products */,
+				B5357F2A1FBA16C000B884AE /* Packages */,
 				B5A707B51FAAF23400622F5E /* Frameworks */,
 			);
 			sourceTree = "<group>";

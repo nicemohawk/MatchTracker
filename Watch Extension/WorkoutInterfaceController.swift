@@ -126,6 +126,12 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
 
         workoutSession.end()
 
+        guard workoutBuilder.elapsedTime > 60 * 60 else {
+            workoutBuilder.discardWorkout()
+            self.closeWorkoutDisplay()
+            return
+        }
+
         workoutBuilder.endCollection(withEnd: Date()) { (success, error) in
             if success {
                 self.workoutBuilder.finishWorkout { (workout, error) in
