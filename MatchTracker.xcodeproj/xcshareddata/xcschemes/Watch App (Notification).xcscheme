@@ -70,7 +70,7 @@
       <RemoteRunnable
          runnableDebuggingMode = "2"
          BundleIdentifier = "com.apple.Carousel"
-         RemotePath = "/RouteGrabber">
+         RemotePath = "/MatchTracker">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "B53B0F782145C3B80035914D"
@@ -102,7 +102,7 @@
       <RemoteRunnable
          runnableDebuggingMode = "2"
          BundleIdentifier = "com.apple.Carousel"
-         RemotePath = "/RouteGrabber">
+         RemotePath = "/MatchTracker">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "B53B0F782145C3B80035914D"

@@ -77,14 +77,14 @@
 			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = B599D6581FAAF00D006EAABC;
-			remoteInfo = RouteGrabber;
+			remoteInfo = MatchTracker;
 		};
 		B599D6791FAAF00E006EAABC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = B599D6581FAAF00D006EAABC;
-			remoteInfo = RouteGrabber;
+			remoteInfo = MatchTracker;
 		};
 		B5AB2B142152148E003CC1AC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -385,7 +385,7 @@
 				B53B0F952145C3BC0035914D /* PBXTargetDependency */,
 			);
 			name = MatchTracker;
-			productName = RouteGrabber;
+			productName = MatchTracker;
 			productReference = B599D6591FAAF00D006EAABC /* MatchTracker.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -403,7 +403,7 @@
 				B599D66F1FAAF00E006EAABC /* PBXTargetDependency */,
 			);
 			name = MatchTrackerTests;
-			productName = RouteGrabberTests;
+			productName = MatchTrackerTests;
 			productReference = B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
@@ -421,7 +421,7 @@
 				B599D67A1FAAF00E006EAABC /* PBXTargetDependency */,
 			);
 			name = MatchTrackerUITests;
-			productName = RouteGrabberUITests;
+			productName = MatchTrackerUITests;
 			productReference = B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
