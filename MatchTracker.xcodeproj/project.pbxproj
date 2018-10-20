@@ -336,8 +336,8 @@
 			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */;
 			buildPhases = (
 				B53B0F772145C3B80035914D /* Resources */,
-				B55AE2332175A478004E14CF /* Update Build Number */,
 				B53B0F9F2145C3BC0035914D /* Embed App Extensions */,
+				B55AE2332175A478004E14CF /* Update Build Number */,
 			);
 			buildRules = (
 			);

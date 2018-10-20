@@ -126,7 +126,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
 
         workoutSession.end()
 
-        guard workoutBuilder.elapsedTime > 60 * 60 else {
+        guard workoutBuilder.elapsedTime > 60 else {
             workoutBuilder.discardWorkout()
             self.closeWorkoutDisplay()
             return
@@ -282,7 +282,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
     }
 
     func updateLabel(forType quantityType: HKQuantityType, withStatistics statistics: HKStatistics ) {
-        print("\(quantityType.identifier) update")
+        debugPrint("\(quantityType.identifier) update")
 
         let formatter = MeasurementFormatter()
         formatter.numberFormatter.maximumFractionDigits = 2
