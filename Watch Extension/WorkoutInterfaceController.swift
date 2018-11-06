@@ -158,7 +158,7 @@ class WorkoutInterfaceController: WKInterfaceController, HKWorkoutSessionDelegat
 
     func closeWorkoutDisplay() {
         DispatchQueue.main.async {
-            WKInterfaceController.reloadRootControllers(withNames: ["StartMatch"], contexts: nil)
+            WKInterfaceController.reloadRootPageControllers(withNames: ["TrainField","StartMatch"], contexts: nil, orientation: .vertical, pageIndex: 1)
         }
     }
     

@@ -54,7 +54,7 @@ class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCS
     @IBAction func startMatchAction() {
 //        WKInterfaceController.reloadRootControllers(withNamesAndContexts: [(name: "WorkoutDisplay", context: nil)])
         
-        WKInterfaceController.reloadRootControllers(withNames: ["WorkoutDisplay"], contexts: nil)
+        WKInterfaceController.reloadRootPageControllers(withNames: ["WorkoutControls", "WorkoutDisplay"], contexts: nil, orientation: .horizontal, pageIndex: 1)
     }
 
     

@@ -2,7 +2,7 @@
   "images" : [
     {
       "idiom" : "watch",
-      "filename" : "Oval.png",
+      "filename" : "PlaybackPause@2x.png",
       "scale" : "2x"
     }
   ],
@@ -11,7 +11,6 @@
     "author" : "xcode"
   },
   "properties" : {
-    "template-rendering-intent" : "template",
-    "auto-scaling" : "auto"
+    "template-rendering-intent" : "template"
   }
 }
