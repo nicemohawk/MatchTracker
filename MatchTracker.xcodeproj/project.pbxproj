@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B511890021940B1B0067B25E /* FieldTrainingInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */; };
 		B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86BC2165BF0E0034810C /* CloudKit.framework */; };
 		B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86C92165CFD10034810C /* Locksmith.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7B2145C3B80035914D /* Interface.storyboard */; };
@@ -134,6 +135,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldTrainingInterfaceController.swift; sourceTree = "<group>"; };
 		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B52D86BC2165BF0E0034810C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
@@ -244,6 +246,7 @@
 			children = (
 				B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */,
 				B53B0F8A2145C3BC0035914D /* InterfaceController.swift */,
+				B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */,
 				B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */,
 				B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */,
 				B53B0F8E2145C3BC0035914D /* NotificationController.swift */,
@@ -657,6 +660,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B511890021940B1B0067B25E /* FieldTrainingInterfaceController.swift in Sources */,
 				C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */,
 				C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */,
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,

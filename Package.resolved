@@ -12,11 +12,11 @@
       },
       {
         "package": "Locksmith",
-        "repositoryURL": "https://github.com/matthewpalmer/Locksmith.git",
+        "repositoryURL": "https://github.com/nicemohawk/Locksmith.git",
         "state": {
           "branch": null,
-          "revision": "49b08bf8fa16ff8d7ce41609a2adbc6b5237f65f",
-          "version": "4.0.0"
+          "revision": "0c144b1a1136664735c45013b0d5dedd929d3359",
+          "version": "4.0.1"
         }
       }
     ]
