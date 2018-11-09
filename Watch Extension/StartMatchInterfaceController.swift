@@ -11,7 +11,7 @@ import WatchConnectivity
 import Foundation
 import HealthKit
 
-class InterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCSessionDelegate {
+class StartMatchInterfaceController: WKInterfaceController, CLLocationManagerDelegate, WCSessionDelegate {
     override func awake(withContext context: Any?) {
         super.awake(withContext: context)
 

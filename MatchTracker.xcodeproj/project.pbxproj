@@ -7,13 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B511890021940B1B0067B25E /* FieldTrainingInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */; };
+		B51189012194A9AB0067B25E /* FieldTrainingInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */; };
 		B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86BC2165BF0E0034810C /* CloudKit.framework */; };
 		B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86C92165CFD10034810C /* Locksmith.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7B2145C3B80035914D /* Interface.storyboard */; };
 		B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7E2145C3BB0035914D /* Assets.xcassets */; };
 		B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		B53B0F8B2145C3BC0035914D /* InterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8A2145C3BC0035914D /* InterfaceController.swift */; };
+		B53B0F8B2145C3BC0035914D /* StartMatchInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */; };
 		B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */; };
 		B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8E2145C3BC0035914D /* NotificationController.swift */; };
 		B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F902145C3BC0035914D /* Assets.xcassets */; };
@@ -144,7 +144,7 @@
 		B53B0F7E2145C3BB0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B53B0F802145C3BB0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Match Tracker Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		B53B0F8A2145C3BC0035914D /* InterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterfaceController.swift; sourceTree = "<group>"; };
+		B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartMatchInterfaceController.swift; sourceTree = "<group>"; };
 		B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDelegate.swift; sourceTree = "<group>"; };
 		B53B0F8E2145C3BC0035914D /* NotificationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationController.swift; sourceTree = "<group>"; };
 		B53B0F902145C3BC0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -245,7 +245,7 @@
 			isa = PBXGroup;
 			children = (
 				B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */,
-				B53B0F8A2145C3BC0035914D /* InterfaceController.swift */,
+				B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */,
 				B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */,
 				B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */,
 				B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */,
@@ -650,9 +650,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				B5A6E70C215E73A60055EDF0 /* WorkoutInterfaceController.swift in Sources */,
+				B51189012194A9AB0067B25E /* FieldTrainingInterfaceController.swift in Sources */,
 				B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */,
 				B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */,
-				B53B0F8B2145C3BC0035914D /* InterfaceController.swift in Sources */,
+				B53B0F8B2145C3BC0035914D /* StartMatchInterfaceController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -660,7 +661,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B511890021940B1B0067B25E /* FieldTrainingInterfaceController.swift in Sources */,
 				C45DDE511FB27F44006322C7 /* RoutesTableViewController.swift in Sources */,
 				C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */,
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,

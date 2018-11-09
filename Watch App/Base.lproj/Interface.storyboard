@@ -11,7 +11,7 @@
         <!--StartMatch-->
         <scene sceneID="aou-V4-d1y">
             <objects>
-                <controller identifier="StartMatch" fullScreen="YES" id="AgC-eL-Hgc" customClass="InterfaceController" customModule="MatchTracker_Watch_App" customModuleProvider="target">
+                <controller identifier="StartMatch" fullScreen="YES" id="AgC-eL-Hgc" customClass="StartMatchInterfaceController" customModule="MatchTracker_Watch_App" customModuleProvider="target">
                     <items>
                         <button width="120" height="120" alignment="center" verticalAlignment="center" alpha="0.84999999999999998" title="Start Match" backgroundImage="buttonbg1" id="ba8-Ff-fOF">
                             <color key="titleColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -32,17 +32,20 @@
         <!--TrainField-->
         <scene sceneID="mVL-ZY-Rbl">
             <objects>
-                <controller identifier="TrainField" fullScreen="YES" id="YzK-5d-fwA" customClass="FieldTrainingInterfaceController" customModule="MatchTracker">
+                <controller identifier="TrainField" fullScreen="YES" id="YzK-5d-fwA" customClass="FieldTrainingInterfaceController" customModule="MatchTracker_Watch_App" customModuleProvider="target">
                     <items>
                         <button width="120" height="120" alignment="center" verticalAlignment="center" alpha="0.84999999999999998" title="Define Field" backgroundImage="buttonbg1" id="4ro-ii-Vc4">
                             <color key="titleColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                             <color key="backgroundColor" red="0.25882352939999997" green="0.57647058819999997" blue="0.12941176469999999" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                             <fontDescription key="font" style="UICTFontTextStyleTitle2"/>
                             <connections>
-                                <action selector="trainField" destination="YzK-5d-fwA" id="2g9-aR-WIY"/>
+                                <action selector="trainField" destination="YzK-5d-fwA" id="YHv-Ee-ooq"/>
                             </connections>
                         </button>
                     </items>
+                    <connections>
+                        <outlet property="startStopButton" destination="4ro-ii-Vc4" id="UGi-VD-te5"/>
+                    </connections>
                 </controller>
             </objects>
             <point key="canvasLocation" x="469" y="342"/>
