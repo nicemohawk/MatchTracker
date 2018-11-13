@@ -13,8 +13,20 @@ class DataSource {
 
     static let alamofireManager = SessionManager()
 
-    func post(workouts: [MappableWorkout], completion: @escaping (_ success: Bool, _ errorMessage: String?) -> Void) {
-        DataSource.alamofireManager.request(Router.Workout.post(workouts: workouts))
+    func post(mappable: [Mappable], completion: @escaping (_ success: Bool, _ errorMessage: String?) -> Void) {
+        let requestable: Requestable
+
+        switch mappable {
+        case let fields where fields is [Field]:
+            requestable = Router.Fields.post(fields: (fields as! [Field]))
+        case let workouts where workouts is [MappableWorkout]:
+            requestable = Router.Sessions.post(workouts: (workouts as! [MappableWorkout]))
+        default:
+            completion(false, "No request handler for \(type(of: mappable))" )
+            return
+        }
+
+        DataSource.alamofireManager.request(requestable)
             .validate()
             .responseJSON { response -> Void in
                 switch response.result {
@@ -27,5 +39,4 @@ class DataSource {
                 }
         }
     }
-
 }

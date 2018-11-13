@@ -67,7 +67,7 @@ class MatchesTableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let workout = mappableWorkouts[indexPath.row]
-        let mapViewController = MapViewController(mappableWorkout: workout)
+        let mapViewController = MapViewController(mappable: workout)
         navigationController?.pushViewController(mapViewController, animated: true)
     }
 
@@ -84,33 +84,27 @@ class MatchesTableViewController: UITableViewController {
     // MARK: - Getting Routes
 
     @IBAction func updateTableView() {
-
-        if mappableWorkouts.count > 0 {
-            let workout = mappableWorkouts[0]
-            let locations = workout.locations
-            let oneLocation = locations[0]
-            print("We found a location")
-            print(oneLocation)
+        guard mappableWorkouts.count > 0 else {
+            return
         }
 
-        var testWorkout: [MappableWorkout] = [MappableWorkout]()
-        if self.mappableWorkouts.count > 0 {
-            testWorkout.append(self.mappableWorkouts[0])
-        }
-        AppDelegate.dataSource.post(workouts: testWorkout) { (success, error) in
-
+        let workout = mappableWorkouts[0]
+        if let oneLocation = workout.locations.first {
+            print("We found a location: \(oneLocation)")
         }
 
-        self.tableView.reloadData()
+        AppDelegate.dataSource.post(mappable: [workout]) { (success, error) in
+            self.tableView.reloadData()
+        }
     }
 
     @IBAction func getRoutes() {
-        self.mappableWorkouts = [MappableWorkout]()
+        mappableWorkouts = [MappableWorkout]()
 
         loadWorkouts { workouts in
             for workout in workouts {
                 // get route from workout
-                self.findRoute(workout: workout, completion: { (route) in
+                self.findRoute(workout: workout, completion: { route in
                     // get locations
                     self.loadRouteLocations(route: route, completion: { locations in
                         let newMappableWorkout = MappableWorkout(workout: workout, locations: locations)
@@ -121,7 +115,6 @@ class MatchesTableViewController: UITableViewController {
                         }
                     })
                 })
-
             }
         }
     }

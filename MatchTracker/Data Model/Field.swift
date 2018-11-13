@@ -10,21 +10,21 @@ import Foundation
 import CoreLocation
 
 
-class Field {
-    let time: Date
+struct Field: Mappable {
+    let timeStamp: Date
     let location: CLLocationCoordinate2D
 
-    let outline: [CLLocation]
+    let locations: [CLLocation]
     let perimiterDistance: CLLocationDistance
 
-    required init(time: Date, location: CLLocationCoordinate2D, outline: [CLLocation], distance: CLLocationDistance) {
-        self.time = time
+    init(time: Date, location: CLLocationCoordinate2D, field: [CLLocation], distance: CLLocationDistance) {
+        self.timeStamp = time
         self.location = location
-        self.outline = outline
+        self.locations = field
         self.perimiterDistance = distance
     }
 
-    convenience init(dataURL: URL, metaDataURL: URL) throws {
+    init(dataURL: URL, metaDataURL: URL) throws {
         let locationData = try Data(contentsOf: dataURL)
 
         guard let field = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(locationData) as? [CLLocation] else {
@@ -45,6 +45,6 @@ class Field {
 
         let location = CLLocationCoordinate2D(latitude: locationCoordinates[0], longitude: locationCoordinates[1])
 
-        self.init(time: time, location: location, outline: field, distance: distance)
+        self.init(time: time, location: location, field: field, distance: distance)
     }
 }

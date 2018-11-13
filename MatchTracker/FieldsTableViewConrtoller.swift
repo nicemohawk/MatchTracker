@@ -102,7 +102,7 @@ class FieldsTableViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: fieldCellIdentifier, for: indexPath)
         let field = fields[indexPath.row]
 
-        cell.textLabel?.text = DateFormatter.localizedString(from: field.time, dateStyle: .medium, timeStyle: .short)
+        cell.textLabel?.text = DateFormatter.localizedString(from: field.timeStamp, dateStyle: .medium, timeStyle: .short)
         cell.detailTextLabel?.text = "\(field.perimiterDistance) meter perimiter"
 
         return cell
@@ -112,7 +112,7 @@ class FieldsTableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let field = fields[indexPath.row]
-        let mapViewController = MapViewController(field: field)
+        let mapViewController = MapViewController(mappable: field)
         navigationController?.pushViewController(mapViewController, animated: true)
     }
 }

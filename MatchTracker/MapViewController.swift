@@ -11,21 +11,12 @@ import MapKit
 
 class MapViewController: UIViewController, MKMapViewDelegate {
 
+    let mappable: Mappable
     let mapView = MKMapView()
-    let mappableWorkout: MappableWorkout?
-    let field: Field?
 
-    init(mappableWorkout: MappableWorkout) {
-        self.mappableWorkout = mappableWorkout
-        self.field = nil
+    init(mappable: Mappable) {
+        self.mappable = mappable
 
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    init(field: Field) {
-        self.field = field
-        self.mappableWorkout = nil
-        
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -50,13 +41,7 @@ class MapViewController: UIViewController, MKMapViewDelegate {
             ])
 
         // convert our CLLocations to CLLocationCoordinate2D
-        var locationCoordinates = [CLLocationCoordinate2D]()
-
-        if let workout = mappableWorkout {
-            locationCoordinates = workout.locations.map { $0.coordinate }
-        } else if let field = field {
-            locationCoordinates = field.outline.map { $0.coordinate }
-        }
+        var locationCoordinates = mappable.locations.map { $0.coordinate }
 
         // add to MKPolyline for display
         let overlay = MKPolyline(coordinates: locationCoordinates, count: locationCoordinates.count)
