@@ -10,7 +10,7 @@ import UIKit
 import HealthKit
 import CoreLocation
 
-class RoutesTableViewController: UITableViewController {
+class MatchesTableViewController: UITableViewController {
 
     let healthStore = HKHealthStore()
     var isAuthorized = false
@@ -18,18 +18,18 @@ class RoutesTableViewController: UITableViewController {
 
     let routeCellIdentifier = "routeCellIdentifier"
 
+    // MARK: - UIView lifecycle
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
         requestHealthKitAccess()
+    }
 
-        let routeButton = UIBarButtonItem(title: "Get Matches", style: .plain, target: self, action: #selector(RoutesTableViewController.getRoutesAction(sender:)))
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
 
-        navigationItem.setRightBarButton(routeButton, animated: false)
-        navigationItem.title = "MatchTracker"
-
-//        let refreshButton = UIBarButtonItem(title: "Update", style: .plain, target: self, action: #selector(RoutesTableViewController.updateTableView(sender:)))
-//        navigationItem.setLeftBarButton(refreshButton, animated: false)
+        getRoutes()
     }
 
     override func didReceiveMemoryWarning() {
@@ -72,18 +72,18 @@ class RoutesTableViewController: UITableViewController {
     }
 
     /*
-    // MARK: - Navigation
+     // MARK: - Navigation
 
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destinationViewController.
-        // Pass the selected object to the new view controller.
-    }
-    */
+     // In a storyboard-based application, you will often want to do a little preparation before navigation
+     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+     // Get the new view controller using segue.destinationViewController.
+     // Pass the selected object to the new view controller.
+     }
+     */
 
     // MARK: - Getting Routes
 
-    @objc func updateTableView(sender: UIButton) {
+    @IBAction func updateTableView() {
 
         if mappableWorkouts.count > 0 {
             let workout = mappableWorkouts[0]
@@ -104,7 +104,7 @@ class RoutesTableViewController: UITableViewController {
         self.tableView.reloadData()
     }
 
-    @objc func getRoutesAction(sender: UIButton) {
+    @IBAction func getRoutes() {
         self.mappableWorkouts = [MappableWorkout]()
 
         loadWorkouts { workouts in
@@ -158,7 +158,7 @@ class RoutesTableViewController: UITableViewController {
                 return
             }
 
-//            print("We found at least one route")
+            //            print("We found at least one route")
 
             for route in routes {
                 completion(route)
@@ -188,11 +188,11 @@ class RoutesTableViewController: UITableViewController {
     }
 
     let readTypes: Set<HKSampleType> = Set( [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-                                               HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
-                                               HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
-                                               HKObjectType.quantityType(forIdentifier: .heartRate)!] )
+                                             HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
+                                             HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+                                             HKObjectType.quantityType(forIdentifier: .heartRate)!] )
     let shareTypes: Set<HKSampleType> = Set( [HKObjectType.workoutType(),
-                                               HKObjectType.seriesType(forIdentifier: HKWorkoutRouteTypeIdentifier)!] )
+                                              HKObjectType.seriesType(forIdentifier: HKWorkoutRouteTypeIdentifier)!] )
 
     func requestHealthKitAccess() {
         guard HKHealthStore.isHealthDataAvailable() else {

@@ -12,10 +12,20 @@ import MapKit
 class MapViewController: UIViewController, MKMapViewDelegate {
 
     let mapView = MKMapView()
-    let mappableWorkout: MappableWorkout
+    let mappableWorkout: MappableWorkout?
+    let field: Field?
 
     init(mappableWorkout: MappableWorkout) {
         self.mappableWorkout = mappableWorkout
+        self.field = nil
+
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    init(field: Field) {
+        self.field = field
+        self.mappableWorkout = nil
+        
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -41,18 +51,24 @@ class MapViewController: UIViewController, MKMapViewDelegate {
 
         // convert our CLLocations to CLLocationCoordinate2D
         var locationCoordinates = [CLLocationCoordinate2D]()
-        for location in mappableWorkout.locations {
-            locationCoordinates.append(location.coordinate)
+
+        if let workout = mappableWorkout {
+            locationCoordinates = workout.locations.map { $0.coordinate }
+        } else if let field = field {
+            locationCoordinates = field.outline.map { $0.coordinate }
         }
 
         // add to MKPolyline for display
         let overlay = MKPolyline(coordinates: locationCoordinates, count: locationCoordinates.count)
         mapView.addOverlay(overlay, level: .aboveRoads)
 
-        // rough map zoom
-        let span = MKCoordinateSpan.init(latitudeDelta: 0.01, longitudeDelta: 0.01)
-        let region = MKCoordinateRegion.init(center: mappableWorkout.locations[0].coordinate, span: span)
-        mapView.setRegion(region, animated: false)
+        if locationCoordinates.count > 0 {
+            // rough map zoom
+            let span = MKCoordinateSpan.init(latitudeDelta: 0.01, longitudeDelta: 0.01)
+            let region = MKCoordinateRegion.init(center: locationCoordinates[0], span: span)
+
+            mapView.setRegion(region, animated: false)
+        }
     }
 
     /*

@@ -73,6 +73,20 @@ class StartMatchInterfaceController: WKInterfaceController, CLLocationManagerDel
         session.sendMessage(["requestLocation" : true], replyHandler: nil, errorHandler: nil)
     }
 
+    func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        let url = fileTransfer.file.fileURL
+
+        guard error == nil else {
+            debugPrint(error!)
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            print(error)
+        }
+    }
 //    func sessionDidBecomeInactive(_ session: WCSession) {
 //        print("WCSession inactived")
 //    }

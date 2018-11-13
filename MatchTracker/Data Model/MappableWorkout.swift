@@ -1,5 +1,5 @@
 //
-//  Route.swift
+//  MappableWorkout.swift
 //  MatchTracker
 //
 //  Created by Robert Cantoni on 11/10/17.

@@ -92,7 +92,9 @@ class FieldTrainingInterfaceController: WKInterfaceController, CLLocationManager
 
         let metaData: [String : Any] = ["time": startTime, "distance": distanceTraveled, "location": [startingLocation.latitude, startingLocation.longitude]]
 
-        WCSession.default.transferFile(url, metadata: metaData)
+        let transfer = WCSession.default.transferFile(url, metadata: metaData)
+
+        debugPrint(transfer)
     }
 
     fileprivate func saveField(outline: [CLLocation]) -> URL? {
@@ -114,9 +116,14 @@ class FieldTrainingInterfaceController: WKInterfaceController, CLLocationManager
     // MARK: - CLLocationManagerDelegate
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        debugPrint("New location update")
+        let filteredLocations = locations.filter { $0.horizontalAccuracy <= 50.0 }
 
-        distanceTraveled += newDistanceTraveled(locations)
+        guard !filteredLocations.isEmpty else { return }
+
+        let newDistance = newDistanceTraveled(locations)
+        distanceTraveled += newDistance
+
+        debugPrint("New location update. New Distance: \(newDistance)")
 
         fieldOutline.append(contentsOf: locations)
 

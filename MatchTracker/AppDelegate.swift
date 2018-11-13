@@ -14,6 +14,12 @@ import CloudKit
 import Locksmith
 
 
+enum MatchTrackerError: Error {
+    case FieldMetadataMissing
+    case DirectoryError
+    case UnableToUnarchive
+}
+
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
 
@@ -94,6 +100,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
                 self.locationManager.requestAlwaysAuthorization()
                 self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
             }
+        }
+    }
+
+    func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        do {
+            try FieldsTableViewController.saveField(at: file.fileURL, withMetadata: file.metadata)
+        } catch MatchTrackerError.FieldMetadataMissing {
+            print("Field training metadata is missing")
+            return
+        } catch {
+            debugPrint(error)
+            return
+        }
+
+        if let tabController = window?.rootViewController as? UITabBarController,
+            let visibleViewController = (tabController.selectedViewController as? UINavigationController)?.visibleViewController {
+
+            let alertController = UIAlertController(title: "New Field", message: "Received new field definition", preferredStyle: .alert)
+
+            alertController.addAction(UIAlertAction(title: "Okay", style: .default, handler: { (action) in
+                alertController.dismiss(animated: true, completion: nil)
+            }))
+
+            visibleViewController.present(alertController, animated: true, completion: nil)
         }
     }
 
