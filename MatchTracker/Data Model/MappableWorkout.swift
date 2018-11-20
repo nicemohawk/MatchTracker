@@ -19,4 +19,9 @@ struct MappableWorkout: Mappable {
         }
     }
 
+    var uuid: UUID {
+        get {
+            return workout.uuid
+        }
+    }
 }

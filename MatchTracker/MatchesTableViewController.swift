@@ -14,7 +14,6 @@ class MatchesTableViewController: UITableViewController {
 
     let healthStore = HKHealthStore()
     var isAuthorized = false
-    var mappableWorkouts = [MappableWorkout]()
 
     let routeCellIdentifier = "routeCellIdentifier"
 
@@ -44,14 +43,14 @@ class MatchesTableViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return mappableWorkouts.count
+        return DataSource.default.workouts.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: routeCellIdentifier, for: indexPath)
 
         // add basic route info to the cell
-        let workout = mappableWorkouts[indexPath.row]
+        let workout = DataSource.default.workouts[indexPath.row]
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .short
         dateFormatter.timeStyle = .short
@@ -66,7 +65,7 @@ class MatchesTableViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let workout = mappableWorkouts[indexPath.row]
+        let workout = DataSource.default.workouts[indexPath.row]
         let mapViewController = MapViewController(mappable: workout)
         navigationController?.pushViewController(mapViewController, animated: true)
     }
@@ -84,22 +83,22 @@ class MatchesTableViewController: UITableViewController {
     // MARK: - Getting Routes
 
     @IBAction func updateTableView() {
-        guard mappableWorkouts.count > 0 else {
+        guard DataSource.default.workouts.count > 0 else {
             return
         }
 
-        let workout = mappableWorkouts[0]
+        let workout = DataSource.default.workouts[0]
         if let oneLocation = workout.locations.first {
             print("We found a location: \(oneLocation)")
         }
 
-        AppDelegate.dataSource.post(mappable: [workout]) { (success, error) in
+        DataSource.default.post(mappable: [workout]) { (success, error) in
             self.tableView.reloadData()
         }
     }
 
     @IBAction func getRoutes() {
-        mappableWorkouts = [MappableWorkout]()
+        DataSource.default.workouts = [MappableWorkout]()
 
         loadWorkouts { workouts in
             for workout in workouts {
@@ -108,7 +107,7 @@ class MatchesTableViewController: UITableViewController {
                     // get locations
                     self.loadRouteLocations(route: route, completion: { locations in
                         let newMappableWorkout = MappableWorkout(workout: workout, locations: locations)
-                        self.mappableWorkouts.append(newMappableWorkout)
+                        DataSource.default.workouts.append(newMappableWorkout)
 
                         DispatchQueue.main.async {
                             self.tableView.reloadData()

@@ -18,14 +18,13 @@ enum MatchTrackerError: Error {
     case FieldMetadataMissing
     case DirectoryError
     case UnableToUnarchive
+    case UnableToParseUUID
 }
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
-
-    var window: UIWindow?
-    static let dataSource: DataSource = DataSource()
     lazy var locationManager = CLLocationManager()
+    var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
@@ -105,7 +104,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         do {
-            try FieldsTableViewController.saveField(at: file.fileURL, withMetadata: file.metadata)
+            try Field.saveField(at: file.fileURL, withMetadata: file.metadata)
         } catch MatchTrackerError.FieldMetadataMissing {
             print("Field training metadata is missing")
             return
@@ -114,8 +113,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WCSessionDelegate {
             return
         }
 
-        if let tabController = window?.rootViewController as? UITabBarController,
-            let visibleViewController = (tabController.selectedViewController as? UINavigationController)?.visibleViewController {
+        DataSource.default.loadFields()
+
+        DispatchQueue.main.async {
+            guard let tabController = self.window?.rootViewController as? UITabBarController,
+                let navController = tabController.selectedViewController as? UINavigationController,
+                let visibleViewController = navController.visibleViewController else {
+                    return
+            }
 
             let alertController = UIAlertController(title: "New Field", message: "Received new field definition", preferredStyle: .alert)
 

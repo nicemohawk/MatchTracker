@@ -14,38 +14,39 @@ protocol Mappable {
     var timeStamp: Date { get }
     var dictionary: [String: Any]? { get }
     var bezier: UIBezierPath? { get }
+    var uuid: UUID { get }
 }
 
 extension Mappable {
     var dictionary: [String: Any]? {
         get {
-        // TODO: send up data from HKWorkout that isn't in the CLLocation data
+            // TODO: send up data from HKWorkout that isn't in the CLLocation data
 
-        if locations.count > 0 {
-        var dict = [String:Any]()
-        var coorinatesArray: [[Double]] = [[Double]]()
-        for location in locations {
-        let coordinatePair = [location.coordinate.latitude, location.coordinate.longitude]
+            guard locations.count > 0 else {
+                print("No locations for this workout")
+                return nil
+            }
 
-        coorinatesArray.append(coordinatePair)
-        }
+            var dict = [String: Any]()
+            var coorinatesArray = [[Double]]()
+            for location in locations {
+                let coordinatePair = [location.coordinate.latitude, location.coordinate.longitude]
 
-        //                if coorinatesArray.count > 10 {
-        //                    let smallArray: [[Double]] = Array(coorinatesArray[0..<10])
-        //
-        //                    coorinatesArray = smallArray
-        //                }
+                coorinatesArray.append(coordinatePair)
+            }
 
-        dict["track"] = ["coordinates": coorinatesArray]
-        let formatter = ISO8601DateFormatter()
-        dict["recorded_at"] = formatter.string(from: timeStamp)
+            //                if coorinatesArray.count > 10 {
+            //                    let smallArray: [[Double]] = Array(coorinatesArray[0..<10])
+            //
+            //                    coorinatesArray = smallArray
+            //                }
 
-        return dict
-        }
+            dict["track"] = ["coordinates": coorinatesArray]
+            let formatter = ISO8601DateFormatter()
+            dict["recorded_at"] = formatter.string(from: timeStamp)
+            dict["uuid"] = uuid
 
-        print("No locations for this workout")
-
-        return nil
+            return dict
         }
     }
 

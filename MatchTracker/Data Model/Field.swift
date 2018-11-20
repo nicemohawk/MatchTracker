@@ -16,12 +16,14 @@ struct Field: Mappable {
 
     let locations: [CLLocation]
     let perimiterDistance: CLLocationDistance
+    let uuid: UUID
 
-    init(time: Date, location: CLLocationCoordinate2D, field: [CLLocation], distance: CLLocationDistance) {
+    init(time: Date, location: CLLocationCoordinate2D, field: [CLLocation], distance: CLLocationDistance, uuid: UUID) {
         self.timeStamp = time
         self.location = location
         self.locations = field
         self.perimiterDistance = distance
+        self.uuid = uuid
     }
 
     init(dataURL: URL, metaDataURL: URL) throws {
@@ -45,6 +47,43 @@ struct Field: Mappable {
 
         let location = CLLocationCoordinate2D(latitude: locationCoordinates[0], longitude: locationCoordinates[1])
 
-        self.init(time: time, location: location, field: field, distance: distance)
+        guard let filenameUUID = UUID(uuidString: dataURL.lastPathComponent) else {
+            throw MatchTrackerError.UnableToParseUUID
+        }
+
+        self.init(time: time, location: location, field: field, distance: distance, uuid: filenameUUID)
+    }
+
+    // MARK: - class methods
+
+    static func directoryURL(for fileURL: URL? = nil) throws -> URL {
+        guard let destinationBaseURL = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: fileURL, create: true) else {
+            debugPrint("Unable to create destination url for file: \(fileURL?.absoluteString ?? "N/A")")
+            throw MatchTrackerError.DirectoryError
+        }
+
+        let url = destinationBaseURL.appendingPathComponent("fields")
+
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
+
+        return url
+    }
+
+    static func saveField(at fileURL: URL, withMetadata metadata: Any?) throws {
+        let filename = fileURL.lastPathComponent
+        let destinationBaseURL = try self.directoryURL(for: fileURL)
+
+        var documentURL = destinationBaseURL.appendingPathComponent(filename)
+
+        try FileManager.default.moveItem(at: fileURL, to: documentURL)
+
+        guard let metadata = metadata else {
+            throw MatchTrackerError.FieldMetadataMissing
+        }
+
+        documentURL.appendPathExtension("plist")
+
+        let data = try PropertyListSerialization.data(fromPropertyList: metadata, format: .xml, options: 0)
+        try data.write(to: documentURL)
     }
 }

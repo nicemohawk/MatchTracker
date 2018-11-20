@@ -16,14 +16,16 @@ enum Environment {
     struct API {
         #if RELEASE
         static let serverPrefix = "https://match-tracks.service.nicemohawk.com"
+        static let port = 80
         #else
-        static let serverPrefix = "http://10.0.1.10:8080"
+        static let serverPrefix = "http://10.0.1.10"
+        static let port = 8080
         #endif
 
         static var secretKey = "smarmy"
     }
 
-    static var deviceUUID = UIDevice.current.identifierForVendor
+    static let deviceUUID = UIDevice.current.identifierForVendor
 }
 
 protocol Requestable: URLRequestConvertible {
@@ -35,11 +37,11 @@ protocol Requestable: URLRequestConvertible {
 
 extension Requestable {
     var method: HTTPMethod { return .post }
-    var port: Int { return Router.port }
+    var port: Int { return Environment.API.port }
     var parameterEncoding: ParameterEncoding { return JSONEncoding.default }
 
     func asURLRequest() throws -> URLRequest {
-        let URLString = Environment.API.serverPrefix + self.path
+        let URLString = Environment.API.serverPrefix + ":" + String(port) + path
 
         var mutableRequest = URLRequest(url: URL(string: URLString)!)
         mutableRequest.httpMethod = method.rawValue
@@ -59,10 +61,6 @@ extension Requestable {
 struct Router {
     static var device: String {
         return "/devices/\(Environment.deviceUUID?.uuidString ?? "3cb65576-6bfd-4abb-ad23-168b7efda562")"
-    }
-
-    static var port: Int {
-        return 8080
     }
 
     enum Fields: Requestable {

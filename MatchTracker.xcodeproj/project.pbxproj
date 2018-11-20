@@ -221,6 +221,7 @@
 		B51189042195DF320067B25E /* Data Model */ = {
 			isa = PBXGroup;
 			children = (
+				C42706281FCCA34A00A745A9 /* DataSource.swift */,
 				C4CB05111FB642CC00E15074 /* MappableWorkout.swift */,
 				B51189052195DFCB0067B25E /* Field.swift */,
 				B5F99B7E219A83760054A379 /* Mappable.swift */,
@@ -306,7 +307,6 @@
 			isa = PBXGroup;
 			children = (
 				B599D65C1FAAF00D006EAABC /* AppDelegate.swift */,
-				C42706281FCCA34A00A745A9 /* DataSource.swift */,
 				C4F5BC941FD74BB300EEC216 /* APIRouter.swift */,
 				C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */,
 				B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */,
