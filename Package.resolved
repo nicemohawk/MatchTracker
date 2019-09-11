@@ -6,8 +6,8 @@
         "repositoryURL": "https://github.com/Alamofire/Alamofire.git",
         "state": {
           "branch": null,
-          "revision": "61a780f3b58ee0d2bb76fdb7b89dbc9751d521d7",
-          "version": "4.7.3"
+          "revision": "75bba56748359f297a83f620d45f72cf4ebee4e7",
+          "version": "4.8.2"
         }
       },
       {
@@ -15,8 +15,8 @@
         "repositoryURL": "https://github.com/nicemohawk/Locksmith.git",
         "state": {
           "branch": null,
-          "revision": "0c144b1a1136664735c45013b0d5dedd929d3359",
-          "version": "4.0.1"
+          "revision": "90014ceb4de40411b333ea684f0c6347458a9b49",
+          "version": "4.0.3"
         }
       }
     ]

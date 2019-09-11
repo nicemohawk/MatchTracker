@@ -13,7 +13,7 @@ let package = Package(
         ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
-        .package(url: "https://github.com/Alamofire/Alamofire.git", from: "4.7.0"),
+        .package(url: "https://github.com/Alamofire/Alamofire.git", from: "4.8.2"),
         .package(url: "https://github.com/nicemohawk/Locksmith.git", from: "4.0.1"),
         ],
     targets: [
