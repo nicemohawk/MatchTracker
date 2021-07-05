@@ -17,10 +17,16 @@ class MatchesTableViewController: UITableViewController {
 
     let routeCellIdentifier = "routeCellIdentifier"
 
+    @IBOutlet var matchesTableView: UITableView!
+    
+    
+    
+    
     // MARK: - UIView lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.register(UINib(nibName: "MatchTableCell", bundle: nil), forCellReuseIdentifier: "ReusableCell")
 
         requestHealthKitAccess()
     }

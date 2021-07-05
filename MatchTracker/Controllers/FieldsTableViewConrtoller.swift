@@ -15,7 +15,6 @@ class FieldsTableViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         DataSource.default.loadFields()
-
         tableView.reloadData()
     }
 
