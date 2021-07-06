@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B51189012194A9AB0067B25E /* FieldTrainingInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */; };
-		B5118903219549860067B25E /* FieldsTableViewConrtoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */; };
+		B5118903219549860067B25E /* FieldsTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5118902219549860067B25E /* FieldsTableViewController.swift */; };
 		B51189062195DFCB0067B25E /* Field.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51189052195DFCB0067B25E /* Field.swift */; };
 		B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86BC2165BF0E0034810C /* CloudKit.framework */; };
 		B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86C92165CFD10034810C /* Locksmith.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -145,7 +145,7 @@
 
 /* Begin PBXFileReference section */
 		B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldTrainingInterfaceController.swift; sourceTree = "<group>"; };
-		B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldsTableViewConrtoller.swift; sourceTree = "<group>"; };
+		B5118902219549860067B25E /* FieldsTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldsTableViewController.swift; sourceTree = "<group>"; };
 		B51189052195DFCB0067B25E /* Field.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Field.swift; sourceTree = "<group>"; };
 		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B52D86BC2165BF0E0034810C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
@@ -353,7 +353,7 @@
 			isa = PBXGroup;
 			children = (
 				C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */,
-				B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */,
+				B5118902219549860067B25E /* FieldsTableViewController.swift */,
 				C43B69221FB678BC009DF4E9 /* MapViewController.swift */,
 			);
 			path = Controllers;
@@ -718,7 +718,7 @@
 			files = (
 				C45DDE511FB27F44006322C7 /* MatchesTableViewController.swift in Sources */,
 				C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */,
-				B5118903219549860067B25E /* FieldsTableViewConrtoller.swift in Sources */,
+				B5118903219549860067B25E /* FieldsTableViewController.swift in Sources */,
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,
 				C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */,
 				B51189062195DFCB0067B25E /* Field.swift in Sources */,
