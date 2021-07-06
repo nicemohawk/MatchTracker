@@ -308,7 +308,6 @@
 				B599D65C1FAAF00D006EAABC /* AppDelegate.swift */,
 				C4F5BC941FD74BB300EEC216 /* APIRouter.swift */,
 				B599D6631FAAF00D006EAABC /* Assets.xcassets */,
-				B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */,
 				B599D6681FAAF00D006EAABC /* Info.plist */,
 			);
 			path = MatchTracker;
@@ -366,6 +365,7 @@
 		C10E81F126935C6900E2E0C8 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */,
 				B599D6601FAAF00D006EAABC /* Main.storyboard */,
 			);
 			path = Views;
