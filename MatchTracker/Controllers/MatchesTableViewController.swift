@@ -68,7 +68,7 @@ class MatchesTableViewController: UITableViewController {
 //        cell.fieldNameAndDateLabel.text = "Lower.com Field"
 //
 //
-//        return cell
+        return cell
     }
 
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
