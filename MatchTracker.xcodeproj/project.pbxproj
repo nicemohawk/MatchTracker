@@ -27,18 +27,15 @@
 		B599D6621FAAF00D006EAABC /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6601FAAF00D006EAABC /* Main.storyboard */; };
 		B599D6641FAAF00D006EAABC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B599D6631FAAF00D006EAABC /* Assets.xcassets */; };
 		B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */; };
-		B599D6721FAAF00E006EAABC /* MatchTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */; };
-		B599D67D1FAAF00E006EAABC /* MatchTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */; };
 		B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B5A6E70C215E73A60055EDF0 /* WorkoutInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */; };
 		B5AB2B16215214A6003CC1AC /* Packages.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F341FBA16EF00B884AE /* Packages.framework */; };
 		B5D65F4A2328AEB600DF7425 /* WorkoutControlsInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */; };
 		B5D65F4C2328AF3F00DF7425 /* WorkoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */; };
 		B5F99B7F219A83760054A379 /* Mappable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F99B7E219A83760054A379 /* Mappable.swift */; };
-		C10E81F526935CA500E2E0C8 /* MatchTableCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = C10E81F326935CA500E2E0C8 /* MatchTableCell.xib */; };
-		C10E81F726936C7400E2E0C8 /* MatchTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10E81F626936C7400E2E0C8 /* MatchTableCell.swift */; };
-		C10E81FA2694AF4C00E2E0C8 /* FieldTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10E81F82694AF4C00E2E0C8 /* FieldTableCell.swift */; };
-		C10E81FB2694AF4C00E2E0C8 /* FieldTableCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = C10E81F92694AF4C00E2E0C8 /* FieldTableCell.xib */; };
+		C10E820F2694BDCC00E2E0C8 /* MatchTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */; };
+		C10E82102694BDD600E2E0C8 /* MatchTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */; };
+		C11D47482694C83C00614EFD /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C10E820C2694BBDC00E2E0C8 /* Info.plist */; };
 		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
 		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* MatchesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */; };
@@ -174,19 +171,15 @@
 		B599D6681FAAF00D006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatchTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTrackerTests.swift; sourceTree = "<group>"; };
-		B599D6731FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatchTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTrackerUITests.swift; sourceTree = "<group>"; };
-		B599D67E1FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInterfaceController.swift; sourceTree = "<group>"; };
 		B5A8B5C81FB817F9005E7C2E /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutControlsInterfaceController.swift; sourceTree = "<group>"; };
 		B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WorkoutController.swift; sourceTree = "<group>"; };
 		B5F99B7E219A83760054A379 /* Mappable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mappable.swift; sourceTree = "<group>"; };
-		C10E81F326935CA500E2E0C8 /* MatchTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MatchTableCell.xib; sourceTree = "<group>"; };
-		C10E81F626936C7400E2E0C8 /* MatchTableCell.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MatchTableCell.swift; sourceTree = "<group>"; };
-		C10E81F82694AF4C00E2E0C8 /* FieldTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldTableCell.swift; sourceTree = "<group>"; };
-		C10E81F92694AF4C00E2E0C8 /* FieldTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = FieldTableCell.xib; sourceTree = "<group>"; };
+		C10E820A2694BBC400E2E0C8 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C10E820C2694BBDC00E2E0C8 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C42706281FCCA34A00A745A9 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
 		C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchesTableViewController.swift; sourceTree = "<group>"; };
@@ -324,8 +317,8 @@
 		B599D6701FAAF00E006EAABC /* MatchTracker Tests */ = {
 			isa = PBXGroup;
 			children = (
+				C10E820A2694BBC400E2E0C8 /* Info.plist */,
 				B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */,
-				B599D6731FAAF00E006EAABC /* Info.plist */,
 			);
 			path = "MatchTracker Tests";
 			sourceTree = "<group>";
@@ -333,8 +326,8 @@
 		B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */ = {
 			isa = PBXGroup;
 			children = (
+				C10E820C2694BBDC00E2E0C8 /* Info.plist */,
 				B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */,
-				B599D67E1FAAF00E006EAABC /* Info.plist */,
 			);
 			path = "MatchTracker UI Tests";
 			sourceTree = "<group>";
@@ -374,10 +367,6 @@
 			isa = PBXGroup;
 			children = (
 				B599D6601FAAF00D006EAABC /* Main.storyboard */,
-				C10E81F626936C7400E2E0C8 /* MatchTableCell.swift */,
-				C10E81F326935CA500E2E0C8 /* MatchTableCell.xib */,
-				C10E81F82694AF4C00E2E0C8 /* FieldTableCell.swift */,
-				C10E81F92694AF4C00E2E0C8 /* FieldTableCell.xib */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -616,8 +605,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C10E81FB2694AF4C00E2E0C8 /* FieldTableCell.xib in Resources */,
-				C10E81F526935CA500E2E0C8 /* MatchTableCell.xib in Resources */,
 				B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */,
 				B599D6641FAAF00D006EAABC /* Assets.xcassets in Resources */,
 				B599D6621FAAF00D006EAABC /* Main.storyboard in Resources */,
@@ -635,6 +622,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C11D47482694C83C00614EFD /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -722,8 +710,6 @@
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,
 				C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */,
 				B51189062195DFCB0067B25E /* Field.swift in Sources */,
-				C10E81FA2694AF4C00E2E0C8 /* FieldTableCell.swift in Sources */,
-				C10E81F726936C7400E2E0C8 /* MatchTableCell.swift in Sources */,
 				C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */,
 				B5F99B7F219A83760054A379 /* Mappable.swift in Sources */,
 				C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */,
@@ -734,7 +720,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B599D6721FAAF00E006EAABC /* MatchTrackerTests.swift in Sources */,
+				C10E820F2694BDCC00E2E0C8 /* MatchTrackerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -742,7 +728,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B599D67D1FAAF00E006EAABC /* MatchTrackerUITests.swift in Sources */,
+				C10E82102694BDD600E2E0C8 /* MatchTrackerUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -945,7 +931,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.5;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -1000,7 +986,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
