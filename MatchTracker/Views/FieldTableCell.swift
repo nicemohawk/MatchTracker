@@ -1,23 +1,18 @@
 //
-//  MatchTableCell.swift
+//  FieldTableCell.swift
 //  MatchTracker
 //
-//  Created by Eric May on 7/5/21.
+//  Created by Eric May on 7/6/21.
 //  Copyright © 2021 Nice Mohawk Limited. All rights reserved.
 //
 
 import UIKit
 
-class MatchTableCell: UITableViewCell {
-    
-    @IBOutlet weak var matchView: UIView!
-    @IBOutlet weak var matchDateLabel: UILabel!
-    @IBOutlet weak var fieldNameAndDateLabel: UILabel!
-    
-    
+class FieldTableCell: UITableViewCell {
+
     override func awakeFromNib() {
         super.awakeFromNib()
-
+        // Initialization code
     }
 
     override func setSelected(_ selected: Bool, animated: Bool) {

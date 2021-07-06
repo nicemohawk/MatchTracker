@@ -35,8 +35,10 @@
 		B5D65F4A2328AEB600DF7425 /* WorkoutControlsInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */; };
 		B5D65F4C2328AF3F00DF7425 /* WorkoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */; };
 		B5F99B7F219A83760054A379 /* Mappable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F99B7E219A83760054A379 /* Mappable.swift */; };
-		C10E81F426935CA500E2E0C8 /* MatchTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10E81F226935CA500E2E0C8 /* MatchTableCell.swift */; };
 		C10E81F526935CA500E2E0C8 /* MatchTableCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = C10E81F326935CA500E2E0C8 /* MatchTableCell.xib */; };
+		C10E81F726936C7400E2E0C8 /* MatchTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10E81F626936C7400E2E0C8 /* MatchTableCell.swift */; };
+		C10E81FA2694AF4C00E2E0C8 /* FieldTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10E81F82694AF4C00E2E0C8 /* FieldTableCell.swift */; };
+		C10E81FB2694AF4C00E2E0C8 /* FieldTableCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = C10E81F92694AF4C00E2E0C8 /* FieldTableCell.xib */; };
 		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
 		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* MatchesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */; };
@@ -181,8 +183,10 @@
 		B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutControlsInterfaceController.swift; sourceTree = "<group>"; };
 		B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WorkoutController.swift; sourceTree = "<group>"; };
 		B5F99B7E219A83760054A379 /* Mappable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mappable.swift; sourceTree = "<group>"; };
-		C10E81F226935CA500E2E0C8 /* MatchTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTableCell.swift; sourceTree = "<group>"; };
 		C10E81F326935CA500E2E0C8 /* MatchTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = MatchTableCell.xib; sourceTree = "<group>"; };
+		C10E81F626936C7400E2E0C8 /* MatchTableCell.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MatchTableCell.swift; sourceTree = "<group>"; };
+		C10E81F82694AF4C00E2E0C8 /* FieldTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldTableCell.swift; sourceTree = "<group>"; };
+		C10E81F92694AF4C00E2E0C8 /* FieldTableCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = FieldTableCell.xib; sourceTree = "<group>"; };
 		C42706281FCCA34A00A745A9 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
 		C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchesTableViewController.swift; sourceTree = "<group>"; };
@@ -370,8 +374,10 @@
 			isa = PBXGroup;
 			children = (
 				B599D6601FAAF00D006EAABC /* Main.storyboard */,
-				C10E81F226935CA500E2E0C8 /* MatchTableCell.swift */,
+				C10E81F626936C7400E2E0C8 /* MatchTableCell.swift */,
 				C10E81F326935CA500E2E0C8 /* MatchTableCell.xib */,
+				C10E81F82694AF4C00E2E0C8 /* FieldTableCell.swift */,
+				C10E81F92694AF4C00E2E0C8 /* FieldTableCell.xib */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -610,6 +616,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C10E81FB2694AF4C00E2E0C8 /* FieldTableCell.xib in Resources */,
 				C10E81F526935CA500E2E0C8 /* MatchTableCell.xib in Resources */,
 				B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */,
 				B599D6641FAAF00D006EAABC /* Assets.xcassets in Resources */,
@@ -715,7 +722,8 @@
 				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,
 				C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */,
 				B51189062195DFCB0067B25E /* Field.swift in Sources */,
-				C10E81F426935CA500E2E0C8 /* MatchTableCell.swift in Sources */,
+				C10E81FA2694AF4C00E2E0C8 /* FieldTableCell.swift in Sources */,
+				C10E81F726936C7400E2E0C8 /* MatchTableCell.swift in Sources */,
 				C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */,
 				B5F99B7F219A83760054A379 /* Mappable.swift in Sources */,
 				C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */,

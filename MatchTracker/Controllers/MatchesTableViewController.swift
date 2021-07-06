@@ -15,7 +15,7 @@ class MatchesTableViewController: UITableViewController {
     let healthStore = HKHealthStore()
     var isAuthorized = false
 
-    let routeCellIdentifier = "routeCellIdentifier"
+//    let routeCellIdentifier = "routeCellIdentifier"
 
     @IBOutlet var matchesTableView: UITableView!
     
@@ -26,9 +26,10 @@ class MatchesTableViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        tableView.register(UINib(nibName: "MatchTableCell", bundle: nil), forCellReuseIdentifier: "ReusableCell")
-
         requestHealthKitAccess()
+        tableView.dataSource = self
+        tableView.register(UINib(nibName: "MatchTableCell", bundle: nil), forCellReuseIdentifier: "ReusableMatchCell")
+
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -45,36 +46,40 @@ class MatchesTableViewController: UITableViewController {
     // MARK: - Table view data source
 
     override func numberOfSections(in tableView: UITableView) -> Int {
-        return 1
+        return 4
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return DataSource.default.workouts.count
-    }
+//    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+//        return DataSource.default.workouts.count
+//    }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: routeCellIdentifier, for: indexPath)
-
+        //let cell = tableView.dequeueReusableCell(withIdentifier: routeCellIdentifier, for: indexPath)
         // add basic route info to the cell
-        let workout = DataSource.default.workouts[indexPath.row]
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .short
-        dateFormatter.timeStyle = .short
-        cell.textLabel?.text = dateFormatter.string(from: workout.workout.startDate)
-        cell.detailTextLabel?.text = "\(workout.locations.count) locations"
+//        let workout = DataSource.default.workouts[indexPath.row]
+//        let dateFormatter = DateFormatter()
+//        dateFormatter.dateStyle = .short
+//        dateFormatter.timeStyle = .short
+//        cell.textLabel?.text = dateFormatter.string(from: workout.workout.startDate)
+//        cell.detailTextLabel?.text = "\(workout.locations.count) locations"
+        
+        let cell = tableView.dequeueReusableCell(withIdentifier: "ReusableMatchCell", for: indexPath) as! MatchTableCell
+        cell.matchDateLabel.text = "7/4"
+        cell.fieldNameAndDateLabel.text = "Lower.com Field"
+        
 
         return cell
     }
 
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 88.0
-    }
+//    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+//        return 88.0
+//    }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let workout = DataSource.default.workouts[indexPath.row]
-        let mapViewController = MapViewController(mappable: workout)
-        navigationController?.pushViewController(mapViewController, animated: true)
-    }
+//    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+//        let workout = DataSource.default.workouts[indexPath.row]
+//        let mapViewController = MapViewController(mappable: workout)
+//        navigationController?.pushViewController(mapViewController, animated: true)
+//    }
 
     /*
      // MARK: - Navigation
