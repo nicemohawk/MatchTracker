@@ -28,9 +28,9 @@
 		<true/>
 	</dict>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Reading workout data</string>
+	<string>MatchTrack will read your fitness data from your Apple Watch</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Creating workouts</string>
+	<string>MatchTrack needs to use this data to create workout sessions</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>We will read your location while performing a workout to create a workout route</string>
 	<key>NSLocationUsageDescription</key>

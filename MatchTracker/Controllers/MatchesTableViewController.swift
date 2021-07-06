@@ -62,12 +62,7 @@ class MatchesTableViewController: UITableViewController {
         dateFormatter.timeStyle = .short
         cell.textLabel?.text = dateFormatter.string(from: workout.workout.startDate)
         cell.detailTextLabel?.text = "\(workout.locations.count) locations"
-//
-//        let cell = tableView.dequeueReusableCell(withIdentifier: "ReusableMatchCell", for: indexPath) as! MatchTableCell
-//        cell.matchDateLabel.text = "7/4"
-//        cell.fieldNameAndDateLabel.text = "Lower.com Field"
-//
-//
+
         return cell
     }
 
