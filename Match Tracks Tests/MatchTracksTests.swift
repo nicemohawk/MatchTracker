@@ -9,7 +9,7 @@
 import XCTest
 @testable import MatchTracker
 
-class MatchTrackerTests: XCTestCase {
+class MatchTracksTests: XCTestCase {
     
     override func setUp() {
         super.setUp()

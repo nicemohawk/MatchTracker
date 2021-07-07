@@ -14,12 +14,12 @@
 		B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86C92165CFD10034810C /* Locksmith.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7B2145C3B80035914D /* Interface.storyboard */; };
 		B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7E2145C3BB0035914D /* Assets.xcassets */; };
-		B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B53B0F862145C3BC0035914D /* Match Tracks Extension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B53B0F852145C3BC0035914D /* Match Tracks Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B53B0F8B2145C3BC0035914D /* StartMatchInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */; };
 		B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */; };
 		B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8E2145C3BC0035914D /* NotificationController.swift */; };
 		B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F902145C3BC0035914D /* Assets.xcassets */; };
-		B53B0F962145C3BC0035914D /* MatchTracker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B53B0F792145C3B80035914D /* MatchTracker Watch App.app */; };
+		B53B0F962145C3BC0035914D /* Match Tracks Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B53B0F792145C3B80035914D /* Match Tracks Watch App.app */; };
 		B53B0FA42145C4110035914D /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B53B0FA32145C4110035914D /* HealthKit.framework */; };
 		B57FDAA6216422CB00EFBDB5 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */; };
 		B58B3EF7215BF43900F73281 /* Packages.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F341FBA16EF00B884AE /* Packages.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -33,8 +33,8 @@
 		B5D65F4A2328AEB600DF7425 /* WorkoutControlsInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */; };
 		B5D65F4C2328AF3F00DF7425 /* WorkoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */; };
 		B5F99B7F219A83760054A379 /* Mappable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F99B7E219A83760054A379 /* Mappable.swift */; };
-		C10E820F2694BDCC00E2E0C8 /* MatchTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */; };
-		C10E82102694BDD600E2E0C8 /* MatchTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */; };
+		C10E820F2694BDCC00E2E0C8 /* MatchTracksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* MatchTracksTests.swift */; };
+		C10E82102694BDD600E2E0C8 /* MatchTracksUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* MatchTracksUITests.swift */; };
 		C11D475E2695382400614EFD /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C11D475D2695382400614EFD /* Info.plist */; };
 		C11D47602695383F00614EFD /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C11D475F2695383F00614EFD /* Info.plist */; };
 		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
@@ -110,7 +110,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */,
+				B53B0F862145C3BC0035914D /* Match Tracks Extension.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -121,7 +121,7 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				B53B0F962145C3BC0035914D /* MatchTracker Watch App.app in Embed Watch Content */,
+				B53B0F962145C3BC0035914D /* Match Tracks Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -148,32 +148,32 @@
 		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B52D86BC2165BF0E0034810C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
-		B53B0F792145C3B80035914D /* MatchTracker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "MatchTracker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B53B0F792145C3B80035914D /* Match Tracks Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Match Tracks Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B53B0F7C2145C3B80035914D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Interface.storyboard; sourceTree = "<group>"; };
 		B53B0F7E2145C3BB0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B53B0F802145C3BB0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Match Tracker Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B53B0F852145C3BC0035914D /* Match Tracks Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Match Tracks Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartMatchInterfaceController.swift; sourceTree = "<group>"; };
 		B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDelegate.swift; sourceTree = "<group>"; };
 		B53B0F8E2145C3BC0035914D /* NotificationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationController.swift; sourceTree = "<group>"; };
 		B53B0F902145C3BC0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B53B0F922145C3BC0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B53B0F932145C3BC0035914D /* PushNotificationPayload.apns */ = {isa = PBXFileReference; lastKnownFileType = text; path = PushNotificationPayload.apns; sourceTree = "<group>"; };
-		B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Match Tracker Extension.entitlements"; sourceTree = "<group>"; };
+		B53B0FA22145C4110035914D /* Match Tracks Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Match Tracks Extension.entitlements"; sourceTree = "<group>"; };
 		B53B0FA32145C4110035914D /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS4.3.sdk/System/Library/Frameworks/HealthKit.framework; sourceTree = DEVELOPER_DIR; };
 		B55AE22C2175A42E004E14CF /* update_build_number.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = update_build_number.sh; sourceTree = "<group>"; };
-		B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatchTracker.entitlements; sourceTree = "<group>"; };
+		B57FDAA4216422CB00EFBDB5 /* MatchTracks.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatchTracks.entitlements; sourceTree = "<group>"; };
 		B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
-		B599D6591FAAF00D006EAABC /* MatchTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatchTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B599D6591FAAF00D006EAABC /* Match Tracks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Match Tracks.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B599D65C1FAAF00D006EAABC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		B599D6611FAAF00D006EAABC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		B599D6631FAAF00D006EAABC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B599D6661FAAF00D006EAABC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		B599D6681FAAF00D006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatchTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTrackerTests.swift; sourceTree = "<group>"; };
-		B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatchTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTrackerUITests.swift; sourceTree = "<group>"; };
+		B599D66D1FAAF00E006EAABC /* Match TracksTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Match TracksTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B599D6711FAAF00E006EAABC /* MatchTracksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTracksTests.swift; sourceTree = "<group>"; };
+		B599D6781FAAF00E006EAABC /* Match TracksUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Match TracksUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B599D67C1FAAF00E006EAABC /* MatchTracksUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTracksUITests.swift; sourceTree = "<group>"; };
 		B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInterfaceController.swift; sourceTree = "<group>"; };
 		B5A8B5C81FB817F9005E7C2E /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutControlsInterfaceController.swift; sourceTree = "<group>"; };
@@ -256,7 +256,7 @@
 		B53B0F892145C3BC0035914D /* Watch Extension */ = {
 			isa = PBXGroup;
 			children = (
-				B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */,
+				B53B0FA22145C4110035914D /* Match Tracks Extension.entitlements */,
 				B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */,
 				B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */,
 				B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */,
@@ -275,13 +275,13 @@
 			isa = PBXGroup;
 			children = (
 				B52D86B8216558430034810C /* README.md */,
-				B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */,
+				B57FDAA4216422CB00EFBDB5 /* MatchTracks.entitlements */,
 				B55AE22C2175A42E004E14CF /* update_build_number.sh */,
-				B599D65B1FAAF00D006EAABC /* MatchTracker */,
+				B599D65B1FAAF00D006EAABC /* Match Tracks */,
 				B53B0F7A2145C3B80035914D /* Watch App */,
 				B53B0F892145C3BC0035914D /* Watch Extension */,
-				B599D6701FAAF00E006EAABC /* MatchTracker Tests */,
-				B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */,
+				B599D6701FAAF00E006EAABC /* Match Tracks Tests */,
+				B599D67B1FAAF00E006EAABC /* Match Tracks UI Tests */,
 				B599D65A1FAAF00D006EAABC /* Products */,
 				B5357F2A1FBA16C000B884AE /* Packages */,
 				B5A707B51FAAF23400622F5E /* Frameworks */,
@@ -291,16 +291,16 @@
 		B599D65A1FAAF00D006EAABC /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				B599D6591FAAF00D006EAABC /* MatchTracker.app */,
-				B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */,
-				B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */,
-				B53B0F792145C3B80035914D /* MatchTracker Watch App.app */,
-				B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */,
+				B599D6591FAAF00D006EAABC /* Match Tracks.app */,
+				B599D66D1FAAF00E006EAABC /* Match TracksTests.xctest */,
+				B599D6781FAAF00E006EAABC /* Match TracksUITests.xctest */,
+				B53B0F792145C3B80035914D /* Match Tracks Watch App.app */,
+				B53B0F852145C3BC0035914D /* Match Tracks Extension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		B599D65B1FAAF00D006EAABC /* MatchTracker */ = {
+		B599D65B1FAAF00D006EAABC /* Match Tracks */ = {
 			isa = PBXGroup;
 			children = (
 				C10E81F126935C6900E2E0C8 /* Views */,
@@ -311,25 +311,25 @@
 				B599D6631FAAF00D006EAABC /* Assets.xcassets */,
 				B599D6681FAAF00D006EAABC /* Info.plist */,
 			);
-			path = MatchTracker;
+			path = "Match Tracks";
 			sourceTree = "<group>";
 		};
-		B599D6701FAAF00E006EAABC /* MatchTracker Tests */ = {
+		B599D6701FAAF00E006EAABC /* Match Tracks Tests */ = {
 			isa = PBXGroup;
 			children = (
 				C11D475D2695382400614EFD /* Info.plist */,
-				B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */,
+				B599D6711FAAF00E006EAABC /* MatchTracksTests.swift */,
 			);
-			path = "MatchTracker Tests";
+			path = "Match Tracks Tests";
 			sourceTree = "<group>";
 		};
-		B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */ = {
+		B599D67B1FAAF00E006EAABC /* Match Tracks UI Tests */ = {
 			isa = PBXGroup;
 			children = (
 				C11D475F2695383F00614EFD /* Info.plist */,
-				B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */,
+				B599D67C1FAAF00E006EAABC /* MatchTracksUITests.swift */,
 			);
-			path = "MatchTracker UI Tests";
+			path = "Match Tracks UI Tests";
 			sourceTree = "<group>";
 		};
 		B5A707B51FAAF23400622F5E /* Frameworks */ = {
@@ -375,9 +375,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B53B0F782145C3B80035914D /* MatchTracker Watch App */ = {
+		B53B0F782145C3B80035914D /* Match Tracks Watch App */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */;
+			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracks Watch App" */;
 			buildPhases = (
 				B53B0F772145C3B80035914D /* Resources */,
 				B53B0F9F2145C3BC0035914D /* Embed App Extensions */,
@@ -388,14 +388,14 @@
 			dependencies = (
 				B53B0F882145C3BC0035914D /* PBXTargetDependency */,
 			);
-			name = "MatchTracker Watch App";
+			name = "Match Tracks Watch App";
 			productName = "Match Tracker";
-			productReference = B53B0F792145C3B80035914D /* MatchTracker Watch App.app */;
+			productReference = B53B0F792145C3B80035914D /* Match Tracks Watch App.app */;
 			productType = "com.apple.product-type.application.watchapp2";
 		};
-		B53B0F842145C3BC0035914D /* Match Tracker Extension */ = {
+		B53B0F842145C3BC0035914D /* Match Tracks Extension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker Extension" */;
+			buildConfigurationList = B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracks Extension" */;
 			buildPhases = (
 				B53B0F812145C3BC0035914D /* Sources */,
 				B53B0F822145C3BC0035914D /* Frameworks */,
@@ -406,14 +406,14 @@
 			);
 			dependencies = (
 			);
-			name = "Match Tracker Extension";
+			name = "Match Tracks Extension";
 			productName = "Match Tracker Extension";
-			productReference = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */;
+			productReference = B53B0F852145C3BC0035914D /* Match Tracks Extension.appex */;
 			productType = "com.apple.product-type.watchkit2-extension";
 		};
-		B599D6581FAAF00D006EAABC /* MatchTracker */ = {
+		B599D6581FAAF00D006EAABC /* Match Tracks */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTracker" */;
+			buildConfigurationList = B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "Match Tracks" */;
 			buildPhases = (
 				B599D6551FAAF00D006EAABC /* Sources */,
 				B599D6561FAAF00D006EAABC /* Frameworks */,
@@ -428,14 +428,14 @@
 				B5AB2B152152148E003CC1AC /* PBXTargetDependency */,
 				B53B0F952145C3BC0035914D /* PBXTargetDependency */,
 			);
-			name = MatchTracker;
+			name = "Match Tracks";
 			productName = MatchTracker;
-			productReference = B599D6591FAAF00D006EAABC /* MatchTracker.app */;
+			productReference = B599D6591FAAF00D006EAABC /* Match Tracks.app */;
 			productType = "com.apple.product-type.application";
 		};
-		B599D66C1FAAF00E006EAABC /* MatchTrackerTests */ = {
+		B599D66C1FAAF00E006EAABC /* Match TracksTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B599D6841FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerTests" */;
+			buildConfigurationList = B599D6841FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "Match TracksTests" */;
 			buildPhases = (
 				B599D6691FAAF00E006EAABC /* Sources */,
 				B599D66A1FAAF00E006EAABC /* Frameworks */,
@@ -446,14 +446,14 @@
 			dependencies = (
 				B599D66F1FAAF00E006EAABC /* PBXTargetDependency */,
 			);
-			name = MatchTrackerTests;
+			name = "Match TracksTests";
 			productName = MatchTrackerTests;
-			productReference = B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */;
+			productReference = B599D66D1FAAF00E006EAABC /* Match TracksTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		B599D6771FAAF00E006EAABC /* MatchTrackerUITests */ = {
+		B599D6771FAAF00E006EAABC /* Match TracksUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B599D6871FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerUITests" */;
+			buildConfigurationList = B599D6871FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "Match TracksUITests" */;
 			buildPhases = (
 				B599D6741FAAF00E006EAABC /* Sources */,
 				B599D6751FAAF00E006EAABC /* Frameworks */,
@@ -464,9 +464,9 @@
 			dependencies = (
 				B599D67A1FAAF00E006EAABC /* PBXTargetDependency */,
 			);
-			name = MatchTrackerUITests;
+			name = "Match TracksUITests";
 			productName = MatchTrackerUITests;
-			productReference = B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */;
+			productReference = B599D6781FAAF00E006EAABC /* Match TracksUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -499,7 +499,6 @@
 					B599D6581FAAF00D006EAABC = {
 						CreatedOnToolsVersion = 9.1;
 						LastSwiftMigration = 1250;
-						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
 							com.apple.ApplicationGroups.iOS = {
 								enabled = 0;
@@ -532,7 +531,7 @@
 					};
 				};
 			};
-			buildConfigurationList = B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "MatchTracker" */;
+			buildConfigurationList = B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "Match Tracks" */;
 			compatibilityVersion = "Xcode 10.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -551,11 +550,11 @@
 			);
 			projectRoot = "";
 			targets = (
-				B599D6581FAAF00D006EAABC /* MatchTracker */,
-				B599D66C1FAAF00E006EAABC /* MatchTrackerTests */,
-				B599D6771FAAF00E006EAABC /* MatchTrackerUITests */,
-				B53B0F782145C3B80035914D /* MatchTracker Watch App */,
-				B53B0F842145C3BC0035914D /* Match Tracker Extension */,
+				B599D6581FAAF00D006EAABC /* Match Tracks */,
+				B599D66C1FAAF00E006EAABC /* Match TracksTests */,
+				B599D6771FAAF00E006EAABC /* Match TracksUITests */,
+				B53B0F782145C3B80035914D /* Match Tracks Watch App */,
+				B53B0F842145C3BC0035914D /* Match Tracks Extension */,
 			);
 		};
 /* End PBXProject section */
@@ -722,7 +721,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C10E820F2694BDCC00E2E0C8 /* MatchTrackerTests.swift in Sources */,
+				C10E820F2694BDCC00E2E0C8 /* MatchTracksTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -730,7 +729,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C10E82102694BDD600E2E0C8 /* MatchTrackerUITests.swift in Sources */,
+				C10E82102694BDD600E2E0C8 /* MatchTracksUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -739,22 +738,22 @@
 /* Begin PBXTargetDependency section */
 		B53B0F882145C3BC0035914D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B53B0F842145C3BC0035914D /* Match Tracker Extension */;
+			target = B53B0F842145C3BC0035914D /* Match Tracks Extension */;
 			targetProxy = B53B0F872145C3BC0035914D /* PBXContainerItemProxy */;
 		};
 		B53B0F952145C3BC0035914D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B53B0F782145C3B80035914D /* MatchTracker Watch App */;
+			target = B53B0F782145C3B80035914D /* Match Tracks Watch App */;
 			targetProxy = B53B0F942145C3BC0035914D /* PBXContainerItemProxy */;
 		};
 		B599D66F1FAAF00E006EAABC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B599D6581FAAF00D006EAABC /* MatchTracker */;
+			target = B599D6581FAAF00D006EAABC /* Match Tracks */;
 			targetProxy = B599D66E1FAAF00E006EAABC /* PBXContainerItemProxy */;
 		};
 		B599D67A1FAAF00E006EAABC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B599D6581FAAF00D006EAABC /* MatchTracker */;
+			target = B599D6581FAAF00D006EAABC /* Match Tracks */;
 			targetProxy = B599D6791FAAF00E006EAABC /* PBXContainerItemProxy */;
 		};
 		B5AB2B152152148E003CC1AC /* PBXTargetDependency */ = {
@@ -801,9 +800,9 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				IBSC_MODULE = Match_Tracker_Extension;
+				IBSC_MODULE = Match_Tracks_Extension;
 				INFOPLIST_FILE = "$(SRCROOT)/Watch App/Info.plist";
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracks.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -822,9 +821,9 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				IBSC_MODULE = Match_Tracker_Extension;
+				IBSC_MODULE = Match_Tracks_Extension;
 				INFOPLIST_FILE = "$(SRCROOT)/Watch App/Info.plist";
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracks.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -839,7 +838,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_ENTITLEMENTS = "Watch Extension/Match Tracker Extension.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Watch Extension/Match Tracks Extension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = "$(SRCROOT)/Watch Extension/Info.plist";
@@ -848,7 +847,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp.watchkitextension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracks.watchkitapp.watchkitextension;
 				PRODUCT_NAME = "${TARGET_NAME}";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -863,7 +862,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_ENTITLEMENTS = "Watch Extension/Match Tracker Extension.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Watch Extension/Match Tracks Extension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
 				INFOPLIST_FILE = "$(SRCROOT)/Watch Extension/Info.plist";
@@ -872,7 +871,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp.watchkitextension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracks.watchkitapp.watchkitextension;
 				PRODUCT_NAME = "${TARGET_NAME}";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -939,7 +938,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 3.0;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
@@ -993,7 +992,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 3.0;
+				SWIFT_VERSION = 5.0;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -1003,17 +1002,17 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MatchTracker.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = MatchTracks.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "$(SRCROOT)/MatchTracker/Info.plist";
+				INFOPLIST_FILE = "$(SRCROOT)/Match Tracks/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 14.5;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracks;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -1026,17 +1025,17 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MatchTracker.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = MatchTracks.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "$(SRCROOT)/MatchTracker/Info.plist";
+				INFOPLIST_FILE = "$(SRCROOT)/Match Tracks/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 14.5;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracks;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -1051,7 +1050,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "MatchTracker Tests/Info.plist";
+				INFOPLIST_FILE = "Match Tracks Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1061,7 +1060,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MatchTracker.app/MatchTracker";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Match Tracks.app/Match Tracks";
 			};
 			name = Debug;
 		};
@@ -1072,7 +1071,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "MatchTracker Tests/Info.plist";
+				INFOPLIST_FILE = "Match Tracks Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1082,7 +1081,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MatchTracker.app/MatchTracker";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Match Tracks.app/Match Tracks";
 			};
 			name = Release;
 		};
@@ -1092,7 +1091,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "MatchTracker UI Tests/Info.plist";
+				INFOPLIST_FILE = "Match Tracks UI Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1112,7 +1111,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "MatchTracker UI Tests/Info.plist";
+				INFOPLIST_FILE = "Match Tracks UI Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1129,7 +1128,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker Extension" */ = {
+		B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracks Extension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B53B0F992145C3BC0035914D /* Debug */,
@@ -1138,7 +1137,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */ = {
+		B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracks Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B53B0F972145C3BC0035914D /* Debug */,
@@ -1147,7 +1146,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "MatchTracker" */ = {
+		B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "Match Tracks" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B599D67F1FAAF00E006EAABC /* Debug */,
@@ -1156,7 +1155,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTracker" */ = {
+		B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "Match Tracks" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B599D6821FAAF00E006EAABC /* Debug */,
@@ -1165,7 +1164,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6841FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerTests" */ = {
+		B599D6841FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "Match TracksTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B599D6851FAAF00E006EAABC /* Debug */,
@@ -1174,7 +1173,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6871FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerUITests" */ = {
+		B599D6871FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "Match TracksUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B599D6881FAAF00E006EAABC /* Debug */,

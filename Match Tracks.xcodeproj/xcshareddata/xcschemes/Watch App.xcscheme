@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "1250"
-   version = "2.0">
+   version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES">
@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "B53B0F782145C3B80035914D"
-               BuildableName = "MatchTracker Watch App.app"
-               BlueprintName = "MatchTracker Watch App"
-               ReferencedContainer = "container:MatchTracker.xcodeproj">
+               BuildableName = "Match Tracks Watch App.app"
+               BlueprintName = "Match Tracks Watch App"
+               ReferencedContainer = "container:Match Tracks.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,9 +29,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
-               BuildableName = "MatchTracker.app"
-               BlueprintName = "MatchTracker"
-               ReferencedContainer = "container:MatchTracker.xcodeproj">
+               BuildableName = "Match Tracks.app"
+               BlueprintName = "Match Tracks"
+               ReferencedContainer = "container:Match Tracks.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "B53B0F782145C3B80035914D"
-            BuildableName = "MatchTracker Watch App.app"
-            BlueprintName = "MatchTracker Watch App"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
+            BuildableName = "Match Tracks Watch App.app"
+            BlueprintName = "Match Tracks Watch App"
+            ReferencedContainer = "container:Match Tracks.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -63,18 +63,21 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES"
-      launchAutomaticallySubstyle = "8"
       notificationPayloadFile = "Watch Extension/PushNotificationPayload.apns">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "B53B0F782145C3B80035914D"
-            BuildableName = "MatchTracker Watch App.app"
-            BlueprintName = "MatchTracker Watch App"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
+            BuildableName = "Match Tracks Watch App.app"
+            BlueprintName = "Match Tracks Watch App"
+            ReferencedContainer = "container:Match Tracks.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <LocationScenarioReference
+         identifier = "com.apple.dt.IDEFoundation.CurrentLocationScenarioIdentifier"
+         referenceType = "1">
+      </LocationScenarioReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -82,16 +85,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES"
-      launchAutomaticallySubstyle = "8"
       notificationPayloadFile = "Watch Extension/PushNotificationPayload.apns">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "B53B0F782145C3B80035914D"
-            BuildableName = "MatchTracker Watch App.app"
-            BlueprintName = "MatchTracker Watch App"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
+            BuildableName = "Match Tracks Watch App.app"
+            BlueprintName = "Match Tracks Watch App"
+            ReferencedContainer = "container:Match Tracks.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

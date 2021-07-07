@@ -14,24 +14,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B53B0F782145C3B80035914D"
-               BuildableName = "MatchTracker Watch App.app"
-               BlueprintName = "MatchTracker Watch App"
-               ReferencedContainer = "container:MatchTracker.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
-               BuildableName = "MatchTracker.app"
-               BlueprintName = "MatchTracker"
-               ReferencedContainer = "container:MatchTracker.xcodeproj">
+               BuildableName = "Match Tracks.app"
+               BlueprintName = "Match Tracks"
+               ReferencedContainer = "container:Match Tracks.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -44,13 +30,33 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B53B0F782145C3B80035914D"
-            BuildableName = "MatchTracker Watch App.app"
-            BlueprintName = "MatchTracker Watch App"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
+            BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
+            BuildableName = "Match Tracks.app"
+            BlueprintName = "Match Tracks"
+            ReferencedContainer = "container:Match Tracks.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B599D66C1FAAF00E006EAABC"
+               BuildableName = "Match TracksTests.xctest"
+               BlueprintName = "Match TracksTests"
+               ReferencedContainer = "container:Match Tracks.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B599D6771FAAF00E006EAABC"
+               BuildableName = "Match TracksUITests.xctest"
+               BlueprintName = "Match TracksUITests"
+               ReferencedContainer = "container:Match Tracks.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -62,16 +68,15 @@
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES"
-      notificationPayloadFile = "Watch Extension/PushNotificationPayload.apns">
+      allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B53B0F782145C3B80035914D"
-            BuildableName = "MatchTracker Watch App.app"
-            BlueprintName = "MatchTracker Watch App"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
+            BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
+            BuildableName = "Match Tracks.app"
+            BlueprintName = "Match Tracks"
+            ReferencedContainer = "container:Match Tracks.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <LocationScenarioReference
@@ -84,16 +89,15 @@
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
-      debugDocumentVersioning = "YES"
-      notificationPayloadFile = "Watch Extension/PushNotificationPayload.apns">
+      debugDocumentVersioning = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B53B0F782145C3B80035914D"
-            BuildableName = "MatchTracker Watch App.app"
-            BlueprintName = "MatchTracker Watch App"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
+            BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
+            BuildableName = "Match Tracks.app"
+            BlueprintName = "Match Tracks"
+            ReferencedContainer = "container:Match Tracks.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

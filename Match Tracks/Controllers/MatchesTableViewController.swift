@@ -19,17 +19,13 @@ class MatchesTableViewController: UITableViewController {
 
     @IBOutlet var matchesTableView: UITableView!
     
-    
-    
-    
+
     // MARK: - UIView lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
         requestHealthKitAccess()
         tableView.dataSource = self
-        tableView.register(UINib(nibName: "MatchTableCell", bundle: nil), forCellReuseIdentifier: "ReusableMatchCell")
-
     }
 
     override func viewDidAppear(_ animated: Bool) {

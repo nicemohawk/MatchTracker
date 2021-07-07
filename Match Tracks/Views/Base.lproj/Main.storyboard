@@ -9,7 +9,7 @@
         <!--MatchesTableView-->
         <scene sceneID="UvS-aI-8bP">
             <objects>
-                <tableViewController title="MatchesTableView" id="mnZ-fR-1u1" customClass="MatchesTableViewController" customModule="MatchTracker" sceneMemberID="viewController">
+                <tableViewController title="MatchesTableView" id="mnZ-fR-1u1" customClass="MatchesTableViewController" customModule="Match_Tracks" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="LgW-va-KJ6">
                         <rect key="frame" x="0.0" y="0.0" width="390" height="844"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -98,7 +98,7 @@
         <!--FieldTableView-->
         <scene sceneID="vmS-Hw-Wna">
             <objects>
-                <tableViewController title="FieldTableView" id="jIy-Vc-uPD" customClass="FieldsTableViewController" customModule="MatchTracker" customModuleProvider="target" sceneMemberID="viewController">
+                <tableViewController title="FieldTableView" id="jIy-Vc-uPD" customClass="FieldsTableViewController" customModule="Match_Tracks" customModuleProvider="target" sceneMemberID="viewController">
                     <tableView key="view" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="-1" estimatedRowHeight="-1" sectionHeaderHeight="28" sectionFooterHeight="28" id="gfA-ih-V8r">
                         <rect key="frame" x="0.0" y="0.0" width="390" height="844"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
