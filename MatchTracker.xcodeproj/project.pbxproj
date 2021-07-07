@@ -35,7 +35,6 @@
 		B5F99B7F219A83760054A379 /* Mappable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F99B7E219A83760054A379 /* Mappable.swift */; };
 		C10E820F2694BDCC00E2E0C8 /* MatchTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */; };
 		C10E82102694BDD600E2E0C8 /* MatchTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */; };
-		C11D47482694C83C00614EFD /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C10E820C2694BBDC00E2E0C8 /* Info.plist */; };
 		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
 		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
 		C45DDE511FB27F44006322C7 /* MatchesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */; };
@@ -178,8 +177,6 @@
 		B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutControlsInterfaceController.swift; sourceTree = "<group>"; };
 		B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WorkoutController.swift; sourceTree = "<group>"; };
 		B5F99B7E219A83760054A379 /* Mappable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mappable.swift; sourceTree = "<group>"; };
-		C10E820A2694BBC400E2E0C8 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		C10E820C2694BBDC00E2E0C8 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C42706281FCCA34A00A745A9 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
 		C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchesTableViewController.swift; sourceTree = "<group>"; };
@@ -316,7 +313,6 @@
 		B599D6701FAAF00E006EAABC /* MatchTracker Tests */ = {
 			isa = PBXGroup;
 			children = (
-				C10E820A2694BBC400E2E0C8 /* Info.plist */,
 				B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */,
 			);
 			path = "MatchTracker Tests";
@@ -325,7 +321,6 @@
 		B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */ = {
 			isa = PBXGroup;
 			children = (
-				C10E820C2694BBDC00E2E0C8 /* Info.plist */,
 				B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */,
 			);
 			path = "MatchTracker UI Tests";
@@ -484,7 +479,7 @@
 					};
 					B53B0F842145C3BC0035914D = {
 						CreatedOnToolsVersion = 9.4.1;
-						LastSwiftMigration = 1000;
+						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
 							com.apple.BackgroundModes.watchos.extension = {
@@ -497,7 +492,7 @@
 					};
 					B599D6581FAAF00D006EAABC = {
 						CreatedOnToolsVersion = 9.1;
-						LastSwiftMigration = 1000;
+						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
 							com.apple.ApplicationGroups.iOS = {
@@ -519,13 +514,13 @@
 					};
 					B599D66C1FAAF00E006EAABC = {
 						CreatedOnToolsVersion = 9.1;
-						LastSwiftMigration = 1000;
+						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 						TestTargetID = B599D6581FAAF00D006EAABC;
 					};
 					B599D6771FAAF00E006EAABC = {
 						CreatedOnToolsVersion = 9.1;
-						LastSwiftMigration = 1000;
+						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 						TestTargetID = B599D6581FAAF00D006EAABC;
 					};
@@ -622,7 +617,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C11D47482694C83C00614EFD /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -850,7 +844,7 @@
 				PRODUCT_NAME = "${TARGET_NAME}";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 5.0;
 			};
@@ -874,7 +868,7 @@
 				PRODUCT_NAME = "${TARGET_NAME}";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 5.0;
 			};
@@ -1014,7 +1008,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
@@ -1037,7 +1031,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
@@ -1049,7 +1043,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker Tests/Info.plist";
+				INFOPLIST_FILE = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1057,7 +1051,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MatchTracker.app/MatchTracker";
 			};
@@ -1070,7 +1064,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker Tests/Info.plist";
+				INFOPLIST_FILE = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1078,7 +1072,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MatchTracker.app/MatchTracker";
 			};
@@ -1090,7 +1084,6 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker UI Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1098,7 +1091,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = MatchTracker;
 			};
@@ -1110,7 +1103,6 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker UI Tests/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1118,7 +1110,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = MatchTracker;
 			};

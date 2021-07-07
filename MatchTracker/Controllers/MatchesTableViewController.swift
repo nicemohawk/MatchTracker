@@ -75,6 +75,7 @@ class MatchesTableViewController: UITableViewController {
         let mapViewController = MapViewController(mappable: workout)
         navigationController?.pushViewController(mapViewController, animated: true)
     }
+    
 
     /*
      // MARK: - Navigation
