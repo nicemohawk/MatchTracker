@@ -3,6 +3,10 @@ import Foundation
 // MARK: - Track & events
 
 public struct TrackPoint: Codable, Hashable, Sendable {
+    /// GPS fixes worse than this horizontal accuracy (meters) are discarded before they reach
+    /// the route/track. Shared by the watch recorder, the field trainer, and field inference.
+    public static let maximumUsableHorizontalAccuracy = 50.0
+
     public var coordinate: Coordinate2D
     public var timestamp: Date
     public var speedMetersPerSecond: Double   // -1 if invalid
@@ -62,15 +66,44 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
 }
 
 public enum SubstitutionTracker {
-    /// Intervals the wearer was on the pitch. Match starts "on" unless events start with subIn.
+    /// Intervals the wearer was on the pitch. The wearer starts "on" unless the first sub event
+    /// is a subIn. Each subOut closes the current on-pitch interval; each subIn opens a new one.
+    /// A trailing on-pitch stretch (a subIn with no matching subOut) runs to matchEnd. Malformed
+    /// duplicates (subOut while already off, subIn while already on) are ignored.
     public static func playingIntervals(events: [MatchEvent], matchStart: Date, matchEnd: Date) -> [DateInterval] {
-        // STUB: whole match counts as on-pitch, ignoring subIn/subOut for now.
         guard matchEnd > matchStart else { return [] }
-        return [DateInterval(start: matchStart, end: matchEnd)]
+
+        let subEvents = events
+            .filter { ($0.kind == .subIn || $0.kind == .subOut) && $0.date >= matchStart && $0.date <= matchEnd }
+            .sorted { $0.date < $1.date }
+
+        // Start on the pitch unless the very first substitution is the wearer coming on.
+        var onPitch = !(subEvents.first?.kind == .subIn)
+        var currentStart = matchStart
+        var intervals: [DateInterval] = []
+
+        for event in subEvents {
+            switch event.kind {
+            case .subOut where onPitch:
+                if event.date > currentStart {
+                    intervals.append(DateInterval(start: currentStart, end: event.date))
+                }
+                onPitch = false
+            case .subIn where !onPitch:
+                currentStart = event.date
+                onPitch = true
+            default:
+                continue // duplicate / malformed event, ignore
+            }
+        }
+
+        if onPitch && matchEnd > currentStart {
+            intervals.append(DateInterval(start: currentStart, end: matchEnd))
+        }
+        return intervals
     }
 
     public static func timeOnPitch(events: [MatchEvent], matchStart: Date, matchEnd: Date) -> TimeInterval {
-        // STUB: sum of playing intervals.
         playingIntervals(events: events, matchStart: matchStart, matchEnd: matchEnd)
             .reduce(0) { $0 + $1.duration }
     }

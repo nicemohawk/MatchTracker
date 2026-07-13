@@ -13,7 +13,7 @@ MatchTrackerKit/                # local Swift package: value types + analytics +
   Tests/MatchTrackerKitTests/
 iOS App/                        # SwiftUI iOS app target "MatchTracker"
 Watch App/                      # SwiftUI watchOS app target "MatchTracker Watch App" (embedded)
-docs/
+docs/                            # ARCHITECTURE.md, BACKEND_UPGRADE_PROMPT.md, ROADMAP.md
 ```
 
 - iOS bundle id: `com.nicemohawk.MatchTracker` (iOS 17+). Watch: `com.nicemohawk.MatchTracker.watchkitapp` (watchOS 10+).

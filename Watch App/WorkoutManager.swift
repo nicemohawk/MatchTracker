@@ -1,0 +1,491 @@
+//
+//  WorkoutManager.swift
+//  MatchTracker
+//
+
+import Foundation
+import Observation
+import HealthKit
+import CoreLocation
+import WatchKit
+import MatchTrackerKit
+
+/// High-level screen the watch app is showing. Drives root navigation.
+enum MatchPhase: Equatable {
+    case idle       // start screen
+    case countdown  // 3-2-1 before the match
+    case active     // live session (Controls / Metrics / Events tabs)
+    case summary    // post-match summary
+}
+
+/// The outcome of ending a match, letting the UI distinguish a real finish (show the summary)
+/// from a too-short session that was discarded without saving (return straight to the start).
+enum MatchOutcome {
+    case finished(workout: HKWorkout?, record: MatchRecord)
+    case discardedTooShort
+}
+
+/// Owns the HealthKit workout session, live builder, route builder and location manager for a
+/// single match, exactly like the legacy `WorkoutController` — modernized to SwiftUI/@Observable.
+///
+/// Publishes live metrics, the running event log and sub state; persists the in-progress
+/// `MatchRecord` to the app group after every event for crash safety; and supports recovery of an
+/// interrupted session on next launch.
+@Observable
+final class WorkoutManager: NSObject {
+    static let shared = WorkoutManager()
+
+    // MARK: Navigation / lifecycle state
+
+    var phase: MatchPhase = .idle
+    var sessionState: HKWorkoutSessionState = .notStarted
+    var isAuthorized = false
+
+    /// Field the start screen matched via a one-shot location lookup (shown before kickoff).
+    var detectedField: FieldModel?
+
+    // MARK: Live metrics (updated on the main queue)
+
+    var heartRate: Double = 0
+    var activeCalories: Double = 0          // kcal
+    var distanceMeters: Double = 0
+    var currentSpeed: Double = 0            // m/s, from recent GPS samples
+    var elapsedAtPause: TimeInterval = 0    // snapshot for summary
+
+    // MARK: Match content
+
+    var events: [MatchEvent] = []
+    var onPitch = true
+    private(set) var track: [TrackPoint] = []
+
+    // MARK: Summary results (populated by endMatch)
+
+    var finishedWorkout: HKWorkout?
+    var finishedRecord: MatchRecord?
+    var summaryAverageHeartRate: Double?
+    var proposedField: FieldModel?
+
+    // MARK: Match identity
+
+    @ObservationIgnored private var matchID = UUID()
+    @ObservationIgnored private var matchStartDate = Date()
+    @ObservationIgnored private var fieldID: UUID?
+
+    // MARK: HealthKit / location plumbing
+
+    @ObservationIgnored private let healthStore = HKHealthStore()
+    @ObservationIgnored private var session: HKWorkoutSession?
+    @ObservationIgnored private var builder: HKLiveWorkoutBuilder?
+    @ObservationIgnored private var routeBuilder: HKWorkoutRouteBuilder?
+    @ObservationIgnored private let locationManager = CLLocationManager()
+    @ObservationIgnored private var recentLocations: [CLLocation] = []
+
+    @ObservationIgnored private lazy var configuration: HKWorkoutConfiguration = {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .soccer
+        configuration.locationType = .outdoor
+        return configuration
+    }()
+
+    private override init() {
+        super.init()
+        locationManager.delegate = self
+    }
+
+    // MARK: - Derived values
+
+    /// Running score as (us, them). A goal the wearer scored also counts for us.
+    var score: (us: Int, them: Int) {
+        var us = 0
+        var them = 0
+        for event in events {
+            switch event.kind {
+            case .goalForUs, .goalMine: us += 1
+            case .goalAgainstUs: them += 1
+            default: break
+            }
+        }
+        return (us, them)
+    }
+
+    /// Count of the "notable" events surfaced in the Events tab.
+    var loggedEventCount: Int {
+        events.filter {
+            switch $0.kind {
+            case .flag, .goalForUs, .goalAgainstUs, .goalMine, .assist: return true
+            default: return false
+            }
+        }.count
+    }
+
+    /// Live elapsed time at a given instant, driven by the builder so pauses are respected.
+    func elapsedTime(at date: Date) -> TimeInterval {
+        guard let builder else { return elapsedAtPause }
+        return builder.elapsedTime(at: date)
+    }
+
+    // MARK: - Authorization
+
+    func requestAuthorization() async {
+        let typesToShare: Set<HKSampleType> = [
+            HKQuantityType.workoutType(),
+            HKSeriesType.workoutRoute(),
+            HKQuantityType(.activeEnergyBurned),
+            HKQuantityType(.distanceWalkingRunning),
+            HKQuantityType(.heartRate)
+        ]
+        let typesToRead: Set<HKObjectType> = [
+            HKQuantityType(.heartRate),
+            HKQuantityType(.activeEnergyBurned),
+            HKQuantityType(.distanceWalkingRunning),
+            HKObjectType.activitySummaryType()
+        ]
+        do {
+            try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
+            isAuthorized = true
+        } catch {
+            isAuthorized = false
+        }
+        requestLocationAuthorization()
+    }
+
+    private func requestLocationAuthorization() {
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        if locationManager.authorizationStatus == .notDetermined {
+            locationManager.requestAlwaysAuthorization()
+        }
+    }
+
+    // MARK: - Match lifecycle
+
+    /// Configure and start the workout session for a match on an optional detected field.
+    func startMatch(field: FieldModel?) async {
+        resetForNewMatch(field: field)
+
+        do {
+            let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            session.delegate = self
+            builder.delegate = self
+
+            self.session = session
+            self.builder = builder
+            self.routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+
+            let start = Date()
+            matchStartDate = start
+            session.startActivity(with: start)
+            try await builder.beginCollection(at: start)
+
+            startLocationUpdates()
+            log(.matchStart, haptic: false)
+            phase = .active
+        } catch {
+            // If we can't start, fall back to the start screen.
+            phase = .idle
+        }
+    }
+
+    func pause() {
+        session?.pause()
+    }
+
+    func resume() {
+        session?.resume()
+    }
+
+    /// Toggle the wearer's on-pitch state, logging a sub event with a strong haptic.
+    func toggleSub() {
+        onPitch.toggle()
+        log(onPitch ? .subIn : .subOut, haptic: false)
+        WKInterfaceDevice.current().play(.notification)
+    }
+
+    /// Append an event, give feedback and persist the crash-safe record.
+    func log(_ kind: MatchEventKind, note: String? = nil, haptic: Bool = true) {
+        let event = MatchEvent(kind: kind, date: Date(), note: note)
+        events.append(event)
+        if haptic {
+            WKInterfaceDevice.current().play(.success)
+        }
+        persistInProgress()
+    }
+
+    /// A match shorter than this (builder elapsed time) is treated as an accidental start and
+    /// discarded rather than saved.
+    private let minimumMatchDuration: TimeInterval = 60
+
+    /// End the match: stop location, finish the builder + route, persist and hand back results.
+    /// Sessions shorter than `minimumMatchDuration` are discarded without saving or transferring.
+    @discardableResult
+    func endMatch() async -> MatchOutcome {
+        let end = Date()
+        stopLocationUpdates()
+
+        // Discard an accidental / too-short session: no matchEnd event, no HealthKit save, no
+        // record persistence, no file transfer, no field learning. Return to the start screen.
+        let elapsed = builder?.elapsedTime(at: end) ?? elapsedAtPause
+        if elapsed < minimumMatchDuration {
+            session?.end()
+            builder?.discardWorkout()
+            AppGroupStorage.clearInProgress()
+            reset()
+            return .discardedTooShort
+        }
+
+        log(.matchEnd, haptic: false)
+
+        // Capture the workout's average heart rate before finishing.
+        if let statistics = builder?.statistics(for: HKQuantityType(.heartRate)) {
+            let unit = HKUnit.count().unitDivided(by: .minute())
+            summaryAverageHeartRate = statistics.averageQuantity()?.doubleValue(for: unit)
+        }
+        elapsedAtPause = builder?.elapsedTime(at: end) ?? elapsedAtPause
+
+        session?.end()
+
+        var workout: HKWorkout?
+        do {
+            try await builder?.endCollection(at: end)
+            workout = try await builder?.finishWorkout()
+            if let workout, let routeBuilder {
+                _ = try? await routeBuilder.finishRoute(with: workout, metadata: nil)
+            }
+        } catch {
+            workout = nil
+        }
+
+        let recordID = workout?.uuid ?? matchID
+        let record = MatchRecord(
+            id: recordID,
+            startDate: matchStartDate,
+            endDate: end,
+            fieldID: fieldID,
+            events: events,
+            teamCode: AppGroupStorage.teamCode
+        )
+
+        finishedWorkout = workout
+        finishedRecord = record
+        AppGroupStorage.persistFinished(record)
+        AppGroupStorage.clearInProgress()
+
+        // Post-match field learning: refine a known field or propose a newly inferred one.
+        switch AppGroupStorage.fieldStore.recordObservation(track: track) {
+        case .proposed(let field):
+            proposedField = field
+        case .matched, .none:
+            proposedField = nil
+        }
+
+        phase = .summary
+        return .finished(workout: workout, record: record)
+    }
+
+    /// Return to the start screen, clearing the finished match.
+    func reset() {
+        finishedWorkout = nil
+        finishedRecord = nil
+        proposedField = nil
+        summaryAverageHeartRate = nil
+        events = []
+        track = []
+        heartRate = 0
+        activeCalories = 0
+        distanceMeters = 0
+        currentSpeed = 0
+        elapsedAtPause = 0
+        onPitch = true
+        session = nil
+        builder = nil
+        routeBuilder = nil
+        sessionState = .notStarted
+        phase = .idle
+    }
+
+    private func resetForNewMatch(field: FieldModel?) {
+        matchID = UUID()
+        fieldID = field?.id
+        events = []
+        track = []
+        recentLocations = []
+        heartRate = 0
+        activeCalories = 0
+        distanceMeters = 0
+        currentSpeed = 0
+        elapsedAtPause = 0
+        onPitch = true
+        finishedWorkout = nil
+        finishedRecord = nil
+        proposedField = nil
+        summaryAverageHeartRate = nil
+    }
+
+    private func persistInProgress() {
+        let record = MatchRecord(
+            id: matchID,
+            startDate: matchStartDate,
+            endDate: nil,
+            fieldID: fieldID,
+            events: events,
+            teamCode: AppGroupStorage.teamCode
+        )
+        AppGroupStorage.persistInProgress(record)
+    }
+
+    // MARK: - Location
+
+    private func startLocationUpdates() {
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.startUpdatingLocation()
+    }
+
+    private func stopLocationUpdates() {
+        locationManager.stopUpdatingLocation()
+    }
+
+    private func recomputeCurrentSpeed() {
+        let usable = recentLocations.suffix(5).filter { $0.speed >= 0 }
+        if usable.isEmpty {
+            currentSpeed = 0
+        } else {
+            currentSpeed = usable.reduce(0) { $0 + $1.speed } / Double(usable.count)
+        }
+    }
+
+    // MARK: - Session recovery
+
+    /// Called on launch to reattach to a session that survived the app being suspended/killed.
+    func recoverActiveWorkoutSession() async {
+        guard session == nil else { return }
+        let recovered: HKWorkoutSession?
+        do {
+            recovered = try await healthStore.recoverActiveWorkoutSession()
+        } catch {
+            recovered = nil
+        }
+        guard let recovered else { return }
+        handleActiveWorkoutRecovery(session: recovered)
+    }
+
+    /// Reattach delegates/metrics to a recovered session and restore the in-progress record.
+    func handleActiveWorkoutRecovery(session recovered: HKWorkoutSession) {
+        let builder = recovered.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        recovered.delegate = self
+        builder.delegate = self
+
+        session = recovered
+        self.builder = builder
+        routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+        sessionState = recovered.state
+
+        if let record = AppGroupStorage.loadInProgress() {
+            matchID = record.id
+            matchStartDate = record.startDate
+            fieldID = record.fieldID
+            events = record.events
+            // Restore on-pitch state from the last substitution event (a subIn or subOut),
+            // ignoring any later non-sub events that would otherwise mask it.
+            let lastSub = events.last { $0.kind == .subIn || $0.kind == .subOut }
+            onPitch = lastSub?.kind != .subOut
+        }
+
+        startLocationUpdates()
+        phase = .active
+    }
+}
+
+// MARK: - HKWorkoutSessionDelegate
+
+extension WorkoutManager: HKWorkoutSessionDelegate {
+    func workoutSession(_ workoutSession: HKWorkoutSession,
+                        didChangeTo toState: HKWorkoutSessionState,
+                        from fromState: HKWorkoutSessionState,
+                        date: Date) {
+        DispatchQueue.main.async {
+            self.sessionState = toState
+        }
+    }
+
+    func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
+        // Non-fatal: surface nothing, keep the UI responsive.
+    }
+}
+
+// MARK: - HKLiveWorkoutBuilderDelegate
+
+extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
+    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+
+    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder,
+                        didCollectDataOf collectedTypes: Set<HKSampleType>) {
+        let heartRateUnit = HKUnit.count().unitDivided(by: .minute())
+        let energyUnit = HKUnit.largeCalorie()
+        let distanceUnit = HKUnit.meter()
+
+        var newHeartRate: Double?
+        var newCalories: Double?
+        var newDistance: Double?
+
+        for type in collectedTypes {
+            guard let quantityType = type as? HKQuantityType,
+                  let statistics = workoutBuilder.statistics(for: quantityType) else { continue }
+
+            switch quantityType {
+            case HKQuantityType(.heartRate):
+                if let value = statistics.mostRecentQuantity()?.doubleValue(for: heartRateUnit), value > 1 {
+                    newHeartRate = value
+                }
+            case HKQuantityType(.activeEnergyBurned):
+                newCalories = statistics.sumQuantity()?.doubleValue(for: energyUnit)
+            case HKQuantityType(.distanceWalkingRunning):
+                newDistance = statistics.sumQuantity()?.doubleValue(for: distanceUnit)
+            default:
+                break
+            }
+        }
+
+        DispatchQueue.main.async {
+            if let newHeartRate { self.heartRate = newHeartRate }
+            if let newCalories { self.activeCalories = newCalories }
+            if let newDistance { self.distanceMeters = newDistance }
+        }
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+
+extension WorkoutManager: CLLocationManagerDelegate {
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        let filtered = locations.filter { $0.horizontalAccuracy <= TrackPoint.maximumUsableHorizontalAccuracy }
+        guard !filtered.isEmpty else { return }
+
+        routeBuilder?.insertRouteData(filtered) { _, _ in }
+
+        let points = filtered.map(Self.trackPoint(from:))
+        DispatchQueue.main.async {
+            self.track.append(contentsOf: points)
+            self.recentLocations.append(contentsOf: filtered)
+            if self.recentLocations.count > 10 {
+                self.recentLocations.removeFirst(self.recentLocations.count - 10)
+            }
+            self.recomputeCurrentSpeed()
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+
+    static func trackPoint(from location: CLLocation) -> TrackPoint {
+        TrackPoint(
+            coordinate: Coordinate2D(latitude: location.coordinate.latitude,
+                                     longitude: location.coordinate.longitude),
+            timestamp: location.timestamp,
+            speedMetersPerSecond: location.speed,
+            courseDegrees: location.course,
+            horizontalAccuracy: location.horizontalAccuracy
+        )
+    }
+}

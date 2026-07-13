@@ -41,12 +41,17 @@ Prioritized backlog beyond the current 2026 modernization. Effort tags are rough
 - **Fatigue/tactical-period breakdown (S).** Extend `WorkrateReport` presentation to show
   workrate score per 15-minute bucket, surfacing second-half drop-off directly in the Workrate
   tab (data already exists in `distancePerMinute`; this is UI-only).
-- **Field boundary extraction from satellite imagery (L).** Auto-detect pitch markings
-  (touchlines, penalty boxes, center circle) from aerial/satellite tiles around a field's known
-  center and snap inferred/trained rectangles to the painted lines — turns a rough
-  GPS-observed rectangle into survey-grade geometry and can seed the community field database
-  for venues nobody has trained yet. Needs an on-device or server-side vision model and tile
-  licensing review.
+- **Server-side satellite seeding of the community field database (L).** On-device satellite
+  detection (`SatelliteFieldDetector`: `MKMapSnapshotter` + Vision contour heuristics) already
+  snaps inferred/trained rectangles to painted lines for a field a user has visited — extend
+  this server-side so unvisited venues can be pre-seeded into `/fields/nearby` from satellite
+  tiles alone, without waiting for a device to walk or play there. Needs server-side tile
+  fetching/licensing and a batch detection pipeline.
+- **Detection-quality improvements for satellite pitch detection (M).** Replace
+  `SatelliteFieldDetector`'s contour-heuristic line detection with an ML pitch-marking
+  segmentation model for more reliable corner extraction under occlusion, faded lines, and
+  non-standard markings — current heuristics are best-effort and silently return no proposal on
+  ambiguous imagery.
 - **Confidence-weighted field editor (M).** In the Fields tab, surface each field's provenance
   (trained vs. inferred vs. community) and confidence, render low-confidence edges differently,
   and let users nudge individual corners on the satellite map — manual corrections upload as
