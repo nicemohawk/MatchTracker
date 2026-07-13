@@ -95,22 +95,25 @@ public enum FieldGeometry {
         }
     }
 
-    /// Whether an oriented rectangle has plausible soccer-pitch dimensions: length 60–130 m,
-    /// width 35–90 m, aspect ratio > 1.2. The single source of truth for this sanity check,
-    /// shared by `inferFieldRectangle` and the app-layer satellite detector.
-    public static func isPlausiblePitch(_ rectangle: OrientedRectangle) -> Bool {
+    /// Whether an oriented rectangle has plausible pitch dimensions for `sport`: length/width
+    /// within the profile's ranges and aspect ratio > 1.2 (kept general across sports). The
+    /// single source of truth for this sanity check, shared by `inferFieldRectangle` and the
+    /// app-layer satellite detector. Defaults to soccer (60–130 m × 35–90 m) so existing call
+    /// sites are unchanged.
+    public static func isPlausiblePitch(_ rectangle: OrientedRectangle, sport: SportProfile = .soccer) -> Bool {
         let length = rectangle.lengthMeters
         let width = rectangle.widthMeters
         guard width > 0 else { return false }
-        return length >= 60 && length <= 130
-            && width >= 35 && width <= 90
+        return sport.typicalLengthRange.contains(length)
+            && sport.typicalWidthRange.contains(width)
             && length / width > 1.2
     }
 
     /// Infer a field rectangle from a full-match GPS track (no training walk needed):
     /// filter to accurate points, trim occupancy outliers, fit the min-area oriented
-    /// rectangle, and sanity-check against plausible pitch dimensions.
-    public static func inferFieldRectangle(from track: [TrackPoint]) -> OrientedRectangle? {
+    /// rectangle, and sanity-check against `sport`'s plausible pitch dimensions. Defaults to
+    /// soccer so existing call sites are unchanged.
+    public static func inferFieldRectangle(from track: [TrackPoint], sport: SportProfile = .soccer) -> OrientedRectangle? {
         let filtered = track.filter { $0.horizontalAccuracy <= TrackPoint.maximumUsableHorizontalAccuracy && isPlausibleCoordinate($0.coordinate) }
         guard filtered.count >= 8 else { return nil }
 
@@ -140,7 +143,7 @@ public enum FieldGeometry {
             widthMeters: width,
             headingDegrees: rect.headingDegrees
         )
-        guard isPlausiblePitch(rectangle) else { return nil }
+        guard isPlausiblePitch(rectangle, sport: sport) else { return nil }
         return rectangle
     }
 }

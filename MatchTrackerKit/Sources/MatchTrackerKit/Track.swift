@@ -34,6 +34,12 @@ public enum MatchEventKind: String, Codable, CaseIterable, Sendable {
     case goalMine                      // wearer scored
     case assist
     case flag                          // generic "something happened" marker for post-game review
+    // Referee / multi-sport kinds (surfaced per SportProfile.eventVocabulary; raw == case name).
+    case yellowCard
+    case redCard
+    case foul
+    case turnover
+    case timeout
 }
 
 /// Whether an event was logged by the wearer (`manual`) or inferred by the app (`automatic`,
@@ -87,14 +93,20 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     public var fieldID: UUID?
     public var events: [MatchEvent]
     public var teamCode: String?
+    public var sportID: String?             // nil == soccer (SportProfile.id)
+    public var headings: [HeadingSample]?   // optional device-heading samples for track fusion
 
-    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?) {
+    // Synthesized Codable: both new fields are optional, so JSON written before they existed
+    // still decodes cleanly (the keys are simply absent).
+    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil) {
         self.id = id
         self.startDate = startDate
         self.endDate = endDate
         self.fieldID = fieldID
         self.events = events
         self.teamCode = teamCode
+        self.sportID = sportID
+        self.headings = headings
     }
 }
 

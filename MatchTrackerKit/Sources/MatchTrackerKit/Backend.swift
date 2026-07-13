@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -18,8 +19,12 @@ public struct MatchStats: Codable, Sendable {
     public var averageHeartRate: Double?
     public var positionRole: PositionRole?
     public var positionSide: PositionSide?
+    /// Normalized field-space mean point (0–1 along long/short axes), sent so the backend formation
+    /// clustering (V2 §3) can place each player without the raw track.
+    public var meanX: Double?
+    public var meanY: Double?
 
-    public init(totalDistanceMeters: Double = 0, timeOnPitch: TimeInterval = 0, sprintCount: Int = 0, runCount: Int = 0, workrateScore: Double = 0, speedZones: SpeedZones = SpeedZones(), averageHeartRate: Double? = nil, positionRole: PositionRole? = nil, positionSide: PositionSide? = nil) {
+    public init(totalDistanceMeters: Double = 0, timeOnPitch: TimeInterval = 0, sprintCount: Int = 0, runCount: Int = 0, workrateScore: Double = 0, speedZones: SpeedZones = SpeedZones(), averageHeartRate: Double? = nil, positionRole: PositionRole? = nil, positionSide: PositionSide? = nil, meanX: Double? = nil, meanY: Double? = nil) {
         self.totalDistanceMeters = totalDistanceMeters
         self.timeOnPitch = timeOnPitch
         self.sprintCount = sprintCount
@@ -29,6 +34,8 @@ public struct MatchStats: Codable, Sendable {
         self.averageHeartRate = averageHeartRate
         self.positionRole = positionRole
         self.positionSide = positionSide
+        self.meanX = meanX
+        self.meanY = meanY
     }
 
     /// Derive the upload stats from the Kit's analytics outputs. This is the single place the
@@ -43,7 +50,9 @@ public struct MatchStats: Codable, Sendable {
             speedZones: report.speedZones,
             averageHeartRate: report.averageHeartRate,
             positionRole: position?.role,
-            positionSide: position?.side
+            positionSide: position?.side,
+            meanX: position.map { Double($0.meanPoint.x) },
+            meanY: position.map { Double($0.meanPoint.y) }
         )
     }
 
@@ -57,6 +66,8 @@ public struct MatchStats: Codable, Sendable {
         case averageHeartRate = "avg_hr"
         case positionRole = "position_role"
         case positionSide = "position_side"
+        case meanX = "mean_x"
+        case meanY = "mean_y"
     }
 
     /// Wire shape of `speed_zones`: seconds per zone with `_s`-suffixed keys.
@@ -78,6 +89,8 @@ public struct MatchStats: Codable, Sendable {
         try container.encodeIfPresent(averageHeartRate, forKey: .averageHeartRate)
         try container.encodeIfPresent(positionRole, forKey: .positionRole)
         try container.encodeIfPresent(positionSide, forKey: .positionSide)
+        try container.encodeIfPresent(meanX, forKey: .meanX)
+        try container.encodeIfPresent(meanY, forKey: .meanY)
 
         var zones = container.nestedContainer(keyedBy: SpeedZoneKeys.self, forKey: .speedZones)
         try zones.encode(speedZones.standing, forKey: .standing)
@@ -97,6 +110,8 @@ public struct MatchStats: Codable, Sendable {
         averageHeartRate = try container.decodeIfPresent(Double.self, forKey: .averageHeartRate)
         positionRole = try container.decodeIfPresent(PositionRole.self, forKey: .positionRole)
         positionSide = try container.decodeIfPresent(PositionSide.self, forKey: .positionSide)
+        meanX = try container.decodeIfPresent(Double.self, forKey: .meanX)
+        meanY = try container.decodeIfPresent(Double.self, forKey: .meanY)
 
         if let zones = try? container.nestedContainer(keyedBy: SpeedZoneKeys.self, forKey: .speedZones) {
             speedZones = SpeedZones(
@@ -123,9 +138,11 @@ public struct MatchPayload: Codable, Sendable {
     public var fieldUUID: UUID?
     public var teamCode: String?
     public var playerName: String?
+    /// Sport this match was played as (wire `sport_id`); nil ≡ soccer, matching the backend default.
+    public var sportID: String?
     public var stats: MatchStats
 
-    public init(uuid: UUID, recordedAt: Date, coordinates: [[Double]], events: [MatchEvent], fieldUUID: UUID?, teamCode: String?, playerName: String? = nil, stats: MatchStats) {
+    public init(uuid: UUID, recordedAt: Date, coordinates: [[Double]], events: [MatchEvent], fieldUUID: UUID?, teamCode: String?, playerName: String? = nil, sportID: String? = nil, stats: MatchStats) {
         self.uuid = uuid
         self.recordedAt = recordedAt
         self.coordinates = coordinates
@@ -133,6 +150,7 @@ public struct MatchPayload: Codable, Sendable {
         self.fieldUUID = fieldUUID
         self.teamCode = teamCode
         self.playerName = playerName
+        self.sportID = sportID
         self.stats = stats
     }
 
@@ -144,6 +162,7 @@ public struct MatchPayload: Codable, Sendable {
         case fieldUUID = "field_uuid"
         case teamCode = "team_code"
         case playerName = "player_name"
+        case sportID = "sport_id"
         case stats
     }
 
@@ -161,6 +180,7 @@ public struct MatchPayload: Codable, Sendable {
         try container.encodeIfPresent(fieldUUID, forKey: .fieldUUID)
         try container.encodeIfPresent(teamCode, forKey: .teamCode)
         try container.encodeIfPresent(playerName, forKey: .playerName)
+        try container.encodeIfPresent(sportID, forKey: .sportID)
         try container.encode(stats, forKey: .stats)
     }
 
@@ -174,6 +194,7 @@ public struct MatchPayload: Codable, Sendable {
         fieldUUID = try container.decodeIfPresent(UUID.self, forKey: .fieldUUID)
         teamCode = try container.decodeIfPresent(String.self, forKey: .teamCode)
         playerName = try container.decodeIfPresent(String.self, forKey: .playerName)
+        sportID = try container.decodeIfPresent(String.self, forKey: .sportID)
         stats = try container.decode(MatchStats.self, forKey: .stats)
     }
 }
@@ -236,10 +257,16 @@ public struct APIClient: Sendable {
     private let session: URLSession
 
     public init(baseURL: URL, apiKey: String, deviceID: UUID) {
+        self.init(baseURL: baseURL, apiKey: apiKey, deviceID: deviceID, session: URLSession(configuration: .default))
+    }
+
+    /// Testability seam: inject a `URLSession` (e.g. one backed by a `URLProtocol` stub). Not part
+    /// of the public API surface.
+    init(baseURL: URL, apiKey: String, deviceID: UUID, session: URLSession) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.deviceID = deviceID
-        self.session = URLSession(configuration: .default)
+        self.session = session
     }
 
     public func post(fields: [FieldModel]) async throws {
@@ -268,10 +295,119 @@ public struct APIClient: Sendable {
         return try decoder.decode(TeamStats.self, from: data)
     }
 
+    // MARK: - V2 team & live endpoints
+
+    /// Team chat for a match (`GET /matches/{uuid}/comments`), oldest-first.
+    public func comments(match: UUID) async throws -> [MatchComment] {
+        let data = try await get(path: "/matches/\(match.uuidString)/comments")
+        return try Self.jsonDecoder().decode(CommentsEnvelope.self, from: data).comments
+    }
+
+    /// Post a comment (`POST /matches/{uuid}/comments`). Idempotent by `comment.id`; the server
+    /// stamps `posted_at` and resolves the author from the device, using the sent `author` only as a
+    /// fallback.
+    public func postComment(_ comment: MatchComment, match: UUID) async throws {
+        let body = CommentPost(id: comment.id, body: comment.body, author: comment.author)
+        try await postJSON(path: "/matches/\(match.uuidString)/comments", body: body)
+    }
+
+    /// Backend-computed formation over the team's recent matches
+    /// (`GET /teams/{code}/formation?window_days=`).
+    public func formation(code: String, windowDays: Int = 30) async throws -> TeamFormation {
+        let data = try await get(path: "/teams/\(code)/formation?window_days=\(windowDays)")
+        return try Self.jsonDecoder().decode(TeamFormation.self, from: data)
+    }
+
+    /// Last-known live status for every teammate (`GET /teams/{code}/live`).
+    public func liveTeam(code: String) async throws -> [LivePlayerStatus] {
+        let data = try await get(path: "/teams/\(code)/live")
+        return try Self.jsonDecoder().decode(LiveEnvelope.self, from: data).players
+    }
+
+    /// Relay one live update to the backend (`POST /devices/{id}/live`, V2 §1). The watch->phone-only
+    /// `latestPoints` / `newEvents` are stripped; `matchUUID` and `teamCode` are added.
+    public func postLive(_ update: LiveMatchUpdate, matchUUID: UUID, teamCode: String) async throws {
+        try await postJSON(path: "/devices/\(deviceID.uuidString)/live",
+                           body: LiveWire(update: update, matchUUID: matchUUID, teamCode: teamCode))
+    }
+
+    /// Record guardian consent for a minor (`POST /devices/{id}/consent`, V2 §5).
+    public func postConsent(guardianName: String) async throws {
+        try await postJSON(path: "/devices/\(deviceID.uuidString)/consent",
+                           body: ConsentPost(guardianName: guardianName, acknowledged: true))
+    }
+
+    /// Request full server-side deletion of this device's data (`DELETE /devices/{id}`, V2 §5).
+    public func requestDeletion() async throws {
+        var request = URLRequest(url: makeURL("/devices/\(deviceID.uuidString)"))
+        request.httpMethod = "DELETE"
+        applyHeaders(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try Self.validate(response)
+    }
+
     // MARK: - Private wire helpers
+
+    private struct ConsentPost: Encodable {
+        var guardianName: String
+        var acknowledged: Bool
+        enum CodingKeys: String, CodingKey {
+            case guardianName = "guardian_name"
+            case acknowledged
+        }
+    }
+
 
     private struct FieldsEnvelope: Encodable { var fields: [FieldWire] }
     private struct SessionsEnvelope: Encodable { var sessions: [MatchPayload] }
+    private struct CommentsEnvelope: Decodable { var comments: [MatchComment] }
+    private struct LiveEnvelope: Decodable { var players: [LivePlayerStatus] }
+
+    /// Minimal comment POST body: the backend derives `posted_at` and (usually) the author.
+    private struct CommentPost: Encodable { var id: UUID; var body: String; var author: String }
+
+    /// `LiveMatchUpdate` reduced to the backend contract: no track/event deltas, plus routing keys.
+    private struct LiveWire: Encodable {
+        var matchUUID: UUID
+        var teamCode: String
+        var sequence: Int
+        var timestamp: Date
+        var elapsedSeconds: TimeInterval
+        var heartRate: Double?
+        var distanceMeters: Double
+        var currentSpeed: Double?
+        var onPitch: Bool
+        var usGoals: Int?
+        var themGoals: Int?
+
+        init(update: LiveMatchUpdate, matchUUID: UUID, teamCode: String) {
+            self.matchUUID = matchUUID
+            self.teamCode = teamCode
+            self.sequence = update.sequence
+            self.timestamp = update.timestamp
+            self.elapsedSeconds = update.elapsed
+            self.heartRate = update.heartRate
+            self.distanceMeters = update.distanceMeters
+            self.currentSpeed = update.currentSpeed
+            self.onPitch = update.onPitch
+            self.usGoals = update.usGoals
+            self.themGoals = update.themGoals
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case matchUUID = "match_uuid"
+            case teamCode = "team_code"
+            case sequence
+            case timestamp
+            case elapsedSeconds = "elapsed_s"
+            case heartRate = "heart_rate"
+            case distanceMeters = "distance_m"
+            case currentSpeed = "current_speed"
+            case onPitch = "on_pitch"
+            case usGoals = "us_goals"
+            case themGoals = "them_goals"
+        }
+    }
 
     private struct FieldWire: Encodable {
         struct Track: Encodable { var coordinates: [[Double]] }
@@ -301,6 +437,42 @@ public struct APIClient: Sendable {
         request.httpBody = try encoder.encode(body)
         let (_, response) = try await session.data(for: request)
         try Self.validate(response)
+    }
+
+    /// Builds a request URL, preserving any query string in `path` (which `appendingPathComponent`
+    /// would percent-escape).
+    private func makeURL(_ path: String) -> URL {
+        URL(string: baseURL.absoluteString + path) ?? baseURL.appendingPathComponent(path)
+    }
+
+    private func get(path: String) async throws -> Data {
+        var request = URLRequest(url: makeURL(path))
+        request.httpMethod = "GET"
+        applyHeaders(to: &request)
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response)
+        return data
+    }
+
+    private func postJSON<Body: Encodable>(path: String, body: Body) async throws {
+        var request = URLRequest(url: makeURL(path))
+        request.httpMethod = "POST"
+        applyHeaders(to: &request)
+        request.httpBody = try Self.jsonEncoder().encode(body)
+        let (_, response) = try await session.data(for: request)
+        try Self.validate(response)
+    }
+
+    private static func jsonEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    private static func jsonDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 
     private static func validate(_ response: URLResponse) throws {

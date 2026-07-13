@@ -130,6 +130,10 @@ extension MatchEventKind {
         case .goalMine: return "star.circle.fill"
         case .assist: return "hands.and.sparkles"
         case .flag: return "flag.fill"
+        case .yellowCard, .redCard: return "rectangle.portrait.fill"
+        case .foul: return "exclamationmark.triangle"
+        case .turnover: return "arrow.triangle.2.circlepath"
+        case .timeout: return "pause.circle"
         }
     }
 
@@ -146,6 +150,11 @@ extension MatchEventKind {
         case .goalMine: return "My Goal"
         case .assist: return "Assist"
         case .flag: return "Flag"
+        case .yellowCard: return "Yellow Card"
+        case .redCard: return "Red Card"
+        case .foul: return "Foul"
+        case .turnover: return "Turnover"
+        case .timeout: return "Timeout"
         }
     }
 
@@ -155,6 +164,8 @@ extension MatchEventKind {
         case .goalAgainstUs: return .red
         case .assist: return .mint
         case .flag: return .orange
+        case .yellowCard: return .yellow
+        case .redCard: return .red
         default: return .secondary
         }
     }

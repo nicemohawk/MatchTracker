@@ -353,13 +353,17 @@ public struct PositionEstimate: Codable, Sendable {
     public var meanPoint: CGPoint        // normalized field coords
     /// Per-period mean points let the UI show "played RB first half, RW second".
     public var periodMeanPoints: [CGPoint]
+    /// Sport-specific label for `role`, drawn from `SportProfile.positionRoles` (e.g. "attack"
+    /// for lacrosse, "midfielder" for soccer). Defaults to the soccer role name.
+    public var roleLabel: String
 
-    public init(role: PositionRole, side: PositionSide, confidence: Double, meanPoint: CGPoint, periodMeanPoints: [CGPoint]) {
+    public init(role: PositionRole, side: PositionSide, confidence: Double, meanPoint: CGPoint, periodMeanPoints: [CGPoint], roleLabel: String = "") {
         self.role = role
         self.side = side
         self.confidence = confidence
         self.meanPoint = meanPoint
         self.periodMeanPoints = periodMeanPoints
+        self.roleLabel = roleLabel.isEmpty ? role.rawValue : roleLabel
     }
 }
 
@@ -368,8 +372,13 @@ public enum PositionAnalyzer {
     /// Role comes from the long-axis distribution folded around midfield (GK/DEF sit near an
     /// end, MID central, FWD ranges the front third); side comes from the short-axis mean with
     /// per-period flip correction (periods are reflected so their long-axis means agree).
+    /// `sport` maps the folded-axis role onto `sport.positionRoles` (ordered defensive ->
+    /// offensive) to fill `PositionEstimate.roleLabel`. The keeper-like role is only produced for
+    /// sports whose profile has one (`hasGoalkeeper`); the returned `role`/`side` enums stay
+    /// soccer-shaped for API compatibility. Defaults to soccer, so existing call sites are unchanged.
     public static func estimate(points: [TrackPoint], projector: FieldProjector,
-                                events: [MatchEvent], playingIntervals: [DateInterval]) -> PositionEstimate {
+                                events: [MatchEvent], playingIntervals: [DateInterval],
+                                sport: SportProfile = .soccer) -> PositionEstimate {
         let periods = derivePeriods(events: events, points: points)
 
         // Normalized field points for each period, restricted to on-pitch time.
@@ -383,7 +392,8 @@ public enum PositionAnalyzer {
 
         guard let reference = periodClouds.first else {
             return PositionEstimate(role: .midfielder, side: .center, confidence: 0,
-                                    meanPoint: CGPoint(x: 0.5, y: 0.5), periodMeanPoints: [])
+                                    meanPoint: CGPoint(x: 0.5, y: 0.5), periodMeanPoints: [],
+                                    roleLabel: label(for: .midfielder, sport: sport))
         }
 
         // Flip-align later periods: switching ends mirrors both axes, so reflect (x,y)->(1-x,1-y)
@@ -415,7 +425,7 @@ public enum PositionAnalyzer {
         let outerFraction = Double(xs.filter { abs($0 - 0.5) > 0.35 }.count) / Double(xs.count)
 
         let role: PositionRole
-        if outerFraction > 0.6 && spreadX < 0.08 {
+        if sport.hasGoalkeeper && outerFraction > 0.6 && spreadX < 0.08 {
             role = .goalkeeper                 // pinned to the outer 15% with almost no spread
         } else if foldedMean < 0.20 {
             role = .midfielder                 // lives around the centre of the pitch
@@ -442,8 +452,27 @@ public enum PositionAnalyzer {
             side: side,
             confidence: confidence,
             meanPoint: CGPoint(x: meanX, y: meanY),
-            periodMeanPoints: periodMeanPoints
+            periodMeanPoints: periodMeanPoints,
+            roleLabel: label(for: role, sport: sport)
         )
+    }
+
+    /// Maps a soccer-shaped `PositionRole` onto `sport.positionRoles` (ordered defensive ->
+    /// offensive). The role's position on the defensive->offensive continuum is projected onto
+    /// the sport's vocabulary length, so soccer maps 1:1 while other sports get their nearest
+    /// role name. For keeper-less sports the keeper slot is dropped from the continuum.
+    static func label(for role: PositionRole, sport: SportProfile) -> String {
+        guard !sport.positionRoles.isEmpty else { return role.rawValue }
+
+        let ordering: [PositionRole] = sport.hasGoalkeeper
+            ? [.goalkeeper, .defender, .midfielder, .forward]
+            : [.defender, .midfielder, .forward]
+        let index = ordering.firstIndex(of: role) ?? 0
+
+        guard ordering.count > 1 else { return sport.positionRoles[0] }
+        let fraction = Double(index) / Double(ordering.count - 1)
+        let mapped = Int((fraction * Double(sport.positionRoles.count - 1)).rounded())
+        return sport.positionRoles[min(max(mapped, 0), sport.positionRoles.count - 1)]
     }
 
     /// Periods from periodStart/periodEnd event pairs, or the whole track span when absent.
