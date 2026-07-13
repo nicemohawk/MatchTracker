@@ -4,8 +4,12 @@ import Foundation
 
 public struct TrackPoint: Codable, Hashable, Sendable {
     /// GPS fixes worse than this horizontal accuracy (meters) are discarded before they reach
-    /// the route/track. Shared by the watch recorder, the field trainer, and field inference.
+    /// the route/track. Shared by the watch recorder and field inference.
     public static let maximumUsableHorizontalAccuracy = 50.0
+
+    /// Tighter gate for field training walks: the outline directly defines field geometry,
+    /// so loose fixes distort the fitted rectangle more than they would a match track.
+    public static let fieldTrainingHorizontalAccuracy = 20.0
 
     public var coordinate: Coordinate2D
     public var timestamp: Date

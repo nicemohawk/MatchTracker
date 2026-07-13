@@ -36,7 +36,8 @@ final class FieldTrainer: NSObject {
     override init() {
         super.init()
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        locationManager.activityType = .fitness
     }
 
     func start() {
@@ -86,7 +87,7 @@ final class FieldTrainer: NSObject {
 extension FieldTrainer: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard state == .walking else { return }
-        for location in locations where location.horizontalAccuracy <= TrackPoint.maximumUsableHorizontalAccuracy {
+        for location in locations where location.horizontalAccuracy <= TrackPoint.fieldTrainingHorizontalAccuracy {
             if let previous = outline.last {
                 distanceWalked += location.distance(from: previous)
             }

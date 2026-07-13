@@ -150,7 +150,8 @@ final class WorkoutManager: NSObject {
     }
 
     private func requestLocationAuthorization() {
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        locationManager.activityType = .fitness
         if locationManager.authorizationStatus == .notDetermined {
             locationManager.requestAlwaysAuthorization()
         }
@@ -337,7 +338,8 @@ final class WorkoutManager: NSObject {
     // MARK: - Location
 
     private func startLocationUpdates() {
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        locationManager.activityType = .fitness
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.startUpdatingLocation()
     }

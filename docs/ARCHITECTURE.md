@@ -59,7 +59,8 @@ the Kit (available on macOS).
    `updateApplicationContext` so the watch can auto-detect fields offline.
 2. **Match recording (watch):** `HKWorkoutSession` + `HKLiveWorkoutBuilder` (`.soccer`,
    `.outdoor`) + `HKWorkoutRouteBuilder`, exactly like the legacy `WorkoutController`.
-   Locations filtered to `horizontalAccuracy <= 50 m`. Events (`MatchEvent`) accumulate in
+   Locations requested at `kCLLocationAccuracyBestForNavigation` (`activityType = .fitness`)
+   and filtered to `horizontalAccuracy <= 50 m` for match tracks, `<= 20 m` for field training. Events (`MatchEvent`) accumulate in
    memory and persist incrementally to the app group (crash safety). At workout end: route
    saved to HealthKit; a `MatchRecord` JSON (events, field id, team/score metadata, workout
    UUID) is `transferFile`'d to the phone.
