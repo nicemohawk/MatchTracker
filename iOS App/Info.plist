@@ -2,22 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>WKApplication</key>
-	<true/>
-	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.nicemohawk.MatchTracker</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>MatchTracker reads your heart rate and workout data during a match.</string>
+	<string>MatchTracker reads your soccer workouts to show routes, heatmaps, and workrate.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>MatchTracker saves your match as a workout in Health.</string>
+	<string>MatchTracker saves your recorded matches as workouts in Health.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>MatchTracker uses your location to record your route on the pitch.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>MatchTracker uses your location during a match to record your route on the pitch.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>workout-processing</string>
-		<string>location</string>
-	</array>
 </dict>
 </plist>

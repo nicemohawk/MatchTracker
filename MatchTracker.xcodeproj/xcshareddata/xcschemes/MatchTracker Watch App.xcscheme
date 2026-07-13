@@ -14,9 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "0A0000000000000000000030"
-               BuildableName = "MatchTracker.app"
-               BlueprintName = "MatchTracker"
+               BlueprintIdentifier = "0A0000000000000000000040"
+               BuildableName = "MatchTracker Watch App.app"
+               BlueprintName = "MatchTracker Watch App"
                ReferencedContainer = "container:MatchTracker.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -42,9 +42,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "0A0000000000000000000030"
-            BuildableName = "MatchTracker.app"
-            BlueprintName = "MatchTracker"
+            BlueprintIdentifier = "0A0000000000000000000040"
+            BuildableName = "MatchTracker Watch App.app"
+            BlueprintName = "MatchTracker Watch App"
             ReferencedContainer = "container:MatchTracker.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -59,9 +59,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "0A0000000000000000000030"
-            BuildableName = "MatchTracker.app"
-            BlueprintName = "MatchTracker"
+            BlueprintIdentifier = "0A0000000000000000000040"
+            BuildableName = "MatchTracker Watch App.app"
+            BlueprintName = "MatchTracker Watch App"
             ReferencedContainer = "container:MatchTracker.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
