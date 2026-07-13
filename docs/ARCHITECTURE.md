@@ -371,6 +371,14 @@ Also used to *snap* GPS-inferred fields: after `recordObservation` proposes a fi
 detector runs on that location and, when a satellite rectangle overlaps ≥70%, replaces the
 noisy GPS rectangle with the crisp satellite one. Detection is best-effort: failures fall
 back silently to the GPS/trained geometry. watchOS never runs this (no snapshotter there).
+
+The same detector powers **on-device community seeding** (`NearbyFieldSeeder`, iOS): tile a
+~1.5 km radius around the user, scan un-visited tiles (30-day scanned-region log in the app
+group), dedupe against known fields/prior seeds, then contribute new detections to the backend
+as `source: satellite, observationCount: 0` community seeds (Settings toggle, upload queue) and
+surface them locally as adoptable proposals. This is phase 1 of BACKEND_UPGRADE_PROMPT_V2 §8 —
+client-side seeding has no imagery-licensing problem; the server-side batch pipeline for
+unvisited venues remains phase 2.
 - Team: enter team code, roster stats table from backend (`teamStats`), local fallback message when offline.
 - Upload: automatic after a new match arrives; manual re-upload per match. Settings: server URL override, player name, team code.
 

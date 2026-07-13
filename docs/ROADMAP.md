@@ -53,6 +53,12 @@ against that baseline.
   contract to exclude location/health values from log messages.
 - **Formation detection (client side)** — `iOS App/FormationView.swift` renders backend-computed
   formations; clustering itself runs server-side per `docs/BACKEND_UPGRADE_PROMPT_V2.md` §3.
+- **On-device community field seeding (V2 §8 phase 1)** — `iOS App/NearbyFieldSeeder.swift` tiles
+  the area around the user, runs `SatelliteFieldDetector` on each un-scanned ~600 m tile, dedupes
+  against known/seeded fields, and contributes detections as low-confidence satellite seeds via
+  `iOS App/UploadService.contributeSeeds(_:)` (opt-in toggle in `iOS App/SettingsView.swift`);
+  detections also surface as tappable proposals in `iOS App/FieldsView.swift`. Uses MapKit
+  `MKMapSnapshotter`, so no imagery-licensing concern client-side.
 
 ## Remaining backlog
 
@@ -62,13 +68,14 @@ against that baseline.
   already renders a formation fetched from the backend, but the clustering pipeline itself
   (aggregating `PositionEstimate`s across devices for a shared `field_uuid`/time window) is spec'd
   but not yet built — see `docs/BACKEND_UPGRADE_PROMPT_V2.md` §3.
-- **Server-side satellite seeding of the community field database (L).** On-device satellite
-  detection (`SatelliteFieldDetector`: `MKMapSnapshotter` + Vision contour heuristics) already
-  snaps inferred/trained rectangles to painted lines for a field a user has visited — extend
-  this server-side so unvisited venues can be pre-seeded into `/fields/nearby` from satellite
-  tiles alone, without waiting for a device to walk or play there. Spec'd in
-  `docs/BACKEND_UPGRADE_PROMPT_V2.md` §8; needs server-side tile fetching/licensing and a batch
-  detection pipeline.
+- **Server-side satellite seeding of the community field database (V2 §8 phase 2, L).** Client-side
+  seeding already contributes pitches near users who open the app (`NearbyFieldSeeder`, shipped
+  above). What remains is the server-side batch pipeline for venues **no device has even passed
+  near**: the `POST /fields/seed-request` endpoint plus a worker that fetches imagery from a
+  **licensed** source (MapKit's client-only snapshotter can't be used server-side) and runs the
+  same contour detection to pre-seed `/fields/nearby`. Spec'd in
+  `docs/BACKEND_UPGRADE_PROMPT_V2.md` §8 phase 2; needs server-side tile fetching/licensing and a
+  batch detection pipeline.
 - **Detection-quality improvements for satellite pitch detection (M).** Replace
   `SatelliteFieldDetector`'s contour-heuristic line detection with an ML pitch-marking
   segmentation model for more reliable corner extraction under occlusion, faded lines, and

@@ -250,6 +250,23 @@ final class UploadService: ObservableObject {
         }
     }
 
+    /// Contribute on-device satellite-detected pitches to the community field database as
+    /// low-confidence seeds. Enqueues through the persistent queue WITHOUT touching the personal
+    /// field list, and only when the user has opted in. Best-effort — failures survive in the
+    /// queue and retry later.
+    func contributeSeeds(_ seeds: [FieldModel]) async {
+        guard settings.contributeDetectedFields else { return }
+        guard !seeds.isEmpty else { return }
+        makeQueueIfNeeded()
+        guard let queue else { return }
+        do {
+            try queue.enqueue(fields: seeds)
+            pendingUploadCount = await queue.flush()
+        } catch {
+            MatchLog.error("Seed contribution failed: \(error.localizedDescription)", category: "seed")
+        }
+    }
+
     // MARK: - Uploaded set
 
     private var uploadedIDs: Set<UUID> {

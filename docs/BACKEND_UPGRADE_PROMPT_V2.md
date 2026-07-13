@@ -151,20 +151,48 @@ The iOS app gates team features behind a StoreKit 2 subscription
   active `team` entitlement for the posting device; reads stay open to team members (a lapsed
   coach can still see old stats). Free tier (no team) is unaffected.
 
-## 8. Satellite field seeding (server-side)
+## 8. Satellite field seeding
 
-Batch pipeline seeding community fields for venues no device has visited:
+Community-field seeding for venues no device has *played*, split into a shipped client-side phase
+and a future server-side batch phase. Both feed the same seeded-field concept; the server treats a
+seed identically regardless of who detected it.
+
+### Phase 1 — on-device seeding (shipped client-side)
+
+The iOS app now detects nearby pitches from Apple Maps satellite imagery **on-device**
+(`iOS App/NearbyFieldSeeder.swift` tiling ~1.5 km into ~600 m squares around the user and running
+the existing `SatelliteFieldDetector` contour heuristic). MapKit `MKMapSnapshotter` is ordinary
+first-party usage, so there is no imagery-licensing question for this path. Opted-in clients
+(Settings → "Contribute detected fields", default on) POST these detections through the normal
+`/fields` upsert with `source = "satellite"` and `observation_count = 0`. **The server must treat
+any incoming field with `observation_count == 0` and `source` in {`satellite`} as a seed:**
+- store it flagged `seeded = true` with `confidence = 0.25` (do **not** trust a client-supplied
+  confidence for seeds);
+- keep the existing V1 community merge/de-dup rules — a seed within the merge radius of an existing
+  field folds into it (never lowering an already-confirmed field's confidence), rather than
+  creating a duplicate;
+- hide seeded fields from `/fields/nearby` unless the request passes `min_confidence` <= 0.25;
+  once a **real observation** (a played match, `observation_count` > 0, or a trained/inferred
+  field) confirms the location, clear `seeded` and let normal confidence/merge rules take over.
+
+Idempotency still holds: the client retries the same seed `uuid` from its offline queue, so
+repeated seed POSTs must be no-ops.
+
+### Phase 2 — server-side batch seeding (future)
+
+For venues **no device has even passed near**, a server-side batch pipeline pre-seeds fields from
+licensed imagery:
 - `POST /fields/seed-request` `{ "lat": 39.32, "lon": -82.10, "radius_m": 1500 }` (rate-limited
   1/day/device) → enqueue a seed job; 202.
 - Worker: fetch satellite imagery for the request area from a **licensed** source (Apple Maps
   Server API snapshots where license permits, else a provider like Mapbox/Maxar — flag the
   licensing decision for a human before implementation), run pitch detection (port the client's
   contour heuristic: white-line mask → contour → convex quad → per-sport dimension check; an ML
-  segmentation model is a drop-in upgrade later), insert results as fields with
-  `source = "community"`, `confidence = 0.25`, `observation_count = 0`, flagged
-  `seeded = true`.
-- Seeded fields appear in `/fields/nearby` only with `min_confidence` <= 0.25 until a real
-  observation confirms them (then normal merge rules apply).
+  segmentation model is a drop-in upgrade later), insert results as seeds exactly as in Phase 1
+  (`source = "community"` acceptable here since there's no originating device;
+  `confidence = 0.25`, `observation_count = 0`, `seeded = true`).
+- Seeded fields (from either phase) appear in `/fields/nearby` only with `min_confidence` <= 0.25
+  until a real observation confirms them (then normal merge rules apply).
 
 ## 9. Field imagery caching
 
@@ -201,6 +229,8 @@ Batch pipeline seeding community fields for venues no device has visited:
 7. Entitlements: expired JWS → team writes 402/403; reads unaffected.
 8. Idempotency: replaying any successful POST (sessions, fields, comments, live) changes
    nothing and returns success.
-9. Seeding: seed-request enqueues once per day per device; seeded fields hidden above
-   min_confidence 0.25.
+9. Seeding: a `/fields` POST with `source":"satellite"` and `observation_count":0` is stored as a
+   seed (`seeded=true`, confidence forced to 0.25) and hidden from `/fields/nearby` above
+   min_confidence 0.25; a later real observation clears the seed flag. Phase 2 seed-request
+   enqueues once per day per device.
 10. V1 regression suite still green (legacy endpoints untouched).

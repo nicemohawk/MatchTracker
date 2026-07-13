@@ -18,6 +18,7 @@ final class SettingsStore: ObservableObject {
         static let teamMemberships = "teamMemberships"
         static let consentGuardianName = "consentGuardianName"
         static let consentAcknowledgedAt = "consentAcknowledgedAt"
+        static let contributeDetectedFields = "contributeDetectedFields"
     }
 
     init(defaults: UserDefaults? = nil) {
@@ -45,6 +46,17 @@ final class SettingsStore: ObservableObject {
     var baseURL: URL {
         if let url = URL(string: serverURLOverride), url.scheme != nil { return url }
         return APIClient.defaultBaseURL
+    }
+
+    /// Whether nearby pitches detected on-device from satellite imagery are contributed to the
+    /// community field database as low-confidence seeds. Default on; the seed uploads never touch
+    /// the personal field list.
+    var contributeDetectedFields: Bool {
+        get {
+            guard defaults.object(forKey: Key.contributeDetectedFields) != nil else { return true }
+            return defaults.bool(forKey: Key.contributeDetectedFields)
+        }
+        set { defaults.set(newValue, forKey: Key.contributeDetectedFields); bump() }
     }
 
     // MARK: - Team memberships (multi-team)

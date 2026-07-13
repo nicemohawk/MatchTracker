@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var playerName = ""
     @State private var teamCode = ""
     @State private var serverOverride = ""
+    @State private var contributeDetectedFields = true
     @State private var healthKitMessage: String?
     @State private var showingConsentSheet = false
     @State private var showingDeletionConfirmation = false
@@ -56,6 +57,14 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    Toggle("Contribute detected fields", isOn: $contributeDetectedFields)
+                } header: {
+                    Text("Community")
+                } footer: {
+                    Text("Nearby pitches detected from satellite imagery are shared to the community field database to help everyone auto-detect fields. Your personal fields and match data are never shared this way.")
+                }
+
                 privacySection
 
                 Section("Health") {
@@ -92,6 +101,7 @@ struct SettingsView: View {
                 playerName = settings.playerName
                 teamCode = settings.teamCode
                 serverOverride = settings.serverURLOverride
+                contributeDetectedFields = settings.contributeDetectedFields
             }
         }
     }
@@ -164,6 +174,7 @@ struct SettingsView: View {
         settings.playerName = playerName
         settings.teamCode = teamCode.uppercased()
         settings.serverURLOverride = serverOverride
+        settings.contributeDetectedFields = contributeDetectedFields
         environment.settingsChanged()
     }
 }

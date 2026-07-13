@@ -24,6 +24,7 @@ struct MatchTrackerApp: App {
                 .environment(environment.liveMatches)
                 .environment(environment.entitlements)
                 .environment(environment.trainingLoad)
+                .environment(environment.seeder)
                 .task { await environment.bootstrap() }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
@@ -69,6 +70,7 @@ final class AppEnvironment: ObservableObject {
     let liveMatches = LiveMatchStore()
     let entitlements = EntitlementStore()
     let trainingLoad = TrainingLoadService()
+    let seeder: NearbyFieldSeeder
 
     init() {
         let fields = FieldsModel()
@@ -80,6 +82,7 @@ final class AppEnvironment: ObservableObject {
         self.matches = matches
         self.uploads = uploads
         self.connectivity = connectivity
+        self.seeder = NearbyFieldSeeder(fields: fields, uploads: uploads, settings: settings)
 
         fields.onFieldsChanged = { [weak connectivity, weak uploads] in
             connectivity?.pushContext()
