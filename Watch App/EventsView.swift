@@ -41,8 +41,20 @@ struct EventsView: View {
             Text("\(workoutManager.loggedEventCount) events")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            if autoSubCount > 0 {
+                Label("\(autoSubCount) auto", systemImage: "wand.and.stars")
+                    .font(.caption2)
+                    .foregroundStyle(.teal)
+            }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Automatic substitutions detected so far this match.
+    private var autoSubCount: Int {
+        workoutManager.events.filter {
+            $0.source == .automatic && ($0.kind == .subIn || $0.kind == .subOut)
+        }.count
     }
 
     @ViewBuilder

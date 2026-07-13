@@ -37,6 +37,13 @@ struct SummaryView: View {
                 summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
                 summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
 
+                if autoDetectedSubCount > 0 {
+                    Label("\(autoDetectedSubCount) auto sub\(autoDetectedSubCount == 1 ? "" : "s")",
+                          systemImage: "wand.and.stars")
+                        .font(.caption2)
+                        .foregroundStyle(.teal)
+                }
+
                 Button("Done") {
                     workoutManager.reset()
                 }
@@ -86,6 +93,13 @@ struct SummaryView: View {
     private var fieldName: String? {
         guard let fieldID = workoutManager.finishedRecord?.fieldID else { return nil }
         return AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID })?.name
+    }
+
+    /// Substitutions the detector logged automatically during this match.
+    private var autoDetectedSubCount: Int {
+        (workoutManager.finishedRecord?.events ?? workoutManager.events).filter {
+            $0.source == .automatic && ($0.kind == .subIn || $0.kind == .subOut)
+        }.count
     }
 
     // MARK: Formatting

@@ -35,6 +35,11 @@ final class MatchDetailModel: ObservableObject {
     private let healthKit: HealthKitService
     private let fields: FieldsModel
     private var hasLoaded = false
+    private var didReconcileSubs = false
+
+    /// Persist an updated record through the app's store (set by `MatchStore`). When wired, this
+    /// writes the record to disk and refreshes the cached summary + analytics.
+    var persist: ((MatchRecord) -> Void)?
 
     init(summary: MatchSummary, healthKit: HealthKitService, fields: FieldsModel) {
         self.workout = summary.workout
@@ -70,8 +75,36 @@ final class MatchDetailModel: ObservableObject {
             heartRateSeries = (try? await healthKit.fetchHeartRateSeries(from: matchStart, to: matchEnd)) ?? []
             analytics = computeAnalytics(track: points)
             loadFailed = analytics == nil && !points.isEmpty
+            reconcileAutomaticSubs(track: points)
         } catch {
             loadFailed = true
+        }
+    }
+
+    /// Post-match reconciliation: for a match with a resolved field and NO substitution events
+    /// (manual OR automatic), run the offline detector once and merge any inferred subs into the
+    /// record. Guarded to run a single time per load and skipped whenever subs already exist, so
+    /// re-computation on edits can never loop back into detection.
+    private func reconcileAutomaticSubs(track: [TrackPoint]) {
+        guard !didReconcileSubs else { return }
+        didReconcileSubs = true
+
+        guard let record, let analytics, !track.isEmpty else { return }
+        let hasSubEvents = record.events.contains { $0.kind == .subIn || $0.kind == .subOut }
+        guard !hasSubEvents else { return }
+
+        let detected = AutoSubDetector.detectEvents(
+            track: track, projector: analytics.projector,
+            existingEvents: record.events, configuration: AutoSubDetectorConfiguration()
+        )
+        guard !detected.isEmpty else { return }
+
+        var merged = record
+        merged.events.append(contentsOf: detected)
+        if let persist {
+            persist(merged)          // writes to disk and recomputes analytics via the store
+        } else {
+            updateRecord(merged)     // standalone fallback: refresh locally
         }
     }
 

@@ -84,6 +84,8 @@ final class MatchStore: ObservableObject {
     func detailModel(for summary: MatchSummary) -> MatchDetailModel {
         if let existing = detailCache[summary.id] { return existing }
         let model = MatchDetailModel(summary: summary, healthKit: healthKit, fields: fields)
+        // Let the model persist reconciled records (e.g. auto-detected subs) through the store.
+        model.persist = { [weak self] record in self?.save(record: record) }
         detailCache[summary.id] = model
         return model
     }

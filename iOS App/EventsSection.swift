@@ -128,6 +128,15 @@ struct EventRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(event.kind.title).font(.subheadline.weight(.semibold))
+                    if event.source == .automatic {
+                        Label("Auto", systemImage: "wand.and.stars")
+                            .labelStyle(.titleAndIcon)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.teal)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.teal.opacity(0.15), in: Capsule())
+                    }
                     Spacer()
                     Text("\(minute)'").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     Text(event.date, format: .dateTime.hour().minute()).font(.caption2).foregroundStyle(.secondary)

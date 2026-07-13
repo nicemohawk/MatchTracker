@@ -36,17 +36,46 @@ public enum MatchEventKind: String, Codable, CaseIterable, Sendable {
     case flag                          // generic "something happened" marker for post-game review
 }
 
+/// Whether an event was logged by the wearer (`manual`) or inferred by the app (`automatic`,
+/// e.g. `AutoSubDetector`). Manual always wins during reconciliation.
+public enum MatchEventSource: String, Codable, Sendable { case manual, automatic }
+
 public struct MatchEvent: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var kind: MatchEventKind
     public var date: Date
     public var note: String?
+    public var source: MatchEventSource   // decodeIfPresent, defaults .manual (wire compat)
 
-    public init(id: UUID = UUID(), kind: MatchEventKind, date: Date, note: String? = nil) {
+    public init(id: UUID = UUID(), kind: MatchEventKind, date: Date, note: String? = nil, source: MatchEventSource = .manual) {
         self.id = id
         self.kind = kind
         self.date = date
         self.note = note
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, date, note, source
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(MatchEventKind.self, forKey: .kind)
+        date = try container.decode(Date.self, forKey: .date)
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+        // Back-compat: records/payloads written before auto-detection carry no "source".
+        source = try container.decodeIfPresent(MatchEventSource.self, forKey: .source) ?? .manual
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(date, forKey: .date)
+        try container.encodeIfPresent(note, forKey: .note)
+        try container.encode(source, forKey: .source)   // always present going forward
     }
 }
 

@@ -175,12 +175,45 @@ public enum MatchEventKind: String, Codable, CaseIterable, Sendable {
     case flag                          // generic "something happened" marker for post-game review
 }
 
+public enum MatchEventSource: String, Codable, Sendable { case manual, automatic }
+
 public struct MatchEvent: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var kind: MatchEventKind
     public var date: Date
     public var note: String?
-    public init(id: UUID = UUID(), kind: MatchEventKind, date: Date, note: String? = nil)
+    public var source: MatchEventSource   // decodeIfPresent, defaults .manual (wire compat)
+    public init(id: UUID = UUID(), kind: MatchEventKind, date: Date, note: String? = nil, source: MatchEventSource = .manual)
+}
+
+/// Automatic substitution detection. Geometry-first by design: the signal for "benched" is
+/// sustained presence OUTSIDE the touchline, never low movement — keepers and defenders can
+/// stand still for long stretches while very much in the game. Heart-rate trend is only a
+/// tiebreaker for fixes hovering in the ambiguous boundary band; it never vetoes geometry
+/// (a sub warming up along the sideline has high HR and is still off the pitch).
+public struct AutoSubDetectorConfiguration: Sendable {
+    public var exitDistanceMeters: Double         // beyond-touchline distance that counts as off-pitch, default 5.0
+    public var exitDwell: TimeInterval            // continuous off-pitch time before subOut, default 30
+    public var enterDwell: TimeInterval           // continuous on-pitch time before subIn, default 15
+    public var maximumFixAccuracy: Double         // ignore worse fixes for boundary calls, default 20
+    public var manualOverrideCooldown: TimeInterval // auto suppressed after a manual sub event, default 60
+    public init()
+}
+
+public final class AutoSubDetector {
+    public init(projector: FieldProjector, configuration: AutoSubDetectorConfiguration = .init(), initiallyOnPitch: Bool = true)
+    /// Feed one live sample; returns a confirmed auto sub event (dated at the transition
+    /// moment, not the detection moment) or nil. heartRate optional, used only for
+    /// ambiguous-band tiebreaks.
+    public func process(point: TrackPoint, heartRate: Double?) -> MatchEvent?
+    /// Manual events win: re-syncs detector state and suppresses auto output for the cooldown.
+    public func recordManualEvent(_ event: MatchEvent)
+    /// Offline pass over a complete track (iOS post-match reconciliation for matches with a
+    /// resolved field and no manual sub events). Returns only the new automatic events,
+    /// respecting any existing manual ones.
+    public static func detectEvents(track: [TrackPoint], projector: FieldProjector,
+                                    existingEvents: [MatchEvent],
+                                    configuration: AutoSubDetectorConfiguration) -> [MatchEvent]
 }
 
 /// Watch-side record of one match; JSON codable, transferred watch -> phone.
@@ -340,6 +373,148 @@ noisy GPS rectangle with the crisp satellite one. Detection is best-effort: fail
 back silently to the GPS/trained geometry. watchOS never runs this (no snapshotter there).
 - Team: enter team code, roster stats table from backend (`teamStats`), local fallback message when offline.
 - Upload: automatic after a new match arrives; manual re-upload per match. Settings: server URL override, player name, team code.
+
+## Roadmap-wave additions (binding, 2026-07)
+
+New public Kit API for the roadmap implementation waves. Same rule: signatures are frozen once
+written here; extend additively.
+
+```swift
+// MARK: Sport profiles (multi-sport core)
+public struct SportProfile: Codable, Hashable, Sendable, Identifiable {
+    public var id: String                     // "soccer", "lacrosse", "fieldHockey", "rugby", "ultimate"
+    public var displayName: String
+    public var workoutActivityTypeRawValue: UInt   // HKWorkoutActivityType.rawValue (Kit stays HK-free)
+    public var typicalLengthRange: ClosedRange<Double>   // meters, plausibility + inference bounds
+    public var typicalWidthRange: ClosedRange<Double>
+    public var positionRoles: [String]        // sport-specific role vocabulary, ordered GK->FWD-like
+    public var eventVocabulary: [MatchEventKind]  // kinds this sport's UI offers
+    public static let soccer: SportProfile    // + lacrosse, fieldHockey, rugby, ultimate presets
+    public static let all: [SportProfile]
+}
+// FieldModel gains `public var sportID: String?` (nil = soccer, wire "sport_id").
+// MatchRecord gains `public var sportID: String?` (same default).
+// MatchEventKind gains referee/multi-sport cases: yellowCard, redCard, foul, turnover, timeout
+// (raw strings match case names; all optional in UIs via eventVocabulary).
+// FieldGeometry.isPlausiblePitch + inferFieldRectangle gain an optional `sport: SportProfile = .soccer` parameter.
+// PositionAnalyzer gains `sport:` parameter mapping folded-axis logic onto profile.positionRoles
+// (roles list is ordered defensive->offensive; GK-like role only when profile.positionRoles.first is a keeper role).
+
+// MARK: Automatic period detection
+public struct PeriodDetectorConfiguration: Sendable {
+    public var minimumBreak: TimeInterval        // default 300 (halftime-ish)
+    public var maximumBreak: TimeInterval        // default 1500
+    public var expectedPeriods: Int              // default 2
+    public init()
+}
+public enum PeriodDetector {
+    /// Infers periodStart/periodEnd events from sustained whole-team-off signals available to
+    /// one device: long gaps where the wearer is off-pitch or stationary-at-edge AND HR decays,
+    /// clustered around the match midpoint. Returns only events when none exist (source .automatic).
+    public static func detectPeriods(track: [TrackPoint], events: [MatchEvent],
+                                     projector: FieldProjector?,
+                                     configuration: PeriodDetectorConfiguration) -> [MatchEvent]
+}
+
+// MARK: Sensor-fusion track smoothing
+public struct HeadingSample: Codable, Sendable {   // from CMDeviceMotion on watch
+    public var timestamp: Date
+    public var headingDegrees: Double
+    public init(timestamp: Date, headingDegrees: Double)
+}
+public enum TrackSmoother {
+    /// Fuses GPS points with device-heading samples: constant-velocity interpolation between
+    /// fixes, heading-consistent turn sharpening, accuracy-weighted smoothing. Output has
+    /// >= input point count; safe no-op when headings is empty.
+    public static func fuse(track: [TrackPoint], headings: [HeadingSample]) -> [TrackPoint]
+}
+// MatchRecord gains `public var headings: [HeadingSample]?` (wire "headings", optional).
+
+// MARK: Live streaming (watch -> phone during a match)
+public struct LiveMatchUpdate: Codable, Sendable {
+    public var sequence: Int
+    public var timestamp: Date
+    public var elapsed: TimeInterval
+    public var heartRate: Double?
+    public var distanceMeters: Double
+    public var currentSpeed: Double?
+    public var onPitch: Bool
+    public var latestPoints: [TrackPoint]     // small delta batch (<= ~10)
+    public var newEvents: [MatchEvent]        // delta since last update
+    public var score: (us: Int, them: Int)? -> encode as two optional Ints usGoals/themGoals
+    public init(...)                          // memberwise
+}
+// Sent via WCSession.sendMessage (reachable) with transferUserInfo fallback, key "liveUpdate"
+// = JSON Data, every ~5 s while phone reachable. Phone renders a Live tab on the match list.
+
+// MARK: Offline upload queue
+public struct PendingUpload: Codable, Identifiable, Sendable {
+    public var id: UUID; public var kind: Kind; public var payloadJSON: Data
+    public var attempts: Int; public var nextAttempt: Date; public var lastError: String?
+    public enum Kind: String, Codable, Sendable { case match, fields }
+}
+public final class UploadQueue {
+    public init(directory: URL, client: APIClient)
+    public private(set) var pending: [PendingUpload] { get }
+    public func enqueue(match: MatchPayload) throws
+    public func enqueue(fields: [FieldModel]) throws
+    /// Attempts everything due; exponential backoff 1min * 2^attempts capped 6h; returns remaining count.
+    @discardableResult public func flush() async -> Int
+}
+// UploadService routes ALL posts through the queue; Settings shows pending count.
+
+// MARK: Exporters
+public enum MatchExporter {
+    public static func gpx(track: [TrackPoint], events: [MatchEvent], startDate: Date) -> String
+    public static func csv(track: [TrackPoint]) -> String
+    public static func eventsCSV(events: [MatchEvent]) -> String
+}
+
+// MARK: Teams, chat, formation (client side of new backend endpoints; see BACKEND_UPGRADE_PROMPT_V2)
+public struct TeamMembership: Codable, Hashable, Sendable, Identifiable {
+    public var id: String { code }
+    public var code: String
+    public var name: String?
+    public var displayInitialsOnly: Bool      // minors-privacy option, wire "initials_only"
+}
+// SettingsStore holds [TeamMembership]; MatchRecord.teamCode picks which team a match belongs to.
+public struct MatchComment: Codable, Identifiable, Sendable {  // wire snake_case
+    public var id: UUID; public var matchUUID: UUID; public var author: String
+    public var body: String; public var postedAt: Date
+}
+public struct TeamFormation: Codable, Sendable {               // backend-computed
+    public var name: String                    // "4-4-2"
+    public var confidence: Double
+    public var slots: [Slot]                   // player -> normalized mean point
+    public struct Slot: Codable, Sendable { public var playerName: String; public var x: Double; public var y: Double; public var role: String }
+}
+// APIClient gains: comments(match:) / postComment(_:) / formation(code:matchWindow:) /
+// liveTeam(code:) async endpoints per V2 prompt; all throw APIError on non-2xx.
+
+// MARK: Diagnostics
+public enum MatchLog {   // thin os.Logger facade; NEVER logs coordinates or health values
+    public static func info(_ message: String, category: String)
+    public static func error(_ message: String, category: String)
+}
+```
+
+App-layer roadmap items and where they live:
+- **Widget extension** `MatchTracker Widgets` (new watchOS WidgetKit extension target): Start-Match
+  complication (deep link `matchtracker://start`) + last-match-stats Smart Stack widget reading a
+  `LastMatchSnapshot` JSON the watch app writes to the app group after each match.
+- **Referee mode** (watch): toggle in settings; session UI swaps Events page vocabulary to
+  cards/fouls via `SportProfile`-style event list, hides player analytics on summary.
+- **Double-tap remap** (watch): setting `doubleTapAction` (flag|subToggle|goalUs) applied where
+  `.handGestureShortcut` is attached.
+- **StoreKit** (iOS): `EntitlementStore` (StoreKit 2, product `com.nicemohawk.MatchTracker.team.monthly`,
+  local `MatchTracker.storekit` config for testing); team tabs beyond 1 membership, live dashboard,
+  chat, and formation gated behind `entitled(.team)` with graceful upsell view.
+- **Video highlights** (iOS): PhotosPicker import per match; align flags to video time via
+  creation-date offset + manual drift slider; scrubbable AVPlayer highlight list.
+- **Training load** (iOS): read HK cardio fitness (VO2max) + 28-day soccer-workout load, show
+  workrate score in context ("above your 4-week average").
+- **Coach view** (iPad): NavigationSplitView dashboard — roster live dots on pitch (via
+  `liveTeam`), per-player stat tiles; degrades to last-known data offline.
 
 ## Verification commands
 

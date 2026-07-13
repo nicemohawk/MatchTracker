@@ -58,6 +58,10 @@ final class WorkoutManager: NSObject {
     var onPitch = true
     private(set) var track: [TrackPoint] = []
 
+    /// Transient banner surfaced when an automatic substitution is detected (e.g. "Subbed out
+    /// (auto)"). Set for a moment, then cleared; Metrics/Session overlays it briefly.
+    var autoSubBanner: String?
+
     // MARK: Summary results (populated by endMatch)
 
     var finishedWorkout: HKWorkout?
@@ -79,6 +83,11 @@ final class WorkoutManager: NSObject {
     @ObservationIgnored private var routeBuilder: HKWorkoutRouteBuilder?
     @ObservationIgnored private let locationManager = CLLocationManager()
     @ObservationIgnored private var recentLocations: [CLLocation] = []
+
+    /// Geometry-first automatic substitution detector. Non-nil only when a field was resolved for
+    /// this match (no field → no boundary to reason about → detection disabled, everything else
+    /// works as before).
+    @ObservationIgnored private var autoSubDetector: AutoSubDetector?
 
     @ObservationIgnored private lazy var configuration: HKWorkoutConfiguration = {
         let configuration = HKWorkoutConfiguration()
@@ -196,16 +205,24 @@ final class WorkoutManager: NSObject {
         session?.resume()
     }
 
-    /// Toggle the wearer's on-pitch state, logging a sub event with a strong haptic.
+    /// Toggle the wearer's on-pitch state, logging a manual sub event with a strong haptic. Manual
+    /// events win: the detector is re-synced and its auto output muted for the cooldown.
     func toggleSub() {
         onPitch.toggle()
-        log(onPitch ? .subIn : .subOut, haptic: false)
+        let event = MatchEvent(kind: onPitch ? .subIn : .subOut, date: Date(), source: .manual)
+        autoSubDetector?.recordManualEvent(event)
+        append(event, haptic: false)
         WKInterfaceDevice.current().play(.notification)
     }
 
-    /// Append an event, give feedback and persist the crash-safe record.
+    /// Append a manually-logged event, give feedback and persist the crash-safe record.
     func log(_ kind: MatchEventKind, note: String? = nil, haptic: Bool = true) {
-        let event = MatchEvent(kind: kind, date: Date(), note: note)
+        append(MatchEvent(kind: kind, date: Date(), note: note, source: .manual), haptic: haptic)
+    }
+
+    /// Append an already-built event (preserving its date and source), optionally give a success
+    /// haptic, and persist the crash-safe record.
+    private func append(_ event: MatchEvent, haptic: Bool) {
         events.append(event)
         if haptic {
             WKInterfaceDevice.current().play(.success)
@@ -298,6 +315,8 @@ final class WorkoutManager: NSObject {
         currentSpeed = 0
         elapsedAtPause = 0
         onPitch = true
+        autoSubDetector = nil
+        autoSubBanner = nil
         session = nil
         builder = nil
         routeBuilder = nil
@@ -308,6 +327,12 @@ final class WorkoutManager: NSObject {
     private func resetForNewMatch(field: FieldModel?) {
         matchID = UUID()
         fieldID = field?.id
+        // A resolved field gives the detector a touchline to reason about; without one, automatic
+        // substitution detection is simply off for this match.
+        autoSubDetector = field.map {
+            AutoSubDetector(projector: FieldProjector(rectangle: $0.rectangle), initiallyOnPitch: true)
+        }
+        autoSubBanner = nil
         events = []
         track = []
         recentLocations = []
@@ -393,6 +418,12 @@ final class WorkoutManager: NSObject {
             // ignoring any later non-sub events that would otherwise mask it.
             let lastSub = events.last { $0.kind == .subIn || $0.kind == .subOut }
             onPitch = lastSub?.kind != .subOut
+
+            // Rebuild the detector from the recovered field so auto-detection resumes mid-match.
+            if let fieldID, let field = AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID }) {
+                autoSubDetector = AutoSubDetector(projector: FieldProjector(rectangle: field.rectangle),
+                                                  initiallyOnPitch: onPitch)
+            }
         }
 
         startLocationUpdates()
@@ -475,6 +506,31 @@ extension WorkoutManager: CLLocationManagerDelegate {
                 self.recentLocations.removeFirst(self.recentLocations.count - 10)
             }
             self.recomputeCurrentSpeed()
+            self.runAutoSubDetection(on: points)
+        }
+    }
+
+    /// Feed accepted GPS points (with the latest heart rate) through the detector. A returned auto
+    /// sub event is logged preserving its own date/source, flips `onPitch`, fires a distinct gentle
+    /// haptic and raises a transient banner. Runs on the main queue with the published metrics.
+    private func runAutoSubDetection(on points: [TrackPoint]) {
+        guard let detector = autoSubDetector else { return }
+        let latestHeartRate = heartRate > 0 ? heartRate : nil
+        for point in points {
+            guard let event = detector.process(point: point, heartRate: latestHeartRate) else { continue }
+            append(event, haptic: false)
+            onPitch = event.kind != .subOut
+            WKInterfaceDevice.current().play(.directionUp)
+            showAutoSubBanner(event.kind == .subOut ? "Subbed out (auto)" : "Subbed in (auto)")
+        }
+    }
+
+    /// Raise the auto-sub banner and clear it after a moment.
+    private func showAutoSubBanner(_ message: String) {
+        autoSubBanner = message
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if self?.autoSubBanner == message { self?.autoSubBanner = nil }
         }
     }
 

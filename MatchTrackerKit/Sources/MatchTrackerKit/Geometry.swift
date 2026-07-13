@@ -194,4 +194,15 @@ public struct FieldProjector: Sendable {
         let overrunShort = max(0, abs(short) - halfWidth)
         return overrunLong <= toleranceMeters && overrunShort <= toleranceMeters
     }
+
+    /// How far (meters) the coordinate lies OUTSIDE the touchline rectangle; 0 when inside.
+    /// This is the geometric signal `AutoSubDetector` keys off of. Internal by design — it is a
+    /// detector implementation detail, not part of the public projection contract.
+    func distanceOutsideMeters(_ coordinate: Coordinate2D) -> Double {
+        guard rectangle.lengthMeters > 0, rectangle.widthMeters > 0 else { return 0 }
+        let (long, short) = axisProjections(for: coordinate)
+        let overrunLong = max(0, abs(long) - halfLength)
+        let overrunShort = max(0, abs(short) - halfWidth)
+        return hypot(overrunLong, overrunShort)
+    }
 }
