@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  NOTE: This is the Release Info.plist for the iOS app target.
-  It MUST be kept in sync with iOS App/Info-Debug.plist, which is identical
-  apart from an added NSAppTransportSecurity block that relaxes ATS for local
-  networking in Debug builds. Any change here (new keys, usage strings, etc.)
-  must be mirrored into Info-Debug.plist and vice versa.
+  NOTE: This is the Debug-only Info.plist for the iOS app target.
+  It MUST be kept in sync with iOS App/Info.plist, which is identical apart
+  from the NSAppTransportSecurity block below. That block relaxes ATS so Debug
+  builds can talk to a plain-HTTP test backend on the local network (see
+  Settings -> Server URL override). Release builds use iOS App/Info.plist and
+  keep default ATS. Any change to Info.plist (new keys, usage strings, etc.)
+  must be mirrored here and vice versa, apart from the ATS block.
 -->
 <plist version="1.0">
 <dict>
@@ -25,5 +27,10 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
