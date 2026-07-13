@@ -8,6 +8,7 @@ import Observation
 import HealthKit
 import CoreLocation
 import WatchKit
+import WidgetKit
 import MatchTrackerKit
 
 /// High-level screen the watch app is showing. Drives root navigation.
@@ -89,12 +90,18 @@ final class WorkoutManager: NSObject {
     /// works as before).
     @ObservationIgnored private var autoSubDetector: AutoSubDetector?
 
-    @ObservationIgnored private lazy var configuration: HKWorkoutConfiguration = {
+    /// Sensor-fusion heading samples and live sideline streaming, both active only during a match.
+    @ObservationIgnored private let headingRecorder = HeadingRecorder()
+    @ObservationIgnored private let liveStreamer = LiveStreamer()
+
+    /// Built per match so the selected sport's activity type is honored.
+    private func makeWorkoutConfiguration() -> HKWorkoutConfiguration {
         let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .soccer
+        let sport = WatchSettings.sportProfile
+        configuration.activityType = HKWorkoutActivityType(rawValue: UInt(sport.workoutActivityTypeRawValue)) ?? .soccer
         configuration.locationType = .outdoor
         return configuration
-    }()
+    }
 
     private override init() {
         super.init()
@@ -173,6 +180,7 @@ final class WorkoutManager: NSObject {
         resetForNewMatch(field: field)
 
         do {
+            let configuration = makeWorkoutConfiguration()
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             let builder = session.associatedWorkoutBuilder()
             builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
@@ -189,12 +197,37 @@ final class WorkoutManager: NSObject {
             try await builder.beginCollection(at: start)
 
             startLocationUpdates()
+            headingRecorder.start()
+            liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
             log(.matchStart, haptic: false)
             phase = .active
         } catch {
             // If we can't start, fall back to the start screen.
+            MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
             phase = .idle
         }
+    }
+
+    /// Snapshot of live state for the sideline stream; nil ends the current send quietly.
+    @MainActor
+    private func makeLiveUpdate() -> LiveMatchUpdate? {
+        guard phase == .active else { return nil }
+        let deltas = liveStreamer.deltas(track: track, events: events)
+        let score = score
+        let hasScore = score.us + score.them > 0
+        return LiveMatchUpdate(
+            sequence: liveStreamer.nextSequence,
+            timestamp: Date(),
+            elapsed: elapsedTime(at: Date()),
+            heartRate: heartRate > 0 ? heartRate : nil,
+            distanceMeters: distanceMeters,
+            currentSpeed: currentSpeed > 0 ? currentSpeed : nil,
+            onPitch: onPitch,
+            latestPoints: deltas.points,
+            newEvents: deltas.events,
+            usGoals: hasScore ? score.us : nil,
+            themGoals: hasScore ? score.them : nil
+        )
     }
 
     func pause() {
@@ -240,6 +273,8 @@ final class WorkoutManager: NSObject {
     func endMatch() async -> MatchOutcome {
         let end = Date()
         stopLocationUpdates()
+        headingRecorder.stop()
+        liveStreamer.stop()
 
         // Discard an accidental / too-short session: no matchEnd event, no HealthKit save, no
         // record persistence, no file transfer, no field learning. Return to the start screen.
@@ -247,6 +282,7 @@ final class WorkoutManager: NSObject {
         if elapsed < minimumMatchDuration {
             session?.end()
             builder?.discardWorkout()
+            headingRecorder.reset()
             AppGroupStorage.clearInProgress()
             reset()
             return .discardedTooShort
@@ -271,7 +307,20 @@ final class WorkoutManager: NSObject {
                 _ = try? await routeBuilder.finishRoute(with: workout, metadata: nil)
             }
         } catch {
+            MatchLog.error("Finishing workout failed: \(error.localizedDescription)", category: "workout")
             workout = nil
+        }
+
+        // Automatic period detection: no-op when the wearer tagged periods manually.
+        let projector = fieldID
+            .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id } }
+            .map { FieldProjector(rectangle: $0.rectangle) }
+        let detectedPeriods = PeriodDetector.detectPeriods(track: track, events: events,
+                                                           projector: projector,
+                                                           configuration: PeriodDetectorConfiguration())
+        if !detectedPeriods.isEmpty {
+            events.append(contentsOf: detectedPeriods)
+            events.sort { $0.date < $1.date }
         }
 
         let recordID = workout?.uuid ?? matchID
@@ -281,13 +330,16 @@ final class WorkoutManager: NSObject {
             endDate: end,
             fieldID: fieldID,
             events: events,
-            teamCode: AppGroupStorage.teamCode
+            teamCode: AppGroupStorage.teamCode,
+            sportID: WatchSettings.sportProfile.id,
+            headings: headingRecorder.collected
         )
 
         finishedWorkout = workout
         finishedRecord = record
         AppGroupStorage.persistFinished(record)
         AppGroupStorage.clearInProgress()
+        writeLastMatchSnapshot(record: record, end: end)
 
         // Post-match field learning: refine a known field or propose a newly inferred one.
         switch AppGroupStorage.fieldStore.recordObservation(track: track) {
@@ -299,6 +351,32 @@ final class WorkoutManager: NSObject {
 
         phase = .summary
         return .finished(workout: workout, record: record)
+    }
+
+    /// Feeds the widget's last-match Smart Stack card.
+    private func writeLastMatchSnapshot(record: MatchRecord, end: Date) {
+        let runs = RunDetector.detectRuns(in: track, configuration: RunDetectorConfiguration())
+        let fieldName = record.fieldID
+            .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id }?.name }
+        let snapshot = LastMatchSnapshot(
+            matchID: record.id,
+            endDate: end,
+            fieldName: fieldName,
+            durationSeconds: elapsedAtPause,
+            timeOnPitchSeconds: SubstitutionTracker.timeOnPitch(events: record.events,
+                                                                matchStart: record.startDate,
+                                                                matchEnd: end),
+            distanceMeters: distanceMeters,
+            goalsUs: score.us,
+            goalsThem: score.them,
+            sprintCount: runs.filter { $0.intensity == .sprint }.count
+        )
+        do {
+            try snapshot.save(to: AppGroupStorage.containerURL)
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            MatchLog.error("Snapshot write failed: \(error.localizedDescription)", category: "widgets")
+        }
     }
 
     /// Return to the start screen, clearing the finished match.
@@ -328,8 +406,8 @@ final class WorkoutManager: NSObject {
         matchID = UUID()
         fieldID = field?.id
         // A resolved field gives the detector a touchline to reason about; without one, automatic
-        // substitution detection is simply off for this match.
-        autoSubDetector = field.map {
+        // substitution detection is simply off for this match. Referees are never "subbed".
+        autoSubDetector = WatchSettings.refereeMode ? nil : field.map {
             AutoSubDetector(projector: FieldProjector(rectangle: $0.rectangle), initiallyOnPitch: true)
         }
         autoSubBanner = nil
@@ -400,7 +478,8 @@ final class WorkoutManager: NSObject {
     /// Reattach delegates/metrics to a recovered session and restore the in-progress record.
     func handleActiveWorkoutRecovery(session recovered: HKWorkoutSession) {
         let builder = recovered.associatedWorkoutBuilder()
-        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
+                                                     workoutConfiguration: recovered.workoutConfiguration)
         recovered.delegate = self
         builder.delegate = self
 

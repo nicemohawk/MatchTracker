@@ -22,6 +22,7 @@ struct MatchDetailView: View {
         case workrate = "Workrate"
         case position = "Position"
         case events = "Events"
+        case video = "Video"
         var id: String { rawValue }
     }
 
@@ -47,17 +48,50 @@ struct MatchDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await uploads.reupload(summary) }
+                Menu {
+                    Button {
+                        Task { await uploads.reupload(summary) }
+                    } label: {
+                        Label("Re-upload to team", systemImage: "icloud.and.arrow.up")
+                    }
+                    .disabled(uploads.isUploading)
+
+                    if let detail = model.detail {
+                        ExportMenu(detail: detail, summary: summary)
+                    }
+
+                    teamTagMenu
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
-                .disabled(uploads.isUploading)
             }
         }
         .task {
             model.attach(store.detailModel(for: summary))
             await model.detail?.load()
+        }
+    }
+
+    /// Tag which of the player's teams this match was played for (multi-team support).
+    @ViewBuilder
+    private var teamTagMenu: some View {
+        let memberships = SettingsStore.shared.teamMemberships
+        if memberships.count > 1, let record = summary.record {
+            Menu("Played for…") {
+                ForEach(memberships) { membership in
+                    Button {
+                        var updated = record
+                        updated.teamCode = membership.code
+                        store.save(record: updated)
+                    } label: {
+                        if record.teamCode == membership.code {
+                            Label(membership.code, systemImage: "checkmark")
+                        } else {
+                            Text(membership.code)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -95,9 +129,13 @@ struct MatchDetailView: View {
                     PositionSection(analytics: analytics)
                 case .events:
                     EventsSection(detail: detail)
+                case .video:
+                    VideoHighlightsSection(detail: detail, matchStart: summary.startDate)
                 }
             } else if section == .events {
                 EventsSection(detail: detail)
+            } else if section == .video {
+                VideoHighlightsSection(detail: detail, matchStart: summary.startDate)
             } else {
                 ContentUnavailableView("No GPS Data Recorded", systemImage: "location.slash",
                                        description: Text("This match has no GPS route, so heatmap, runs, workrate and position aren't available. The events timeline still works."))

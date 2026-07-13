@@ -8,7 +8,9 @@ import MatchTrackerKit
 struct HeatmapSection: View {
     @ObservedObject var detail: MatchDetailModel
     let analytics: MatchAnalytics
+    @EnvironmentObject private var store: MatchStore
     @State private var showSatellite = false
+    @State private var compareWithSeason = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -17,24 +19,69 @@ struct HeatmapSection: View {
             }
             .font(.subheadline)
 
+            Toggle(isOn: $compareWithSeason) {
+                Label("Compare with season average", systemImage: "square.2.layers.3d")
+            }
+            .font(.subheadline)
+            .disabled(showSatellite)
+
             if showSatellite {
                 SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap)
                     .frame(height: 320)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
-                PitchHeatmapCanvas(heatmap: analytics.heatmap)
+                PitchHeatmapCanvas(heatmap: analytics.heatmap,
+                                   comparison: compareWithSeason ? seasonAverage : nil)
                     .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
                     .background(Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            if compareWithSeason && !showSatellite {
+                if seasonAverage == nil {
+                    Text("Play more matches to compare — no other analyzed matches yet.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    comparisonLegend
+                }
             }
 
             HeatmapLegend()
         }
     }
+
+    /// Cell-wise average of every OTHER analyzed match's heatmap (cached only — never loads).
+    private var seasonAverage: HeatmapGrid? {
+        let grids = store.cachedHeatmaps(excluding: detail.matchIdentifier)
+            .filter { $0.columns == analytics.heatmap.columns && $0.rows == analytics.heatmap.rows }
+        guard !grids.isEmpty else { return nil }
+        var averaged = grids[0]
+        let count = Double(grids.count)
+        for index in averaged.cells.indices {
+            averaged.cells[index] = grids.reduce(0) { $0 + $1.cells[index] } / count
+        }
+        let peak = averaged.cells.max() ?? 1
+        if peak > 0 {
+            for index in averaged.cells.indices { averaged.cells[index] /= peak }
+        }
+        return averaged
+    }
+
+    private var comparisonLegend: some View {
+        HStack(spacing: 14) {
+            Label("This match", systemImage: "square.fill")
+                .foregroundStyle(.orange)
+            Label("Season average", systemImage: "square.fill")
+                .foregroundStyle(.blue)
+        }
+        .font(.caption2)
+    }
 }
 
 /// Green pitch + alpha/color-ramped heatmap cells + white markings, aspect-correct.
+/// An optional `comparison` grid (e.g. season average) renders beneath in cool blue.
 struct PitchHeatmapCanvas: View {
     let heatmap: HeatmapGrid
+    var comparison: HeatmapGrid?
 
     var body: some View {
         Canvas { context, size in
@@ -42,6 +89,25 @@ struct PitchHeatmapCanvas: View {
 
             // Turf.
             context.fill(Path(rect), with: .color(Color(red: 0.20, green: 0.55, blue: 0.25)))
+
+            // Comparison underlay (season average): cool blue so the warm ramp reads on top.
+            if let comparison, comparison.columns > 0, comparison.rows > 0 {
+                let cellWidth = rect.width / CGFloat(comparison.columns)
+                let cellHeight = rect.height / CGFloat(comparison.rows)
+                for row in 0..<comparison.rows {
+                    for column in 0..<comparison.columns {
+                        let value = comparison[column, row]
+                        guard value > 0.05 else { continue }
+                        let cellRect = CGRect(
+                            x: rect.minX + CGFloat(column) * cellWidth,
+                            y: rect.minY + CGFloat(row) * cellHeight,
+                            width: cellWidth + 0.5, height: cellHeight + 0.5
+                        )
+                        context.fill(Path(cellRect),
+                                     with: .color(Color.blue.opacity(0.15 + 0.5 * min(1, value))))
+                    }
+                }
+            }
 
             // Heatmap cells.
             if heatmap.columns > 0 && heatmap.rows > 0 {

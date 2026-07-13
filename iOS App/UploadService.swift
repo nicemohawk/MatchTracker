@@ -12,6 +12,11 @@ import MatchTrackerKit
 final class UploadService: ObservableObject {
     @Published private(set) var status: String?
     @Published private(set) var isUploading = false
+    /// Uploads waiting in the persistent retry queue (surfaced in Settings).
+    @Published private(set) var pendingUploadCount = 0
+
+    /// Persistent retry queue; created once an API key exists (it needs a live client).
+    private var queue: UploadQueue?
 
     private let settings: SettingsStore
     private let fields: FieldsModel
@@ -57,6 +62,42 @@ final class UploadService: ObservableObject {
         return APIClient(baseURL: settings.baseURL, apiKey: apiKey, deviceID: deviceID)
     }
 
+    // MARK: - Persistent queue
+
+    private func makeQueueIfNeeded() {
+        guard queue == nil, let client else { return }
+        queue = UploadQueue(directory: AppGroup.containerURL, client: client)
+        pendingUploadCount = queue?.pending.count ?? 0
+    }
+
+    /// Attempt everything due in the retry queue; safe to call anytime.
+    func flushQueue() async {
+        makeQueueIfNeeded()
+        guard let queue else { return }
+        let remaining = await queue.flush()
+        pendingUploadCount = remaining
+        if remaining > 0 {
+            status = "\(remaining) upload\(remaining == 1 ? "" : "s") pending retry"
+        }
+    }
+
+    /// Relay one live update to the backend, best-effort (sideline dashboards).
+    func relayLive(_ update: LiveMatchUpdate) {
+        guard let client,
+              let teamCode = settings.teamCode.isEmpty ? nil : settings.teamCode else { return }
+        Task {
+            do {
+                try await client.postLive(update, matchUUID: deviceScopedLiveMatchID, teamCode: teamCode)
+            } catch {
+                MatchLog.error("Live relay failed: \(error.localizedDescription)", category: "live")
+            }
+        }
+    }
+
+    /// The live endpoint keys rows by device; a stable per-session UUID groups this match's
+    /// updates until the finished record replaces it.
+    private lazy var deviceScopedLiveMatchID = UUID()
+
     // MARK: - Matches
 
     /// Upload matches not yet sent. Called after new records arrive.
@@ -97,12 +138,32 @@ final class UploadService: ObservableObject {
 
         guard !payloads.isEmpty else { status = "Nothing to upload"; return }
 
-        do {
-            try await client.post(matches: payloads)
-            if markUploaded { markIDs(sentIDs) }
-            status = "Uploaded \(payloads.count) match\(payloads.count == 1 ? "" : "es")"
-        } catch {
-            status = "Upload failed: \(error.localizedDescription)"
+        // Route through the persistent queue: an immediate flush sends them now when the network
+        // cooperates, and anything that fails survives relaunches and retries with backoff.
+        makeQueueIfNeeded()
+        if let queue {
+            do {
+                for payload in payloads {
+                    try queue.enqueue(match: payload)
+                }
+                if markUploaded { markIDs(sentIDs) }
+                let remaining = await queue.flush()
+                pendingUploadCount = remaining
+                status = remaining == 0
+                    ? "Uploaded \(payloads.count) match\(payloads.count == 1 ? "" : "es")"
+                    : "\(remaining) upload\(remaining == 1 ? "" : "s") queued for retry"
+            } catch {
+                status = "Upload failed: \(error.localizedDescription)"
+            }
+        } else {
+            // No API key yet: fall back to a direct attempt (legacy behavior).
+            do {
+                try await client.post(matches: payloads)
+                if markUploaded { markIDs(sentIDs) }
+                status = "Uploaded \(payloads.count) match\(payloads.count == 1 ? "" : "es")"
+            } catch {
+                status = "Upload failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -125,6 +186,18 @@ final class UploadService: ObservableObject {
         )
     }
 
+    // MARK: - Privacy passthroughs
+
+    func postConsent(guardianName: String) async throws {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        try await client.postConsent(guardianName: guardianName)
+    }
+
+    func requestServerDeletion() async throws {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        try await client.requestDeletion()
+    }
+
     // MARK: - Team stats
 
     enum TeamStatsError: LocalizedError {
@@ -137,16 +210,42 @@ final class UploadService: ObservableObject {
         return try await client.teamStats(code: code)
     }
 
+    func fetchFormation(code: String) async throws -> TeamFormation {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        return try await client.formation(code: code)
+    }
+
+    func fetchComments(match: UUID) async throws -> [MatchComment] {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        return try await client.comments(match: match)
+    }
+
+    func postComment(_ comment: MatchComment, match: UUID) async throws {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        try await client.postComment(comment, match: match)
+    }
+
+    func fetchLiveTeam(code: String) async throws -> [LivePlayerStatus] {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        return try await client.liveTeam(code: code)
+    }
+
     // MARK: - Fields
 
     func uploadFields() async {
         guard let client else { status = "No API key yet"; return }
         let toUpload = fields.fields
         guard !toUpload.isEmpty else { return }
-        do {
-            try await client.post(fields: toUpload)
-        } catch {
-            status = "Field upload failed: \(error.localizedDescription)"
+        makeQueueIfNeeded()
+        if let queue {
+            try? queue.enqueue(fields: toUpload)
+            pendingUploadCount = await queue.flush()
+        } else {
+            do {
+                try await client.post(fields: toUpload)
+            } catch {
+                status = "Field upload failed: \(error.localizedDescription)"
+            }
         }
     }
 

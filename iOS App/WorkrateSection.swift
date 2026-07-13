@@ -8,18 +8,107 @@ import MatchTrackerKit
 struct WorkrateSection: View {
     @ObservedObject var detail: MatchDetailModel
     let analytics: MatchAnalytics
+    @Environment(TrainingLoadService.self) private var trainingLoad
 
     private var report: WorkrateReport { analytics.workrate }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             workrateGauge
+            trainingLoadContext
+            fatigueBuckets
             distancePerMinuteChart
             speedZoneDonut
             if !detail.heartRateSeries.isEmpty {
                 heartRateChart
             }
         }
+    }
+
+    // MARK: Training-load context
+
+    /// Reads this match against the player's 4-week trend (HealthKit load + cached workrates).
+    @ViewBuilder
+    private var trainingLoadContext: some View {
+        if let load = trainingLoad.fourWeekLoad {
+            VStack(alignment: .leading, spacing: 3) {
+                if let average = load.averageWorkrateScore {
+                    let delta = report.workrateScore - average
+                    Label(
+                        delta >= 0
+                            ? "Above your 4-week average (\(Int(average))) by \(Int(delta))"
+                            : "Below your 4-week average (\(Int(average))) by \(Int(-delta))",
+                        systemImage: delta >= 0 ? "arrow.up.right" : "arrow.down.right"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(delta >= 0 ? .green : .orange)
+                }
+                HStack(spacing: 10) {
+                    Text("\(load.workoutCount) matches in 4 weeks")
+                    if let vo2 = trainingLoad.vo2Max {
+                        Text(String(format: "VO₂max %.1f", vo2))
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: Fatigue buckets
+
+    /// Workrate output per 15-minute block, surfacing second-half drop-off. Uses the
+    /// per-minute distances already computed for on-pitch time.
+    @ViewBuilder
+    private var fatigueBuckets: some View {
+        let buckets = fifteenMinuteBuckets
+        if buckets.count >= 2 {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Output by 15-Minute Block").font(.headline)
+                Chart(Array(buckets.enumerated()), id: \.offset) { index, metersPerMinute in
+                    BarMark(
+                        x: .value("Block", blockLabel(index)),
+                        y: .value("m/min", metersPerMinute)
+                    )
+                    .foregroundStyle(bucketColor(metersPerMinute, first: buckets[0]))
+                    .cornerRadius(3)
+                    .annotation(position: .top) {
+                        if index > 0, buckets[0] > 0 {
+                            let change = Int(((metersPerMinute - buckets[0]) / buckets[0]) * 100)
+                            Text(change <= 0 ? "\(change)%" : "+\(change)%")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .chartYAxisLabel("m/min")
+                .frame(height: 140)
+                Text("Change vs first block — a steady drop suggests fatigue.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var fifteenMinuteBuckets: [Double] {
+        let perMinute = report.distancePerMinute
+        guard perMinute.count >= 15 else { return [] }
+        return stride(from: 0, to: perMinute.count, by: 15).compactMap { start in
+            let block = Array(perMinute[start..<min(start + 15, perMinute.count)])
+            guard block.count >= 5 else { return nil }   // ignore tiny trailing slivers
+            return block.reduce(0, +) / Double(block.count)
+        }
+    }
+
+    private func blockLabel(_ index: Int) -> String {
+        "\(index * 15)–\(index * 15 + 15)'"
+    }
+
+    private func bucketColor(_ value: Double, first: Double) -> Color {
+        guard first > 0 else { return .green }
+        let ratio = value / first
+        if ratio >= 0.9 { return .green }
+        if ratio >= 0.75 { return .orange }
+        return .red
     }
 
     // MARK: Gauge

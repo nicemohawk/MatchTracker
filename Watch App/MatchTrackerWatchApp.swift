@@ -21,6 +21,12 @@ struct MatchTrackerWatchApp: App {
                     await workoutManager.requestAuthorization()
                     await workoutManager.recoverActiveWorkoutSession()
                 }
+                .onOpenURL { url in
+                    // Widget deep link: jump straight into the pre-match countdown.
+                    guard url.scheme == "matchtracker", url.host == "start",
+                          workoutManager.phase == .idle else { return }
+                    workoutManager.phase = .countdown
+                }
         }
     }
 }

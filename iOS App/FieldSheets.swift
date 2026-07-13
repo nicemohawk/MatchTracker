@@ -31,6 +31,17 @@ struct FieldDetailSheet: View {
                     LabeledContent("Created", value: field.createdAt.formatted(date: .abbreviated, time: .omitted))
                 }
                 Section {
+                    NavigationLink {
+                        CornerEditorView(field: field) { dismiss() }
+                    } label: {
+                        Label("Adjust Corners", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                    }
+                } footer: {
+                    Text(field.observationCount < 3
+                         ? "Low-confidence geometry (\(field.observationCount) observation\(field.observationCount == 1 ? "" : "s")) — nudging corners locks it in as trained."
+                         : "Manual corrections count as high-weight trained observations.")
+                }
+                Section {
                     Button(role: .destructive) {
                         fields.delete(id: field.id)
                         dismiss()
@@ -101,6 +112,78 @@ struct AcceptProposalSheet: View {
                 }
             }
         }
+    }
+}
+
+/// Drag the four corner pins on satellite imagery to correct a field's geometry. Saving refits
+/// the rectangle and records the correction as a high-weight trained observation.
+struct CornerEditorView: View {
+    let field: FieldModel
+    var onSaved: () -> Void
+    @EnvironmentObject private var fields: FieldsModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var corners: [Coordinate2D] = []
+    @State private var draggingIndex: Int?
+
+    var body: some View {
+        MapReader { proxy in
+            Map(initialPosition: .region(field.rectangle.mapRegion)) {
+                if corners.count == 4 {
+                    MapPolygon(coordinates: corners.map(\.clCoordinate))
+                        .foregroundStyle(Color.yellow.opacity(0.15))
+                        .stroke(.yellow, lineWidth: 2)
+                    ForEach(corners.indices, id: \.self) { index in
+                        Annotation("", coordinate: corners[index].clCoordinate) {
+                            cornerHandle(index: index, proxy: proxy)
+                        }
+                    }
+                }
+            }
+            .mapStyle(.imagery)
+        }
+        .navigationTitle("Adjust Corners")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Save") { save() }
+                    .disabled(corners.count != 4)
+            }
+        }
+        .onAppear {
+            if corners.isEmpty { corners = field.rectangle.corners }
+        }
+    }
+
+    private func cornerHandle(index: Int, proxy: MapProxy) -> some View {
+        Circle()
+            .fill(draggingIndex == index ? Color.orange : Color.yellow)
+            .frame(width: 26, height: 26)
+            .overlay(Circle().stroke(.white, lineWidth: 2))
+            .shadow(radius: 2)
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { value in
+                        draggingIndex = index
+                        if let coordinate = proxy.convert(value.location, from: .global) {
+                            corners[index] = Coordinate2D(latitude: coordinate.latitude,
+                                                          longitude: coordinate.longitude)
+                        }
+                    }
+                    .onEnded { _ in draggingIndex = nil }
+            )
+    }
+
+    private func save() {
+        guard let rectangle = FieldGeometry.fitOrientedRectangle(to: corners) else { return }
+        var updated = field
+        updated.rectangle = rectangle
+        updated.outline = corners
+        updated.source = .trained
+        updated.observationCount += 1
+        fields.save(updated)
+        dismiss()
+        onSaved()
     }
 }
 

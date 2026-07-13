@@ -32,13 +32,25 @@ struct ControlsView: View {
                     }
                     subButton
                 }
+
+                if WatchSettings.refereeMode {
+                    HStack(spacing: 10) {
+                        controlButton(title: "Start Half", systemImage: "play.circle", tint: .green) {
+                            workoutManager.log(.periodStart)
+                        }
+                        controlButton(title: "End Half", systemImage: "stop.circle", tint: .orange) {
+                            workoutManager.log(.periodEnd)
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 4)
         }
     }
 
+    @ViewBuilder
     private var subButton: some View {
-        Button {
+        let button = Button {
             workoutManager.toggleSub()
         } label: {
             VStack(spacing: 4) {
@@ -50,6 +62,13 @@ struct ControlsView: View {
             .frame(maxWidth: .infinity, minHeight: 60)
         }
         .tint(workoutManager.onPitch ? .orange : .green)
+
+        // Optional hands-free double-tap mapping (Settings > Double Tap).
+        if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .subToggle {
+            button.handGestureShortcut(.primaryAction)
+        } else {
+            button
+        }
     }
 
     private func controlButton(title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {

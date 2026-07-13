@@ -17,6 +17,8 @@ final class ConnectivityManager: NSObject, ObservableObject {
     var onMatchRecordReceived: ((MatchRecord) -> Void)?
     /// Invoked (on the main actor) when a field was received and saved.
     var onFieldReceived: (() -> Void)?
+    /// Invoked (on the main actor) for each live in-match update streamed from the watch.
+    var onLiveUpdate: ((LiveMatchUpdate) -> Void)?
 
     init(fields: FieldsModel, settings: SettingsStore) {
         self.fields = fields
@@ -110,6 +112,22 @@ extension ConnectivityManager: WCSessionDelegate {
                 self.onFieldReceived?()
                 self.pushContext()
             }
+        }
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        handleLiveUpdate(message["liveUpdate"] as? Data)
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        handleLiveUpdate(userInfo["liveUpdate"] as? Data)
+    }
+
+    private func handleLiveUpdate(_ data: Data?) {
+        guard let data,
+              let update = try? MatchTrackerJSON.decoder().decode(LiveMatchUpdate.self, from: data) else { return }
+        Task { @MainActor in
+            onLiveUpdate?(update)
         }
     }
 

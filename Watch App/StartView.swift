@@ -38,6 +38,19 @@ struct StartView: View {
                     }
                     .tint(.blue)
 
+                    NavigationLink {
+                        WatchSettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    if WatchSettings.refereeMode {
+                        Label("Referee mode", systemImage: "rectangle.portrait.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.yellow)
+                    }
+
                     if let teamCode = connectivity.teamCode, !teamCode.isEmpty {
                         Label(teamCode, systemImage: "person.3")
                             .font(.footnote)

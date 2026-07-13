@@ -28,14 +28,23 @@ struct SummaryView: View {
                 }
 
                 summaryRow("Duration", value: durationString, tint: .yellow)
-                summaryRow("Time on Pitch", value: timeOnPitchString, tint: .orange)
-                summaryRow("Distance", value: distanceString, tint: .blue)
-                summaryRow("Avg Heart Rate", value: averageHeartRateString, tint: .red)
-                summaryRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .orange)
-                summaryRow("Runs", value: "\(runCounts.runs)", tint: .green)
-                summaryRow("Sprints", value: "\(runCounts.sprints)", tint: .green)
-                summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
-                summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
+                if WatchSettings.refereeMode {
+                    // Officiating summary: the referee's own athletic stats are noise here.
+                    summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                    summaryRow("Yellow Cards", value: "\(count(of: .yellowCard))", tint: .yellow)
+                    summaryRow("Red Cards", value: "\(count(of: .redCard))", tint: .red)
+                    summaryRow("Fouls", value: "\(count(of: .foul))", tint: .orange)
+                    summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
+                } else {
+                    summaryRow("Time on Pitch", value: timeOnPitchString, tint: .orange)
+                    summaryRow("Distance", value: distanceString, tint: .blue)
+                    summaryRow("Avg Heart Rate", value: averageHeartRateString, tint: .red)
+                    summaryRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .orange)
+                    summaryRow("Runs", value: "\(runCounts.runs)", tint: .green)
+                    summaryRow("Sprints", value: "\(runCounts.sprints)", tint: .green)
+                    summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                    summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
+                }
 
                 if autoDetectedSubCount > 0 {
                     Label("\(autoDetectedSubCount) auto sub\(autoDetectedSubCount == 1 ? "" : "s")",
@@ -93,6 +102,11 @@ struct SummaryView: View {
     private var fieldName: String? {
         guard let fieldID = workoutManager.finishedRecord?.fieldID else { return nil }
         return AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID })?.name
+    }
+
+    private func count(of kind: MatchEventKind) -> Int {
+        (workoutManager.finishedRecord?.events ?? workoutManager.events)
+            .filter { $0.kind == kind }.count
     }
 
     /// Substitutions the detector logged automatically during this match.

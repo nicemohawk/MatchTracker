@@ -10,9 +10,13 @@ struct TeamView: View {
     @EnvironmentObject private var uploads: UploadService
     @EnvironmentObject private var matches: MatchStore
 
+    @Environment(EntitlementStore.self) private var entitlements
+
     @State private var teamCode = ""
     @State private var playerName = ""
     @State private var loadState: LoadState = .idle
+    @State private var newTeamCode = ""
+    @State private var showingPaywall = false
 
     enum LoadState {
         case idle, loading, loaded(TeamStats), failed(String)
@@ -31,6 +35,10 @@ struct TeamView: View {
                         .disabled(teamCode.isEmpty)
                 }
 
+                membershipsSection
+
+                teamFeaturesSection
+
                 rosterSection
             }
             .navigationTitle("Team")
@@ -39,7 +47,133 @@ struct TeamView: View {
                 playerName = settings.playerName
                 if !teamCode.isEmpty { Task { await load() } }
             }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView(entitlements: entitlements)
+            }
         }
+    }
+
+    /// Formation + chat, both team-subscription features.
+    @ViewBuilder
+    private var teamFeaturesSection: some View {
+        if !settings.teamCode.isEmpty {
+            Section("Team Features") {
+                if entitlements.entitledToTeam {
+                    NavigationLink {
+                        FormationView(teamCode: settings.teamCode)
+                    } label: {
+                        Label("Formation", systemImage: "square.grid.3x3.middle.filled")
+                    }
+                    NavigationLink {
+                        TeamChatView()
+                    } label: {
+                        Label("Match Chat", systemImage: "bubble.left.and.bubble.right")
+                    }
+                } else {
+                    Button {
+                        showingPaywall = true
+                    } label: {
+                        Label("Unlock formation, chat & live dashboard", systemImage: "lock")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Multi-team memberships: the starred team is the default for uploads and the watch.
+    /// A second membership is a team-subscription feature.
+    @ViewBuilder
+    private var membershipsSection: some View {
+        let memberships = settings.teamMemberships
+        if !memberships.isEmpty || entitlements.entitledToTeam {
+            Section("My Teams") {
+                ForEach(memberships) { membership in
+                    membershipRow(membership)
+                }
+                HStack {
+                    TextField("Add team code", text: $newTeamCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                    Button("Add") { addMembership() }
+                        .disabled(newTeamCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if !entitlements.entitledToTeam && memberships.count >= 1 {
+                    Button {
+                        showingPaywall = true
+                    } label: {
+                        Label("Multiple teams require Team features", systemImage: "lock")
+                            .font(.caption)
+                    }
+                }
+            }
+        }
+    }
+
+    private func membershipRow(_ membership: TeamMembership) -> some View {
+        HStack {
+            Button {
+                settings.teamCode = membership.code
+                teamCode = membership.code
+                environment.settingsChanged()
+                Task { await load() }
+            } label: {
+                Image(systemName: membership.code == settings.teamCode ? "star.fill" : "star")
+                    .foregroundStyle(.yellow)
+            }
+            .buttonStyle(.borderless)
+
+            VStack(alignment: .leading) {
+                Text(membership.code).font(.body.monospaced())
+                if let name = membership.name { Text(name).font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer()
+            // Initials-only display for this team (minors privacy; enforced server-side too).
+            Toggle("Initials", isOn: initialsBinding(for: membership))
+                .labelsHidden()
+                .toggleStyle(.button)
+                .font(.caption2)
+
+            Button(role: .destructive) {
+                settings.teamMemberships.removeAll { $0.code == membership.code }
+                environment.settingsChanged()
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private func initialsBinding(for membership: TeamMembership) -> Binding<Bool> {
+        Binding(
+            get: { settings.teamMemberships.first { $0.code == membership.code }?.displayInitialsOnly ?? false },
+            set: { newValue in
+                var memberships = settings.teamMemberships
+                if let index = memberships.firstIndex(where: { $0.code == membership.code }) {
+                    memberships[index].displayInitialsOnly = newValue
+                    settings.teamMemberships = memberships
+                }
+            }
+        )
+    }
+
+    private func addMembership() {
+        let code = newTeamCode.trimmingCharacters(in: .whitespaces).uppercased()
+        guard !code.isEmpty else { return }
+        var memberships = settings.teamMemberships
+        guard !memberships.contains(where: { $0.code == code }) else { newTeamCode = ""; return }
+        // The second team (and beyond) is gated behind the team subscription.
+        if !memberships.isEmpty && !entitlements.entitledToTeam {
+            showingPaywall = true
+            return
+        }
+        memberships.append(TeamMembership(code: code, name: nil, displayInitialsOnly: false))
+        settings.teamMemberships = memberships
+        newTeamCode = ""
+        if settings.teamCode.isEmpty {
+            settings.teamCode = code
+            teamCode = code
+        }
+        environment.settingsChanged()
     }
 
     @ViewBuilder

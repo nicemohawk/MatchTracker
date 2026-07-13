@@ -6,17 +6,26 @@ import MatchTrackerKit
 
 struct MatchesView: View {
     @EnvironmentObject private var matches: MatchStore
+    @EnvironmentObject private var fields: FieldsModel
+    @Environment(LiveMatchStore.self) private var liveMatches
+    @Environment(EntitlementStore.self) private var entitlements
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
             Group {
-                if matches.matches.isEmpty {
+                if matches.matches.isEmpty && !liveMatches.isLive {
                     emptyState
                 } else {
-                    List(matches.matches) { summary in
-                        NavigationLink(value: summary.id) {
-                            MatchRow(summary: summary)
+                    List {
+                        if liveMatches.isLive {
+                            liveCard
+                        }
+                        ForEach(matches.matches) { summary in
+                            NavigationLink(value: summary.id) {
+                                MatchRow(summary: summary)
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -29,6 +38,17 @@ struct MatchesView: View {
                 }
             }
             .toolbar {
+                // Coach live dashboard (team feature), most useful at iPad width.
+                if horizontalSizeClass == .regular, entitlements.entitledToTeam,
+                   !SettingsStore.shared.teamCode.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink {
+                            CoachDashboardView(teamCode: SettingsStore.shared.teamCode)
+                        } label: {
+                            Image(systemName: "field.of.view.wide")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingSettings = true
@@ -47,6 +67,40 @@ struct MatchesView: View {
                 SettingsView()
             }
         }
+    }
+
+    /// Watch-streamed match in progress: jump to the live sideline dashboard.
+    private var liveCard: some View {
+        NavigationLink {
+            LiveMatchView(store: liveMatches, projector: liveProjector)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.title2)
+                    .foregroundStyle(.red)
+                    .symbolEffect(.pulse)
+                VStack(alignment: .leading) {
+                    Text("Match in progress")
+                        .font(.headline)
+                    if let update = liveMatches.latest {
+                        Text("\(update.usGoals ?? 0)–\(update.themGoals ?? 0) · \(String(format: "%.1f km", update.distanceMeters / 1000))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        }
+        .listRowBackground(Color.red.opacity(0.08))
+    }
+
+    /// Field projector for the live position dot, resolved from streamed points.
+    private var liveProjector: FieldProjector? {
+        let coordinates = liveMatches.recentPoints.suffix(30).map(\.coordinate)
+        guard !coordinates.isEmpty,
+              let field = fields.store.bestMatch(for: Array(coordinates)) else { return nil }
+        return FieldProjector(rectangle: field.rectangle)
     }
 
     private var emptyState: some View {

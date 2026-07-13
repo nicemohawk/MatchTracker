@@ -90,6 +90,25 @@ final class MatchStore: ObservableObject {
         return model
     }
 
+    /// Heatmaps of every OTHER analyzed match (cached details only — never triggers loads).
+    /// Used for the season-average comparison overlay.
+    func cachedHeatmaps(excluding id: UUID) -> [HeatmapGrid] {
+        detailCache
+            .filter { $0.key != id }
+            .compactMap { $0.value.analytics?.heatmap }
+    }
+
+    /// Average workrate score across matches analyzed in the last `days`, for training-load
+    /// context. Only already-cached details count — this never triggers HealthKit loads.
+    func recentAverageWorkrate(days: Int) -> Double? {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        let scores = matches
+            .filter { $0.startDate >= cutoff }
+            .compactMap { detailCache[$0.id]?.analytics?.workrate.workrateScore }
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / Double(scores.count)
+    }
+
     // MARK: - Match record persistence
 
     func loadRecords() -> [UUID: MatchRecord] {

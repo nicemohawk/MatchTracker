@@ -10,5 +10,13 @@
 	<string>MatchTracker uses your location to record your route on the pitch.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>MatchTracker uses your location during a match to record your route on the pitch.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.nicemohawk.MatchTracker.refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>
