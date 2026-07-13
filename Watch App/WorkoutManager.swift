@@ -274,12 +274,12 @@ final class WorkoutManager: NSObject {
         let end = Date()
         stopLocationUpdates()
         headingRecorder.stop()
-        liveStreamer.stop()
 
         // Discard an accidental / too-short session: no matchEnd event, no HealthKit save, no
         // record persistence, no file transfer, no field learning. Return to the start screen.
         let elapsed = builder?.elapsedTime(at: end) ?? elapsedAtPause
         if elapsed < minimumMatchDuration {
+            liveStreamer.stop()
             session?.end()
             builder?.discardWorkout()
             headingRecorder.reset()
@@ -289,6 +289,9 @@ final class WorkoutManager: NSObject {
         }
 
         log(.matchEnd, haptic: false)
+        // One final live delta so the sideline sees matchEnd instead of timing out.
+        await liveStreamer.sendFinalUpdate { [weak self] in self?.makeLiveUpdate() }
+        liveStreamer.stop()
 
         // Capture the workout's average heart rate before finishing.
         if let statistics = builder?.statistics(for: HKQuantityType(.heartRate)) {

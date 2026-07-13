@@ -63,8 +63,10 @@ struct ControlsView: View {
         }
         .tint(workoutManager.onPitch ? .orange : .green)
 
-        // Optional hands-free double-tap mapping (Settings > Double Tap).
-        if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .subToggle {
+        // Optional hands-free double-tap mapping (Settings > Double Tap). Referees are never
+        // subbed, so the gesture stays unmapped here in referee mode.
+        if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .subToggle,
+           !WatchSettings.refereeMode {
             button.handGestureShortcut(.primaryAction)
         } else {
             button

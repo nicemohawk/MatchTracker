@@ -57,18 +57,31 @@ final class LiveStreamer {
         return sequence
     }
 
-    private func sendOnce(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) async {
-        guard let update = await MainActor.run(body: snapshot) else { return }
-        guard let data = try? MatchTrackerJSON.encoder().encode(update) else { return }
+    /// One guaranteed final update (e.g. carrying matchEnd) before the streamer stops; forces the
+    /// userInfo fallback so it survives an unreachable phone.
+    func sendFinalUpdate(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) async {
+        await sendOnce(snapshot: snapshot, forceFallback: true)
+    }
 
+    private func sendOnce(snapshot: @escaping @MainActor () -> LiveMatchUpdate?,
+                          forceFallback: Bool = false) async {
         let session = WCSession.default
         guard session.activationState == .activated else { return }
 
-        if session.isReachable {
+        // Decide whether this tick can transmit at all BEFORE snapshotting: building the update
+        // consumes track/event deltas, and a consumed-but-dropped delta never reaches the phone.
+        let reachable = session.isReachable
+        let userInfoDue = forceFallback || Date().timeIntervalSince(lastUserInfoSend) >= userInfoInterval
+        guard reachable || userInfoDue else { return }
+
+        guard let update = await MainActor.run(body: snapshot) else { return }
+        guard let data = try? MatchTrackerJSON.encoder().encode(update) else { return }
+
+        if reachable {
             session.sendMessage([Self.messageKey: data], replyHandler: nil) { error in
                 MatchLog.error("Live update send failed: \(error.localizedDescription)", category: "live")
             }
-        } else if Date().timeIntervalSince(lastUserInfoSend) >= userInfoInterval {
+        } else {
             lastUserInfoSend = Date()
             session.transferUserInfo([Self.messageKey: data])
         }

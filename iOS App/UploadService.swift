@@ -182,6 +182,7 @@ final class UploadService: ObservableObject {
             fieldUUID: summary.record?.fieldID,
             teamCode: teamCode,
             playerName: playerName,
+            sportID: summary.record?.sportID,
             stats: MatchStats(report: report, position: position)
         )
     }

@@ -273,7 +273,8 @@ public struct APIClient: Sendable {
         guard !fields.isEmpty else { return }
         let wire = fields.map { field -> FieldWire in
             let coordinates = field.outline.map { [$0.latitude, $0.longitude] }
-            return FieldWire(track: .init(coordinates: coordinates), recordedAt: field.createdAt, uuid: field.id)
+            return FieldWire(track: .init(coordinates: coordinates), recordedAt: field.createdAt,
+                             uuid: field.id, sportID: field.sportID)
         }
         try await send(path: "/devices/\(deviceID.uuidString)/fields", body: FieldsEnvelope(fields: wire))
     }
@@ -414,11 +415,13 @@ public struct APIClient: Sendable {
         var track: Track
         var recordedAt: Date
         var uuid: UUID
+        var sportID: String?
 
         enum CodingKeys: String, CodingKey {
             case track
             case recordedAt = "recorded_at"
             case uuid
+            case sportID = "sport_id"
         }
     }
 
