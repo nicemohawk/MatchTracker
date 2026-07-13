@@ -9,6 +9,38 @@ conventions; do not assume a specific framework. All endpoints keep the existing
 endpoint must be **idempotent by uuid** (upsert semantics) — the client now retries uploads
 from a persistent queue with exponential backoff, so duplicate POSTs are routine, not errors.
 
+## How to execute (delegation pattern)
+
+Work the way the client-side modernization was built — a strong coordinator model making
+top-level decisions, cheaper models doing the implementation, adversarial review before every
+merge. If you are a single agent without subagent tooling, follow the same phases sequentially.
+
+1. **Contract first.** Before any implementation, write (or update) a short binding
+   architecture doc in the backend repo: schema DDL, endpoint signatures, exact wire JSON, and
+   module boundaries. The coordinator owns this document; implementation agents may not change
+   it — contract drift between parallel agents is the #1 failure mode this prevents.
+2. **Partition into waves with disjoint file ownership.** Group the sections below into waves
+   whose agents never touch the same files (e.g. Wave 1: migrations + models; Wave 2 parallel:
+   {live streaming §1 + comments §2}, {formation §3 + multi-sport §4}, {privacy §5 + teams §6 +
+   entitlements §7}; Wave 3: seeding/imagery §8–9 batch pipeline). Delegate implementation to
+   less expensive models (e.g. Opus/Sonnet-class via your Agent tool), reserving the strongest
+   model for contracts, sequencing, and review adjudication. Each brief must name the files the
+   agent owns and forbid everything else.
+3. **Verification gates between waves.** Every agent runs the full test suite + migration
+   apply/rollback + the relevant acceptance tests (list at the bottom) before reporting, and
+   reports exact command results. Subagents never commit; the coordinator commits once a wave
+   is independently re-verified green. Keep wave briefs and contracts in files, not just chat
+   context, so work survives interruptions.
+4. **Review fan-out before finishing.** Run several independent finder passes over the full
+   diff (correctness line-scan, backward-compatibility audit against V1 clients, cross-endpoint
+   consistency tracing, auth/privacy holes, efficiency), then one adversarial verifier per
+   candidate finding returning CONFIRMED / PLAUSIBLE / REFUTED with quoted evidence. Fix
+   confirmed findings, re-verify, then commit.
+5. **Second viewpoint.** If a Codex plugin / Codex CLI is available, use it for an independent
+   review pass of the final diff (and as a rescue diagnosis when stuck) — a different model
+   family catches failure modes self-review misses. Treat its findings like any other
+   candidate: adversarially verify before acting.
+
 ## 1. Live match streaming
 
 The watch now streams `LiveMatchUpdate` deltas to the phone during a match; the phone relays

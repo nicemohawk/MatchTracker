@@ -16,6 +16,21 @@ already exist here — do not assume a specific stack beyond "some server-side S
 a database." If the repo uses something other than server-side Swift, port the intent, not the
 syntax.
 
+### How to work (delegation pattern)
+
+Use a coordinator-plus-subagents workflow when your tooling allows it (otherwise follow the
+same phases sequentially): (1) write a short **binding contract doc** first — schema DDL, exact
+wire JSON, endpoint signatures — that implementation agents may not change; (2) partition the
+work into **waves with disjoint file ownership** and delegate implementation to cheaper models,
+keeping the strongest model for contracts and review adjudication; (3) gate every wave on the
+full test suite + migration apply/rollback + the acceptance tests below, with only the
+coordinator committing after independent re-verification; (4) finish with a **review fan-out**
+(correctness scan, legacy-client back-compat audit, cross-endpoint consistency, auth holes) and
+adversarially verify each finding (CONFIRMED/REFUTED with quoted evidence) before fixing; (5)
+if a Codex plugin/CLI is available, run it as an independent second-viewpoint review of the
+final diff — verify its findings like any other candidate. Keep contracts and wave briefs in
+files so work survives interruptions.
+
 ### Goal
 
 1. Keep the two legacy endpoints working byte-for-byte compatible with existing clients.
