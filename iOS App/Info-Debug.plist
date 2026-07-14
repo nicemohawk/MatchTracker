@@ -1,36 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  NOTE: This is the Debug-only Info.plist for the iOS app target.
-  It MUST be kept in sync with iOS App/Info.plist, which is identical apart
-  from the NSAppTransportSecurity block below. That block relaxes ATS so Debug
-  builds can talk to a plain-HTTP test backend on the local network (see
-  Settings -> Server URL override). Release builds use iOS App/Info.plist and
-  keep default ATS. Any change to Info.plist (new keys, usage strings, etc.)
-  must be mirrored here and vice versa, apart from the ATS block.
--->
 <plist version="1.0">
 <dict>
-	<key>NSHealthShareUsageDescription</key>
-	<string>MatchTracker reads your soccer workouts to show routes, heatmaps, and workrate.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>MatchTracker saves your recorded matches as workouts in Health.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>MatchTracker uses your location to record your route on the pitch.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>MatchTracker uses your location during a match to record your route on the pitch.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.nicemohawk.MatchTracker.refresh</string>
-	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>fetch</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

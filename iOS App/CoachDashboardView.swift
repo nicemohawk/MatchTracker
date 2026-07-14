@@ -42,7 +42,7 @@ struct CoachDashboardView: View {
             ForEach(players, id: \.playerName) { player in
                 HStack {
                     Circle()
-                        .fill(player.stale ? Color.gray : (player.onPitch ? .green : .orange))
+                        .fill(player.stale ? Color.gray : (player.onPitch ? Theme.turf : Theme.bench))
                         .frame(width: 10, height: 10)
                     VStack(alignment: .leading) {
                         Text(player.playerName).font(.body)
@@ -69,9 +69,9 @@ struct CoachDashboardView: View {
         VStack(spacing: 16) {
             Canvas { context, size in
                 let rect = SoccerPitch.fittedRect(in: size, padding: 10)
-                context.fill(Path(rect), with: .color(Color(red: 0.20, green: 0.55, blue: 0.25)))
+                SoccerPitch.fillTurf(&context, rect: rect)
                 var markings = context
-                SoccerPitch.draw(in: &markings, rect: rect, lineColor: .white.opacity(0.9))
+                SoccerPitch.draw(in: &markings, rect: rect)
 
                 for player in players {
                     guard let x = player.x, let y = player.y else { continue }
@@ -81,18 +81,21 @@ struct CoachDashboardView: View {
                     let radius: CGFloat = isSelected ? 11 : 8
                     let dotRect = CGRect(x: point.x - radius, y: point.y - radius,
                                          width: radius * 2, height: radius * 2)
-                    context.fill(Path(ellipseIn: dotRect),
-                                 with: .color(player.stale ? .gray : (player.onPitch ? .blue : .orange)))
+                    let tint = player.stale ? Color.gray : (player.onPitch ? Theme.signal : Theme.bench)
+                    context.drawLayer { layer in
+                        layer.addFilter(.shadow(color: tint.opacity(0.6), radius: 5))
+                        layer.fill(Path(ellipseIn: dotRect), with: .color(tint))
+                    }
                     if isSelected {
-                        context.stroke(Path(ellipseIn: dotRect), with: .color(.yellow), lineWidth: 2.5)
+                        context.stroke(Path(ellipseIn: dotRect), with: .color(Theme.goal), lineWidth: 2.5)
                     }
                     let label = Text(initials(player.playerName))
-                        .font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                        .font(.system(size: 8, weight: .bold)).foregroundStyle(.black)
                     context.draw(context.resolve(label), at: point)
                 }
             }
             .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-            .background(Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+            .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
             .padding(.horizontal)
 
             selectedTiles

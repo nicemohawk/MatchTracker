@@ -136,5 +136,6 @@ struct RootTabView: View {
             TeamView()
                 .tabItem { Label("Team", systemImage: "person.3") }
         }
+        .tint(Theme.turf)
     }
 }

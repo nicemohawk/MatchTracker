@@ -62,14 +62,24 @@ struct EventsSection: View {
         let them = events.filter { $0.kind == .goalAgainstUs }.count
         return HStack {
             Spacer()
-            VStack {
-                Text("\(us) – \(them)").font(.largeTitle.bold().monospacedDigit())
-                Text("Us vs Them").font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 2) {
+                Text("\(us) – \(them)").heroNumeral().foregroundStyle(.primary)
+                Text("Us vs Them").captionLabel()
             }
             Spacer()
         }
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 16)
+        .background(
+            ZStack {
+                Theme.surface
+                Theme.headerGradient(Theme.goal)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
     }
 
     // MARK: - Mutations
@@ -132,10 +142,10 @@ struct EventRow: View {
                         Label("Auto", systemImage: "wand.and.stars")
                             .labelStyle(.titleAndIcon)
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.teal)
+                            .foregroundStyle(Theme.signal)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(.teal.opacity(0.15), in: Capsule())
+                            .background(Theme.signal.opacity(0.15), in: Capsule())
                     }
                     Spacer()
                     Text("\(minute)'").font(.caption).monospacedDigit().foregroundStyle(.secondary)

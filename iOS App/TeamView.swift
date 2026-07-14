@@ -41,6 +41,8 @@ struct TeamView: View {
 
                 rosterSection
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Team")
             .onAppear {
                 teamCode = settings.teamCode
@@ -118,7 +120,7 @@ struct TeamView: View {
                 Task { await load() }
             } label: {
                 Image(systemName: membership.code == settings.teamCode ? "star.fill" : "star")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Theme.bench)
             }
             .buttonStyle(.borderless)
 

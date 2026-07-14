@@ -31,6 +31,7 @@ struct TeamChatView: View {
             Divider()
             inputBar
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Match Chat")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: selectedMatchID) { await pollLoop() }
@@ -73,9 +74,12 @@ struct TeamChatView: View {
                             Text(comment.body).font(.subheadline)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(12)
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+                        )
                     }
                 }
                 .padding()

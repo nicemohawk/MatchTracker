@@ -15,9 +15,9 @@ struct RunsSection: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack(spacing: 10) {
-                SummaryChip(value: "\(runs.count)", label: "Runs", tint: .orange)
-                SummaryChip(value: "\(runs.filter { $0.intensity == .sprint }.count)", label: "Sprints", tint: .red)
-                SummaryChip(value: MatchFormat.distance(longestRun), label: "Longest", tint: .green)
+                SummaryChip(value: "\(runs.count)", label: "Runs", tint: Theme.sprint)
+                SummaryChip(value: "\(runs.filter { $0.intensity == .sprint }.count)", label: "Sprints", tint: Theme.heart)
+                SummaryChip(value: MatchFormat.distance(longestRun), label: "Longest", tint: Theme.turf)
             }
 
             RunsMap(track: detail.track, runs: runs, region: analytics.rectangle.mapRegion, selection: selectedRun)
@@ -34,12 +34,13 @@ struct RunsSection: View {
                         RunRow(run: run, isSelected: run.id == selectedRun)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                Haptics.selection()
                                 selectedRun = (selectedRun == run.id) ? nil : run.id
                             }
                         if run.id != runs.last?.id { Divider() }
                     }
                 }
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .themedCard(cornerRadius: 16)
             }
         }
     }

@@ -27,6 +27,7 @@ struct MatchDetailView: View {
     }
 
     @State private var section: Section = .heatmap
+    @State private var ringProgress: Double = 0
 
     var body: some View {
         ScrollView {
@@ -38,12 +39,20 @@ struct MatchDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+                .onChange(of: section) { _, _ in Haptics.selection() }
 
                 content
                     .padding(.horizontal)
+                    .background(
+                        Theme.headerGradient(Theme.sectionTint(section.rawValue))
+                            .frame(height: 160)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .allowsHitTesting(false)
+                    )
             }
             .padding(.vertical)
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text(summary.startDate, format: .dateTime.month().day()))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -97,19 +106,60 @@ struct MatchDetailView: View {
 
     private var header: some View {
         let detail = model.detail
-        return HStack {
-            StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration), systemImage: "clock")
-            StatTile(title: "Distance",
-                     value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
-                     systemImage: "figure.run")
-            StatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)", systemImage: "hare")
-            if let hr = detail?.heartRate {
-                StatTile(title: "Avg HR", value: "\(Int(hr.average))", systemImage: "heart.fill")
-            } else {
-                StatTile(title: "Workrate", value: "\(Int(detail?.analytics?.workrate.workrateScore ?? 0))", systemImage: "bolt.fill")
+        let workrate = detail?.analytics?.workrate.workrateScore ?? 0
+        return VStack(spacing: 18) {
+            HStack(spacing: 20) {
+                WorkrateRing(score: workrate, progress: ringProgress)
+                    .frame(width: 116, height: 116)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Workrate").captionLabel()
+                    Text("\(Int(workrate))")
+                        .heroNumeral()
+                        .foregroundStyle(.primary)
+                    Text("Composite effort score")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
+                         systemImage: "clock", tint: Theme.signal)
+                StatTile(title: "Distance",
+                         value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
+                         systemImage: "figure.run", tint: Theme.pace)
+                StatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
+                         systemImage: "hare", tint: Theme.sprint)
+                if let hr = detail?.heartRate {
+                    StatTile(title: "Avg HR", value: "\(Int(hr.average))",
+                             systemImage: "heart.fill", tint: Theme.heart)
+                } else {
+                    StatTile(title: "Runs", value: "\(detail?.analytics?.workrate.runCount ?? 0)",
+                             systemImage: "bolt.fill", tint: Theme.turf)
+                }
             }
         }
+        .padding(18)
+        .background(
+            ZStack {
+                Theme.surface
+                Theme.turfFlow.opacity(0.10)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 8)
         .padding(.horizontal)
+        .onChange(of: workrate) { _, newValue in
+            withAnimation(.easeOut(duration: 1.0)) { ringProgress = min(1, newValue / 100) }
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.0)) { ringProgress = min(1, workrate / 100) }
+        }
     }
 
     @ViewBuilder
@@ -144,6 +194,30 @@ struct MatchDetailView: View {
         } else {
             ProgressView().frame(maxWidth: .infinity, minHeight: 200)
         }
+    }
+}
+
+/// Apple-Fitness-style workrate ring: an angular `scoreRing` sweep over a faint track, glowing.
+struct WorkrateRing: View {
+    let score: Double
+    /// 0…1 animated fill.
+    let progress: Double
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Theme.surfaceStroke, lineWidth: 12)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Theme.scoreRing,
+                        style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .glow(Theme.turf, radius: 8)
+            Image(systemName: "bolt.fill")
+                .font(.title3)
+                .foregroundStyle(Theme.turf)
+        }
+        .accessibilityLabel("Workrate score \(Int(score)) of 100")
     }
 }
 

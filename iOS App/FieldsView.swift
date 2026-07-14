@@ -123,7 +123,8 @@ struct FieldsView: View {
     private var proposalBanner: some View {
         VStack(spacing: 6) {
             Text("\(proposals.count) possible field\(proposals.count == 1 ? "" : "s") detected")
-                .font(.caption.weight(.semibold))
+                .font(.system(.caption, design: .rounded).weight(.semibold))
+                .foregroundStyle(Theme.turf)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
                     ForEach(Array(proposals.enumerated()), id: \.offset) { _, proposal in

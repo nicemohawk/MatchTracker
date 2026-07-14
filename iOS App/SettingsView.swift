@@ -17,6 +17,10 @@ struct SettingsView: View {
     @State private var showingConsentSheet = false
     @State private var showingDeletionConfirmation = false
     @State private var privacyMessage: String?
+#if DEBUG
+    @State private var isGeneratingDemo = false
+    @State private var demoMessage: String?
+#endif
 
     var body: some View {
         NavigationStack {
@@ -37,7 +41,11 @@ struct SettingsView: View {
                     Button {
                         Task { await uploads.uploadAll() }
                     } label: {
-                        Label("Upload all matches & fields", systemImage: "square.and.arrow.up.on.square")
+                        Label {
+                            Text("Upload all matches & fields")
+                        } icon: {
+                            Image(systemName: "square.and.arrow.up.on.square").foregroundStyle(Theme.pace)
+                        }
                     }
                     .disabled(uploads.isUploading)
                     if uploads.pendingUploadCount > 0 {
@@ -78,7 +86,11 @@ struct SettingsView: View {
                             }
                         }
                     } label: {
-                        Label("Re-authorize HealthKit", systemImage: "heart.text.square")
+                        Label {
+                            Text("Re-authorize HealthKit")
+                        } icon: {
+                            Image(systemName: "heart.text.square").foregroundStyle(Theme.heart)
+                        }
                     }
                     if let healthKitMessage {
                         Text(healthKitMessage).font(.caption).foregroundStyle(.secondary)
@@ -89,7 +101,13 @@ struct SettingsView: View {
                     LabeledContent("App", value: "MatchTracker")
                     LabeledContent("Records", value: "Soccer matches from Apple Watch")
                 }
+
+#if DEBUG
+                developerSection
+#endif
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -116,7 +134,11 @@ struct SettingsView: View {
                 Button {
                     showingConsentSheet = true
                 } label: {
-                    Label("Record guardian consent", systemImage: "person.badge.shield.checkmark")
+                    Label {
+                        Text("Record guardian consent")
+                    } icon: {
+                        Image(systemName: "person.badge.shield.checkmark").foregroundStyle(Theme.turf)
+                    }
                 }
             }
 
@@ -177,6 +199,75 @@ struct SettingsView: View {
         settings.contributeDetectedFields = contributeDetectedFields
         environment.settingsChanged()
     }
+
+#if DEBUG
+    /// Synthetic-data tools for testers. Generates full HealthKit workouts + routes + match records
+    /// so every screen has realistic data without an Apple Watch. Compiled out of Release builds.
+    private var developerSection: some View {
+        Section {
+            Button {
+                runDemo { try await makeDemoFactory().generateMatch(daysAgo: 1) }
+            } label: {
+                Label("Add Sample Match", systemImage: "plus.circle")
+            }
+            .disabled(isGeneratingDemo)
+
+            Button {
+                runDemo {
+                    try await makeDemoFactory().generateSeason()
+                    return nil
+                }
+            } label: {
+                Label("Generate Sample Season (5)", systemImage: "calendar.badge.plus")
+            }
+            .disabled(isGeneratingDemo)
+
+            if isGeneratingDemo {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Generating…").foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+            }
+            if let demoMessage {
+                Text(demoMessage).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Developer")
+        } footer: {
+            Text("Creates synthetic soccer matches (HealthKit workout, GPS route, and match record) that flow through the real analysis pipeline. DEBUG builds only.")
+        }
+    }
+
+    private func makeDemoFactory() -> DemoMatchFactory {
+        DemoMatchFactory(
+            healthKit: environment.matches.healthKit,
+            fields: environment.fields,
+            teamCode: settings.teamCode.isEmpty ? "TEST01" : settings.teamCode
+        )
+    }
+
+    /// Runs a generator closure with progress/disabled state, then refreshes the match list so new
+    /// matches appear immediately. An optional returned UUID is surfaced in the result caption.
+    private func runDemo(_ work: @escaping () async throws -> UUID?) {
+        isGeneratingDemo = true
+        demoMessage = nil
+        Task {
+            do {
+                let id = try await work()
+                if let id {
+                    demoMessage = "Added sample match \(id.uuidString.prefix(8))."
+                } else {
+                    demoMessage = "Generated sample season (5 matches)."
+                }
+                await environment.matches.refresh()
+            } catch {
+                demoMessage = "Failed: \(error.localizedDescription)"
+            }
+            isGeneratingDemo = false
+        }
+    }
+#endif
 }
 
 /// Small sheet capturing a parent/guardian acknowledgment for youth-team players.

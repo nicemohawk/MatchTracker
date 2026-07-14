@@ -81,26 +81,37 @@ final class MatchDetailModel: ObservableObject {
         }
     }
 
-    /// Post-match reconciliation: for a match with a resolved field and NO substitution events
-    /// (manual OR automatic), run the offline detector once and merge any inferred subs into the
-    /// record. Guarded to run a single time per load and skipped whenever subs already exist, so
-    /// re-computation on edits can never loop back into detection.
+    /// Post-match reconciliation: for a match with a resolved field, run the offline detectors
+    /// once — automatic subs when no sub events exist, and period boundaries when no period
+    /// events exist (the watch normally detects periods at endMatch, but matches recorded
+    /// before that shipped, demo matches, and edge-case failures land here). Guarded to run a
+    /// single time per load so re-computation on edits can never loop back into detection.
     private func reconcileAutomaticSubs(track: [TrackPoint]) {
         guard !didReconcileSubs else { return }
         didReconcileSubs = true
 
         guard let record, let analytics, !track.isEmpty else { return }
-        let hasSubEvents = record.events.contains { $0.kind == .subIn || $0.kind == .subOut }
-        guard !hasSubEvents else { return }
+        var detected: [MatchEvent] = []
 
-        let detected = AutoSubDetector.detectEvents(
-            track: track, projector: analytics.projector,
-            existingEvents: record.events, configuration: AutoSubDetectorConfiguration()
+        let hasSubEvents = record.events.contains { $0.kind == .subIn || $0.kind == .subOut }
+        if !hasSubEvents {
+            detected += AutoSubDetector.detectEvents(
+                track: track, projector: analytics.projector,
+                existingEvents: record.events, configuration: AutoSubDetectorConfiguration()
+            )
+        }
+
+        // PeriodDetector returns [] on its own when period events already exist.
+        detected += PeriodDetector.detectPeriods(
+            track: track, events: record.events + detected,
+            projector: analytics.projector, configuration: PeriodDetectorConfiguration()
         )
+
         guard !detected.isEmpty else { return }
 
         var merged = record
         merged.events.append(contentsOf: detected)
+        merged.events.sort { $0.date < $1.date }
         if let persist {
             persist(merged)          // writes to disk and recomputes analytics via the store
         } else {

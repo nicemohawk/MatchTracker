@@ -14,7 +14,7 @@ struct WorkrateSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            workrateGauge
+            workrateSummary
             trainingLoadContext
             fatigueBuckets
             distancePerMinuteChart
@@ -41,7 +41,7 @@ struct WorkrateSection: View {
                         systemImage: delta >= 0 ? "arrow.up.right" : "arrow.down.right"
                     )
                     .font(.caption)
-                    .foregroundStyle(delta >= 0 ? .green : .orange)
+                    .foregroundStyle(delta >= 0 ? Theme.turf : Theme.bench)
                 }
                 HStack(spacing: 10) {
                     Text("\(load.workoutCount) matches in 4 weeks")
@@ -103,38 +103,25 @@ struct WorkrateSection: View {
         "\(index * 15)–\(index * 15 + 15)'"
     }
 
+    /// Single-hue (turf) ramp: darker/lower-opacity blocks read as fatigue without a hue jump.
     private func bucketColor(_ value: Double, first: Double) -> Color {
-        guard first > 0 else { return .green }
-        let ratio = value / first
-        if ratio >= 0.9 { return .green }
-        if ratio >= 0.75 { return .orange }
-        return .red
+        guard first > 0 else { return Theme.turf }
+        let ratio = min(1, value / first)
+        return Theme.turf.opacity(0.35 + 0.65 * ratio)
     }
 
     // MARK: Gauge
 
-    private var workrateGauge: some View {
-        HStack(spacing: 16) {
-            Gauge(value: report.workrateScore, in: 0...100) {
-                Text("Workrate")
-            } currentValueLabel: {
-                Text("\(Int(report.workrateScore))")
+    /// Compact context under the detail hero ring (which already carries the score) — the run /
+    /// sprint counts and a one-line explanation of what workrate measures.
+    private var workrateSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                SummaryChip(value: "\(report.runCount)", label: "Runs", tint: Theme.turf)
+                SummaryChip(value: "\(report.sprintCount)", label: "Sprints", tint: Theme.sprint)
             }
-            .gaugeStyle(.accessoryCircular)
-            .tint(Gradient(colors: [.blue, .green, .orange, .red]))
-            .scaleEffect(1.3)
-            .frame(width: 90, height: 90)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Workrate Score").font(.headline)
-                Text("Composite of distance rate, sprint frequency, and high-intensity share.")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 14) {
-                    Text("\(report.runCount) runs").font(.caption).foregroundStyle(.secondary)
-                    Text("\(report.sprintCount) sprints").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 0)
+            Text("Workrate is a composite of distance rate, sprint frequency, and high-intensity share.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -163,10 +150,10 @@ struct WorkrateSection: View {
     }
 
     private func barShading(for meters: Double) -> LinearGradient {
-        // On-pitch high-output minutes shade warmer.
+        // Single-hue pace fill: taller minutes read brighter, no hue jump.
         let intensity = min(1, meters / 180)
         return LinearGradient(
-            colors: [.green.opacity(0.5), Color(red: 0.9, green: 0.4 * (1 - intensity), blue: 0.1)],
+            colors: [Theme.pace.opacity(0.15), Theme.pace.opacity(0.55 + 0.45 * intensity)],
             startPoint: .bottom, endPoint: .top
         )
     }
@@ -207,12 +194,13 @@ struct WorkrateSection: View {
 
     private var speedZoneData: [Zone] {
         let z = report.speedZones
+        // Coherent cool → hot ramp.
         return [
-            Zone(name: "Standing", seconds: z.standing, color: .gray),
-            Zone(name: "Walking", seconds: z.walking, color: .blue),
-            Zone(name: "Jogging", seconds: z.jogging, color: .green),
-            Zone(name: "Running", seconds: z.running, color: .orange),
-            Zone(name: "Sprinting", seconds: z.sprinting, color: .red)
+            Zone(name: "Standing", seconds: z.standing, color: Color.gray),
+            Zone(name: "Walking", seconds: z.walking, color: Theme.pace),
+            Zone(name: "Jogging", seconds: z.jogging, color: Theme.turf),
+            Zone(name: "Running", seconds: z.running, color: Theme.sprint),
+            Zone(name: "Sprinting", seconds: z.sprinting, color: Theme.heart)
         ].filter { $0.seconds > 0 }
     }
 
@@ -222,11 +210,18 @@ struct WorkrateSection: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Heart Rate").font(.headline)
             Chart(Array(detail.heartRateSeries.enumerated()), id: \.offset) { _, sample in
+                AreaMark(
+                    x: .value("Time", sample.date),
+                    y: .value("BPM", sample.bpm)
+                )
+                .foregroundStyle(LinearGradient(colors: [Theme.heart.opacity(0.35), Theme.heart.opacity(0.02)],
+                                                startPoint: .top, endPoint: .bottom))
+                .interpolationMethod(.catmullRom)
                 LineMark(
                     x: .value("Time", sample.date),
                     y: .value("BPM", sample.bpm)
                 )
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.heart)
                 .interpolationMethod(.catmullRom)
             }
             .chartYAxisLabel("bpm")

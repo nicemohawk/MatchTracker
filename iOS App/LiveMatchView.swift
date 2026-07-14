@@ -27,34 +27,48 @@ struct LiveMatchView: View {
             }
             .padding()
         }
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Live Match")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private func header(_ update: LiveMatchUpdate) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             HStack {
                 Label(update.onPitch ? "On pitch" : "On bench",
                       systemImage: update.onPitch ? "figure.soccer" : "chair")
-                    .font(.subheadline.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(update.onPitch ? Color.green.opacity(0.2) : Color.orange.opacity(0.2))
+                    .font(.system(.subheadline, design: .rounded).bold())
+                    .foregroundStyle(update.onPitch ? Theme.turf : Theme.bench)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background((update.onPitch ? Theme.turf : Theme.bench).opacity(0.15))
                     .clipShape(Capsule())
                 Spacer()
                 if !store.isLive {
                     Label("Signal lost", systemImage: "wifi.slash")
                         .font(.subheadline)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.heart)
                 }
             }
             Text("\(update.usGoals ?? 0) – \(update.themGoals ?? 0)")
-                .font(.system(size: 44, weight: .bold, design: .rounded))
-                .monospacedDigit()
+                .heroNumeral()
             elapsedText(update)
                 .font(.title3.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity)
+        .padding(18)
+        .background(
+            ZStack {
+                Theme.surface
+                Theme.turfFlow.opacity(0.10)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
     }
 
     /// Extrapolates elapsed time between updates so the clock ticks smoothly.
@@ -70,36 +84,34 @@ struct LiveMatchView: View {
     private func metricsGrid(_ update: LiveMatchUpdate) -> some View {
         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
             GridRow {
-                metricTile("heart.fill", update.heartRate.map { "\(Int($0))" } ?? "—", "BPM", .red)
-                metricTile("figure.run", String(format: "%.2f km", update.distanceMeters / 1000), "Distance", .blue)
+                metricTile("heart.fill", update.heartRate.map { "\(Int($0))" } ?? "—", "BPM", Theme.heart)
+                metricTile("figure.run", String(format: "%.2f km", update.distanceMeters / 1000), "Distance", Theme.pace)
             }
             GridRow {
                 metricTile("speedometer",
                            update.currentSpeed.map { String(format: "%.1f", $0 * 3.6) } ?? "—",
-                           "km/h", .orange)
+                           "km/h", Theme.sprint)
                 metricTile("calendar.badge.clock",
-                           "\(store.events.count)", "Events", .purple)
+                           "\(store.events.count)", "Events", Theme.signal)
             }
         }
     }
 
     private func metricTile(_ symbol: String, _ value: String, _ caption: String, _ tint: Color) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 4) {
             Image(systemName: symbol).foregroundStyle(tint)
-            Text(value).font(.title2.bold()).monospacedDigit()
-            Text(caption).font(.caption).foregroundStyle(.secondary)
+            Text(value).statNumeral()
+            Text(caption).captionLabel()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 12)
+        .metricTile(tint: tint)
     }
 
     private func pitchCard(_ update: LiveMatchUpdate) -> some View {
         Canvas { context, size in
             let rect = SoccerPitch.fittedRect(in: size)
-            context.fill(Path(roundedRect: rect, cornerRadius: 4),
-                         with: .color(Color.green.opacity(0.25)))
+            SoccerPitch.fillTurf(&context, rect: rect)
             SoccerPitch.draw(in: &context, rect: rect)
 
             if let projector,
@@ -107,13 +119,17 @@ struct LiveMatchView: View {
                let normalized = projector.normalizedPoint(for: point.coordinate) {
                 let dot = CGPoint(x: rect.minX + normalized.x * rect.width,
                                   y: rect.minY + normalized.y * rect.height)
-                context.fill(Path(ellipseIn: CGRect(x: dot.x - 6, y: dot.y - 6, width: 12, height: 12)),
-                             with: .color(update.onPitch ? .blue : .orange))
+                let tint = update.onPitch ? Theme.signal : Theme.bench
+                context.drawLayer { layer in
+                    layer.addFilter(.shadow(color: tint.opacity(0.7), radius: 6))
+                    layer.fill(Path(ellipseIn: CGRect(x: dot.x - 6, y: dot.y - 6, width: 12, height: 12)),
+                               with: .color(tint))
+                }
             }
         }
         .frame(height: 180)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Theme.pitchTurfBottom)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .opacity(projector == nil ? 0.4 : 1)
         .overlay {
             if projector == nil {
@@ -153,7 +169,6 @@ struct LiveMatchView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .themedCard(cornerRadius: 16)
     }
 }

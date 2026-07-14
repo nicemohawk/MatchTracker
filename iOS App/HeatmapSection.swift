@@ -33,7 +33,7 @@ struct HeatmapSection: View {
                 PitchHeatmapCanvas(heatmap: analytics.heatmap,
                                    comparison: compareWithSeason ? seasonAverage : nil)
                     .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-                    .background(Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                    .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
             }
 
             if compareWithSeason && !showSatellite {
@@ -69,9 +69,9 @@ struct HeatmapSection: View {
     private var comparisonLegend: some View {
         HStack(spacing: 14) {
             Label("This match", systemImage: "square.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.sprint)
             Label("Season average", systemImage: "square.fill")
-                .foregroundStyle(.blue)
+                .foregroundStyle(Theme.signal)
         }
         .font(.caption2)
     }
@@ -88,9 +88,9 @@ struct PitchHeatmapCanvas: View {
             let rect = SoccerPitch.fittedRect(in: size, padding: 6)
 
             // Turf.
-            context.fill(Path(rect), with: .color(Color(red: 0.20, green: 0.55, blue: 0.25)))
+            SoccerPitch.fillTurf(&context, rect: rect)
 
-            // Comparison underlay (season average): cool blue so the warm ramp reads on top.
+            // Comparison underlay (season average): cool cyan so the warm ramp reads on top.
             if let comparison, comparison.columns > 0, comparison.rows > 0 {
                 let cellWidth = rect.width / CGFloat(comparison.columns)
                 let cellHeight = rect.height / CGFloat(comparison.rows)
@@ -104,7 +104,7 @@ struct PitchHeatmapCanvas: View {
                             width: cellWidth + 0.5, height: cellHeight + 0.5
                         )
                         context.fill(Path(cellRect),
-                                     with: .color(Color.blue.opacity(0.15 + 0.5 * min(1, value))))
+                                     with: .color(Theme.signal.opacity(0.15 + 0.5 * min(1, value))))
                     }
                 }
             }
@@ -128,7 +128,7 @@ struct PitchHeatmapCanvas: View {
             }
 
             var markingsContext = context
-            SoccerPitch.draw(in: &markingsContext, rect: rect, lineColor: .white.opacity(0.9))
+            SoccerPitch.draw(in: &markingsContext, rect: rect)
         }
     }
 }
@@ -200,7 +200,7 @@ struct HeatmapLegend: View {
         HStack(spacing: 8) {
             Text("Low").font(.caption2).foregroundStyle(.secondary)
             LinearGradient(
-                colors: [.clear, .yellow, .orange, .red],
+                colors: [.clear, Theme.goal, Theme.sprint, Theme.heart],
                 startPoint: .leading, endPoint: .trailing
             )
             .frame(height: 8)
@@ -210,17 +210,24 @@ struct HeatmapLegend: View {
     }
 }
 
-/// Transparent → yellow → red ramp for heatmap intensity.
+/// Deep transparent → lime → hot coral ramp for heatmap intensity, tuned for dark turf with a
+/// slight glow (higher alpha at the hot end). Matches the Theme accent set (goal → sprint → heart).
 enum HeatColor {
     static func color(for value: Double) -> Color {
         let clamped = min(1, max(0, value))
-        let alpha = 0.15 + 0.75 * clamped
+        let alpha = 0.18 + 0.78 * clamped
         if clamped < 0.5 {
             let t = clamped / 0.5
-            return Color(red: 1, green: 1 - 0.35 * t, blue: 0).opacity(alpha)
+            // goal (lime) → sprint (magenta-orange)
+            return Color(red: 0.78 + 0.22 * t,
+                         green: 1.0 - 0.52 * t,
+                         blue: 0.30 - 0.06 * t).opacity(alpha)
         } else {
             let t = (clamped - 0.5) / 0.5
-            return Color(red: 1, green: 0.65 * (1 - t), blue: 0).opacity(alpha)
+            // sprint → heart (coral)
+            return Color(red: 1.0,
+                         green: 0.48 - 0.12 * t,
+                         blue: 0.24 + 0.24 * t).opacity(alpha)
         }
     }
 }

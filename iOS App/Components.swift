@@ -4,21 +4,25 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Compact labeled value used in header stat rows.
+/// Shared metric chip: big rounded numeral over an uppercase label, on a tinted metric tile.
+/// Used in header stat rows across the app.
 struct StatTile: View {
     let title: String
     let value: String
     var systemImage: String?
+    var tint: Color = Theme.turf
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             if let systemImage {
-                Image(systemName: systemImage).font(.caption).foregroundStyle(.secondary)
+                Image(systemName: systemImage).font(.caption).foregroundStyle(tint)
             }
-            Text(value).font(.headline).monospacedDigit()
-            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value).statNumeral().foregroundStyle(.primary)
+            Text(title).captionLabel()
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .metricTile(tint: tint)
     }
 }
 
@@ -26,16 +30,16 @@ struct StatTile: View {
 struct SummaryChip: View {
     let value: String
     let label: String
-    var tint: Color = .accentColor
+    var tint: Color = Theme.turf
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.bold()).monospacedDigit().foregroundStyle(tint)
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+        VStack(spacing: 3) {
+            Text(value).statNumeral().foregroundStyle(tint).glow(tint, radius: 6)
+            Text(label).captionLabel()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.vertical, 12)
+        .metricTile(tint: tint)
     }
 }
 
@@ -47,10 +51,11 @@ struct PositionBadge: View {
 
     var body: some View {
         Text(Self.abbreviation(role: role, side: side))
-            .font(.caption.bold())
-            .foregroundStyle(.white)
-            .frame(width: 34, height: 24)
-            .background(role.tint, in: RoundedRectangle(cornerRadius: 6))
+            .font(.system(.caption, design: .rounded).bold())
+            .foregroundStyle(.black)
+            .frame(width: 36, height: 26)
+            .background(role.tint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .glow(role.tint, radius: 5)
             .opacity(confidenceOpacity)
     }
 
@@ -99,10 +104,10 @@ struct PositionBadge: View {
 extension PositionRole {
     var tint: Color {
         switch self {
-        case .goalkeeper: return .yellow
-        case .defender: return .blue
-        case .midfielder: return .green
-        case .forward: return .red
+        case .goalkeeper: return Theme.bench
+        case .defender: return Theme.pace
+        case .midfielder: return Theme.turf
+        case .forward: return Theme.sprint
         }
     }
 }
@@ -110,9 +115,9 @@ extension PositionRole {
 extension RunIntensity {
     var color: Color {
         switch self {
-        case .jog: return .green
-        case .run: return .orange
-        case .sprint: return .red
+        case .jog: return Theme.turf
+        case .run: return Theme.sprint
+        case .sprint: return Theme.heart
         }
     }
     var label: String { rawValue.capitalized }
@@ -160,12 +165,12 @@ extension MatchEventKind {
 
     var tint: Color {
         switch self {
-        case .goalForUs, .goalMine: return .green
-        case .goalAgainstUs: return .red
-        case .assist: return .mint
-        case .flag: return .orange
-        case .yellowCard: return .yellow
-        case .redCard: return .red
+        case .goalForUs, .goalMine: return Theme.goal
+        case .goalAgainstUs: return Theme.heart
+        case .assist: return Theme.signal
+        case .flag: return Theme.sprint
+        case .yellowCard: return Theme.bench
+        case .redCard: return Theme.heart
         default: return .secondary
         }
     }

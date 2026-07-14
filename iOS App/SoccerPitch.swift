@@ -26,8 +26,20 @@ enum SoccerPitch {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
+    /// Fills a dark green-black turf gradient plus a soft vignette into `rect`.
+    static func fillTurf(_ context: inout GraphicsContext, rect: CGRect) {
+        context.fill(Path(rect), with: .linearGradient(
+            Gradient(colors: [Theme.pitchTurfTop, Theme.pitchTurfBottom]),
+            startPoint: CGPoint(x: rect.midX, y: rect.minY),
+            endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
+        context.fill(Path(rect), with: .radialGradient(
+            Gradient(colors: [.clear, .black.opacity(0.28)]),
+            center: CGPoint(x: rect.midX, y: rect.midY),
+            startRadius: rect.width * 0.18, endRadius: rect.width * 0.62))
+    }
+
     static func draw(in context: inout GraphicsContext, rect: CGRect,
-                     lineColor: Color = .white, lineWidth: CGFloat = 1.5) {
+                     lineColor: Color = Theme.pitchLines, lineWidth: CGFloat = 1.5) {
         let scale = rect.width / lengthMeters   // pixels per meter
         func px(_ meters: CGFloat) -> CGFloat { meters * scale }
         let stroke = StrokeStyle(lineWidth: lineWidth, lineJoin: .round)

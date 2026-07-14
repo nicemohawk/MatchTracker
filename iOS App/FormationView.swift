@@ -51,22 +51,24 @@ struct FormationView: View {
     private func formationContent(_ formation: TeamFormation) -> some View {
         ScrollView {
             VStack(spacing: 16) {
-                HStack {
+                HStack(alignment: .firstTextBaseline) {
                     Text(formation.name)
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.turf)
                     Spacer()
-                    VStack(alignment: .trailing) {
-                        Text("Confidence")
-                            .font(.caption).foregroundStyle(.secondary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Confidence").captionLabel()
                         Text("\(Int(formation.confidence * 100))%")
-                            .font(.title3.bold())
-                            .foregroundStyle(formation.confidence > 0.6 ? .green : .orange)
+                            .font(.system(.title3, design: .rounded).bold())
+                            .monospacedDigit()
+                            .foregroundStyle(formation.confidence > 0.6 ? Theme.turf : Theme.bench)
                     }
                 }
 
                 formationPitch(formation)
                     .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-                    .background(Color.green.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                    .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
 
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(formation.slots, id: \.playerName) { slot in
@@ -80,28 +82,30 @@ struct FormationView: View {
                     }
                 }
                 .padding()
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .themedCard(cornerRadius: 16)
             }
             .padding()
         }
+        .background(Theme.background.ignoresSafeArea())
     }
 
     private func formationPitch(_ formation: TeamFormation) -> some View {
         Canvas { context, size in
             let rect = SoccerPitch.fittedRect(in: size, padding: 6)
-            context.fill(Path(rect), with: .color(Color(red: 0.20, green: 0.55, blue: 0.25)))
+            SoccerPitch.fillTurf(&context, rect: rect)
             var markings = context
-            SoccerPitch.draw(in: &markings, rect: rect, lineColor: .white.opacity(0.9))
+            SoccerPitch.draw(in: &markings, rect: rect)
 
             for slot in formation.slots {
                 let point = CGPoint(x: rect.minX + CGFloat(slot.x) * rect.width,
                                     y: rect.minY + CGFloat(slot.y) * rect.height)
-                context.fill(Path(ellipseIn: CGRect(x: point.x - 9, y: point.y - 9, width: 18, height: 18)),
-                             with: .color(.blue))
-                context.stroke(Path(ellipseIn: CGRect(x: point.x - 9, y: point.y - 9, width: 18, height: 18)),
-                               with: .color(.white), lineWidth: 1.5)
-                let label = Text(initials(slot.playerName)).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                let dotRect = CGRect(x: point.x - 9, y: point.y - 9, width: 18, height: 18)
+                context.drawLayer { layer in
+                    layer.addFilter(.shadow(color: Theme.signal.opacity(0.6), radius: 5))
+                    layer.fill(Path(ellipseIn: dotRect), with: .color(Theme.signal))
+                }
+                context.stroke(Path(ellipseIn: dotRect), with: .color(.white.opacity(0.85)), lineWidth: 1.5)
+                let label = Text(initials(slot.playerName)).font(.system(size: 9, weight: .bold)).foregroundStyle(.black)
                 context.draw(context.resolve(label), at: point)
             }
         }

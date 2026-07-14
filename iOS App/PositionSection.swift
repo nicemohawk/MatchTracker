@@ -26,7 +26,7 @@ struct PositionSection: View {
 
             PositionPitch(estimate: estimate)
                 .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-                .background(Color.green.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
 
             ThirdsBars(shares: thirdShares)
         }
@@ -56,9 +56,9 @@ struct PositionPitch: View {
     var body: some View {
         Canvas { context, size in
             let rect = SoccerPitch.fittedRect(in: size, padding: 8)
-            context.fill(Path(rect), with: .color(Color(red: 0.20, green: 0.55, blue: 0.25)))
+            SoccerPitch.fillTurf(&context, rect: rect)
             var pitch = context
-            SoccerPitch.draw(in: &pitch, rect: rect, lineColor: .white.opacity(0.9))
+            SoccerPitch.draw(in: &pitch, rect: rect)
 
             func place(_ point: CGPoint) -> CGPoint {
                 CGPoint(x: rect.minX + CGFloat(point.x) * rect.width,
@@ -94,8 +94,8 @@ struct ThirdsBars: View {
                     Text(labels[index]).font(.caption).frame(width: 74, alignment: .leading)
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color(.tertiarySystemFill))
-                            Capsule().fill(Color.accentColor)
+                            Capsule().fill(Theme.surfaceStroke)
+                            Capsule().fill(Theme.pace)
                                 .frame(width: geometry.size.width * share)
                         }
                     }
