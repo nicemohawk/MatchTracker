@@ -89,6 +89,9 @@ struct MatchesView: View {
             .task { await backlogImporter.scanIfNeeded() }
             .sheet(isPresented: $showingImport) { BacklogImportView() }
         }
+        .onChange(of: navigationPath) { _, path in
+            isAtRoot = path.isEmpty
+        }
     }
 
     /// Quiet upsell for the historic-backlog import: shown once there's a meaningful backlog of

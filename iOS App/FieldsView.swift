@@ -50,6 +50,9 @@ struct FieldsView: View {
             .navigationTitle("Fields")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
+            // The title floats over satellite imagery — force light-on-dark chrome so it stays
+            // readable in light mode too.
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .onAppear {
                 frameFields()
                 requestLocationIfNeeded()

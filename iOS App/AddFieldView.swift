@@ -39,6 +39,9 @@ struct AddFieldView: View {
             .background(Theme.background)
             .navigationTitle("Add Field")
             .navigationBarTitleDisplayMode(.inline)
+            // The bar floats over satellite imagery — force light-on-dark chrome so the title
+            // stays readable regardless of the system appearance.
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
