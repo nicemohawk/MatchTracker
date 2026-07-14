@@ -11,6 +11,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Record sideline video of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Capture match audio with your sideline video.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Saves your exported highlight clips to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Import sideline footage of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

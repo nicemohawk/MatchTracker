@@ -18,11 +18,13 @@ struct VideoHighlightsSection: View {
     let matchStart: Date
 
     @ObservedObject private var store = SidelineVideoStore.shared
+    @Environment(LiveMatchStore.self) private var liveMatches
 
     @State private var pickerItem: PhotosPickerItem?
     @State private var importState: ImportState = .idle
     @State private var selectedClip: ClipSelection?
     @State private var aligningVideo: SidelineVideo?
+    @State private var showingCamera = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum ImportState: Equatable {
@@ -85,6 +87,12 @@ struct VideoHighlightsSection: View {
             )
             .presentationDetents([.large])
         }
+        .fullScreenCover(isPresented: $showingCamera) {
+            SidelineCameraView(
+                preassociatedMatchID: detail.matchIdentifier,
+                liveStore: liveMatches.isLive ? liveMatches : nil
+            )
+        }
     }
 
     // MARK: - Empty / invite state
@@ -96,15 +104,38 @@ struct VideoHighlightsSection: View {
                 .foregroundStyle(Theme.signal)
             Text("Film from the sideline")
                 .font(.headline)
-            Text("Prop your phone on the touchline and record the match. Your watch already tagged the goals, cards and flags — import the footage and MatchTracker clips each moment automatically. No AI, no editing.")
+            Text("Prop your phone on the touchline and record the match. Your watch already tagged the goals, cards and flags — MatchTracker clips each moment automatically. No AI, no editing.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            importPicker(label: "Import Sideline Video", prominent: true)
+            recordButton(prominent: true)
+            importPicker(label: "Import from Photos", prominent: false)
         }
         .frame(maxWidth: .infinity)
         .padding(22)
         .themedCard()
+    }
+
+    /// Opens the in-app sideline camera pre-associated to this match (footage records its exact
+    /// wall-clock start, so clips align with zero nudge). Passes the live feed through when a match
+    /// is in progress so the filmer sees watch-tagged events land in real time.
+    private func recordButton(prominent: Bool) -> some View {
+        let button = Button {
+            Haptics.selection()
+            showingCamera = true
+        } label: {
+            Label("Record Sideline Video", systemImage: "video.fill")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .tint(Theme.signal)
+        return Group {
+            if prominent {
+                button.buttonStyle(.borderedProminent)
+            } else {
+                button.buttonStyle(.bordered)
+            }
+        }
     }
 
     // MARK: - Per-video card
@@ -216,7 +247,10 @@ struct VideoHighlightsSection: View {
     // MARK: - Import controls
 
     private var addMoreButton: some View {
-        importPicker(label: "Import another recording", prominent: false)
+        HStack(spacing: 10) {
+            recordButton(prominent: false)
+            importPicker(label: "Import", prominent: false)
+        }
     }
 
     @ViewBuilder

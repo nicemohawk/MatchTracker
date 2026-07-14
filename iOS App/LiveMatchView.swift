@@ -16,6 +16,8 @@ struct LiveMatchView: View {
     /// Rising-edge sprint threshold (m/s). ~5.5 m/s ≈ 19.8 km/h — a genuine burst, not a jog.
     private static let sprintSpeed = 5.5
 
+    @State private var showingCamera = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -35,6 +37,25 @@ struct LiveMatchView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Live Match")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Haptics.selection()
+                    showingCamera = true
+                } label: {
+                    Image(systemName: "video.fill")
+                }
+                .tint(Theme.signal)
+                .accessibilityLabel("Record sideline video")
+            }
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            // No match UUID exists on the phone until the watch's record syncs, so capture opens
+            // with the live feed for the ticker and resolves its save target via the recent-match
+            // picker on stop. Alignment stays nudge-free regardless — the clip carries its exact
+            // wall-clock start.
+            SidelineCameraView(preassociatedMatchID: nil, liveStore: store)
+        }
     }
 
     // MARK: - Header
