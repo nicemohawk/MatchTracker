@@ -52,16 +52,10 @@ struct CommentsSection: View {
             }
             .redacted(reason: .placeholder)
         case .failed:
-            Text("Comments unavailable")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            quietState(icon: "exclamationmark.bubble", text: "Comments aren't available for this match.")
         case .loaded:
             if comments.isEmpty {
-                Text("Be the first to comment")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                quietState(icon: "bubble.left", text: "Be the first to comment.")
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(sortedComments) { comment in
@@ -75,6 +69,28 @@ struct CommentsSection: View {
                 }
             }
         }
+    }
+
+    /// A quiet inline card for the empty / unavailable states: a small themed icon and a single
+    /// line of copy on the elevated surface — reads as intentional, not a broken screen.
+    private func quietState(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(Theme.signal)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
     }
 
     /// Rounded composer pinned at the section bottom.

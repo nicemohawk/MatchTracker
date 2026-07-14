@@ -45,6 +45,11 @@ final class PolishScreenshots: XCTestCase {
             // Settings is a tab (role: .search) now, not a sheet — leaving it = switching tabs.
         }
 
+        // A fresh iPad (iCloud Health sync off) raises a blocking "iCloud Health Data Sync is Off"
+        // card after HealthKit authorization that sits over every screen; dismiss it so the walk
+        // isn't stuck behind it. Best-effort and harmless where it never appears (e.g. iPhone).
+        dismissHealthSyncAlertIfPresent(app: app)
+
         _ = selectTab("Matches", expectingNavBar: "Matches", in: app)
         export("30-matches", app: app)
 
@@ -68,6 +73,26 @@ final class PolishScreenshots: XCTestCase {
             if cancel.exists && cancel.isHittable { cancel.tap() }
         }
 
+        // Drawer expanded state: the drawer is a custom floating card whose grabber/summary header
+        // is the only drag target (FieldsDrawer.swift). Anchor the drag to the summary text (the
+        // hint line, or the "· nearest …" subtitle) rather than a magic coordinate, since the peek
+        // card floats above the tab bar at a height that varies with the device. Drag it up to the
+        // half snap to reveal the actions row and field list, then drag back down to the peek.
+        let drawerHandle = app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS[c] 'Swipe up to browse' OR label CONTAINS[c] 'nearest'")).firstMatch
+        if drawerHandle.waitForExistence(timeout: 4) {
+            let raisedTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40))
+            drawerHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.2, thenDragTo: raisedTarget)
+            sleep(1)
+            export("36-fields-drawer-expanded", app: app)
+            // Drag the header (now near mid-screen) back down to collapse to the peek snap.
+            drawerHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.2,
+                       thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+            sleep(1)
+        }
+
         // Match detail: open the newest match and walk to the bottom (comments section).
         _ = selectTab("Matches", expectingNavBar: "Matches", in: app)
         let row = app.staticTexts
@@ -76,6 +101,26 @@ final class PolishScreenshots: XCTestCase {
             row.tap()
             sleep(3)
             export("32-match-detail-top", app: app)
+
+            // Export/share menu: a single top-bar-trailing Menu (MatchDetailView.swift) whose label
+            // is an `square.and.arrow.up` glyph. Opening it reveals Re-upload / Export… / team-tag
+            // items. The button carries no explicit accessibility label, so match the SF Symbol name
+            // and fall back to the last nav-bar button.
+            let navButtons = app.navigationBars.buttons
+            var shareButton = navButtons
+                .matching(NSPredicate(format: "label CONTAINS[c] 'square.and.arrow' OR label CONTAINS[c] 'share' OR label CONTAINS[c] 'export' OR label CONTAINS[c] 'more'")).firstMatch
+            if !shareButton.exists, navButtons.count > 0 {
+                shareButton = navButtons.element(boundBy: navButtons.count - 1)
+            }
+            if shareButton.exists && shareButton.isHittable {
+                shareButton.tap()
+                sleep(1)
+                export("37-export-menu", app: app)
+                // Dismiss the menu by tapping the dimmed backdrop away from the anchored items.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.85)).tap()
+                sleep(1)
+            }
+
             for _ in 0..<8 { app.swipeUp(velocity: .fast) }
             sleep(1)
             export("33-match-detail-comments", app: app)
@@ -101,6 +146,24 @@ final class PolishScreenshots: XCTestCase {
         if skip.exists && skip.isHittable { skip.tap() }
         handleHealthKitPrompt(app: app, timeout: 8)
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 8)
+    }
+
+    /// Dismisses the "iCloud Health Data Sync is Off" card (Not Now) if it is on screen. It can be
+    /// presented as an in-app card or a system alert, so both the app's own tree and Springboard are
+    /// checked. Best-effort: returns quietly when no such card exists.
+    private func dismissHealthSyncAlertIfPresent(app: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let deadline = Date().addingTimeInterval(4)
+        while Date() < deadline {
+            for host in [app, springboard] {
+                let notNow = host.buttons["Not Now"]
+                if notNow.exists && notNow.isHittable {
+                    notNow.tap()
+                    return
+                }
+            }
+            usleep(300_000)
+        }
     }
 
     /// Saves a PNG to $SHOT_DIR (runner env, host-visible path) and always attaches to the result.

@@ -40,6 +40,7 @@ struct TeamView: View {
                             teamCode: settings.teamCode,
                             memberCount: loadedMemberCount,
                             isLoading: isLoading,
+                            isOffline: isOffline,
                             onRefresh: { Task { await load() } }
                         )
                         leaderboardSection
@@ -144,13 +145,19 @@ struct TeamView: View {
     private func failureCard(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Label {
-                Text("Couldn't reach the team")
+                Text("Can't reach your team right now")
                     .font(.system(.headline, design: .rounded))
             } icon: {
                 Image(systemName: "wifi.exclamationmark").foregroundStyle(Theme.sprint)
             }
-            Text(message).font(.caption).foregroundStyle(.secondary)
+            Text("Your local stats are below.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             localFallback
+            // Keep the raw diagnostic available but demoted well below the primary copy.
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
@@ -193,6 +200,13 @@ struct TeamView: View {
 
     private var isLoading: Bool {
         if case .loading = loadState { return true }
+        return false
+    }
+
+    /// True once a roster fetch has failed — drives the header's "Offline" treatment so it stops
+    /// contradicting the error card below.
+    private var isOffline: Bool {
+        if case .failed = loadState { return true }
         return false
     }
 

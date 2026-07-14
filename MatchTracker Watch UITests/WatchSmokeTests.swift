@@ -108,56 +108,99 @@ final class WatchSmokeTests: XCTestCase {
         _ = handleWatchHealthKitPrompt(timeout: 15)
         handleWatchLocationPrompt(timeout: 8)
 
+        // Reach the in-game session: normally tap "Start Match", but a prior run may have left an
+        // active workout that the app recovers straight into SessionView (which opens on the
+        // Metrics page — so there's no Start button and no "Goal" tile, which lives on Events).
         let startButton = app.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
-        guard startButton.waitForExistence(timeout: 45) else {
-            XCTFail("Start screen unreachable; cannot walk in-game pages")
+        // Metrics-page marker: the "BPM" unit label is present whenever a live session is on screen.
+        let metricsMarker = app.staticTexts.matching(
+            NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        if startButton.waitForExistence(timeout: 30) {
+            startButton.tap()
+        } else if !metricsMarker.waitForExistence(timeout: 8) {
+            XCTFail("Neither Start screen nor an in-game page is reachable")
             return
         }
-        startButton.tap()
 
-        // The workout session spins up; the events page (score header + event tiles) is the
-        // default in-game page. Wait on any of its distinctive labels.
-        let eventMarker = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS[c] 'Goal'")).firstMatch
-        _ = eventMarker.waitForExistence(timeout: 30)
-        sleep(3)
+        // The in-game container is a `.verticalPage` TabView, top-to-bottom: Controls, Metrics,
+        // Events, opening on Metrics (SessionView.selection = .metrics). NAVIGATION RECIPE — proven
+        // empirically: Metrics is the only non-ScrollView page, so it's the reliable pager pivot —
+        // one swipe from Metrics pages cleanly (swipeUp → Events below, swipeDown → Controls above).
+        // Swipes that ORIGINATE on a ScrollView page (Controls/Events) get absorbed as inner
+        // scrolling and don't page, so we always return to Metrics before the next hop, and never
+        // rely on a Controls→Metrics swipe. Wait for Metrics to settle first.
+        _ = metricsMarker.waitForExistence(timeout: 30)
+        sleep(2)
+
+        // ---- 62: Events page (score header + event tiles). swipeUp pages Metrics → Events. ----
+        app.swipeUp()
+        let flagButton = app.buttons.matching(NSPredicate(format: "label ==[c] 'Flag'")).firstMatch
+        _ = flagButton.waitForExistence(timeout: 12)
+        sleep(1)
         screenshot("62-watch-ingame-events")
 
-        // Log one goal so the score header and confirmation flash are exercised.
-        if eventMarker.exists && eventMarker.isHittable {
-            eventMarker.tap()
-            usleep(700_000)
-            screenshot("63-watch-goal-flash")
+        // ---- 63: goal confirmation flash. Reveal the goal grid, tap "Goal Us", grab the flash. ----
+        // At the top of Events the "Goal Us" tile only peeks above the fold; one small swipeUp
+        // brings the 2×2 grid fully on screen so the button's hit-point is on screen and tappable.
+        // The ConfirmationFlash is a full-view overlay, so it's captured regardless of scroll.
+        let goalUs = app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Us'")).firstMatch
+        if !(goalUs.exists && goalUs.isHittable) {
+            app.swipeUp()
+            usleep(500_000)
         }
-
-        // Page left/right: watch in-game UIs are TabViews (controls to the left, metrics to the
-        // right in the Workout-app convention). Capture whatever each swipe reveals.
-        app.swipeRight()
-        sleep(1)
-        screenshot("64-watch-page-left")
-        app.swipeLeft()
-        app.swipeLeft()
-        sleep(1)
-        screenshot("65-watch-page-right")
-        app.swipeRight()
-
-        // End the match via the controls page: swipe to it and hit End. Best-effort — if the
-        // button isn't found the workout is abandoned, which the recovery path handles next launch.
-        app.swipeRight()
-        sleep(1)
-        let endButton = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS[c] 'End'")).firstMatch
-        if endButton.waitForExistence(timeout: 8) && endButton.isHittable {
-            endButton.tap()
-            // Summary appears after the builder finishes; give it time, then capture.
-            let done = app.buttons.matching(
-                NSPredicate(format: "label CONTAINS[c] 'Done'")).firstMatch
-            _ = done.waitForExistence(timeout: 30)
-            screenshot("66-watch-summary")
-            if done.exists && done.isHittable { done.tap() }
+        if goalUs.waitForExistence(timeout: 8) && goalUs.isHittable {
+            goalUs.tap()
         } else {
-            screenshot("66-watch-summary")
+            // Fallback: tap the Goal Us tile position (top-left of the grid) by coordinate.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.5)).tap()
         }
+        usleep(400_000)              // inside the ~1s flash window
+        screenshot("63-watch-goal-flash")
+
+        // ---- Return to Metrics (the pager pivot). Events may be scrolled, so swipeDown until the
+        // Metrics marker reappears: the first swipe scrolls Events to its top, the next pages up. ----
+        var hops = 0
+        while !metricsMarker.exists && hops < 5 {
+            app.swipeDown()
+            usleep(700_000)
+            hops += 1
+        }
+        _ = metricsMarker.waitForExistence(timeout: 12)
+        sleep(1)
+
+        // ---- 65: Metrics page. Captured here, while parked on the pivot, because a reliable
+        // Controls→Metrics swipe doesn't exist (Controls' ScrollView eats the gesture). ----
+        screenshot("65-watch-metrics")
+
+        // ---- 64: Controls page (round End/Pause/Lock/Sub buttons). swipeDown pages Metrics →
+        // Controls. The tiles carry their titles as sibling captions ("End", "Pause", …). ----
+        app.swipeDown()
+        let endCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        _ = endCaption.waitForExistence(timeout: 12)
+        sleep(1)
+        screenshot("64-watch-controls")
+
+        // ---- 66: Summary. Tap the round End button (top-left control tile). Its Button wraps only
+        // an xmark image, so its label isn't "End"; tap the tile by coordinate, with a label-based
+        // fallback. Then wait for the summary's "Done" button and capture. ----
+        let endButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'End'")).firstMatch
+        if endButton.exists && endButton.isHittable {
+            endButton.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
+        }
+
+        // A newly-inferred field can raise a save sheet over the summary; dismiss it if present.
+        let notNow = app.buttons.matching(NSPredicate(format: "label ==[c] 'Not Now'")).firstMatch
+        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
+        _ = done.waitForExistence(timeout: 30)
+        if notNow.exists && notNow.isHittable {
+            notNow.tap()
+            _ = done.waitForExistence(timeout: 10)
+        }
+        sleep(1)
+        screenshot("66-watch-summary")
+        if done.exists && done.isHittable { done.tap() }
     }
 }

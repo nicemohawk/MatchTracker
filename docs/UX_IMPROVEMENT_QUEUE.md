@@ -58,3 +58,14 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
 - The in-game page walk (testWalkInGamePages) lands on the metrics page and horizontal swipes did not switch to events/controls pages — refine navigation (crown/vertical?) next round; events page + goal flash + controls + summary still uncaptured.
 - Drawer half-expanded state not yet visually verified (field rows, proposal cards).
 - Export/share flow (ExportMenu) unreviewed. iPad width pass unreviewed.
+
+## Wave 4 (in flight)
+
+- Watch in-game fixes from live-capture review: Sub Out tint collision, Flag vs Goal hierarchy, US/THEM score captions, muted metrics palette, events top padding, flash coverage, summary subtitle.
+- iOS fixes from live-capture review: Team header/error reconciliation + human copy, comments empty/unavailable styling, "nearest 0 m", drawer action hierarchy + clip + hint, chip-band tint artifact, nav-title scroll collision, export glyphs.
+
+## Next big wave: iPad
+
+- iPad ships the iPhone single-column layout: needs readable max-width / split layouts (Matches, detail sections grid, Fields side panel, coach dashboard already regular-width aware).
+- UI-test helpers are iPhone-calibrated: selectTab must handle the iPad top pill; HK sheet "Turn On All" coordinate misses on iPad.
+- Walk brittleness: team-code field accumulates across runs (append vs replace) — clear before typing.

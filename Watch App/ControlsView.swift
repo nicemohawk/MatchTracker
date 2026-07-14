@@ -57,7 +57,9 @@ struct ControlsView: View {
     @ViewBuilder
     private var subButton: some View {
         let onPitch = workoutManager.onPitch
-        let tint = onPitch ? WatchTheme.sprint : WatchTheme.turf
+        // Sub Out reads neutral bench-gray so it can't be mistaken for Pause's amber; Sub In
+        // keeps turf to signal "back on the pitch".
+        let tint = onPitch ? WatchTheme.bench : WatchTheme.turf
         let button = controlTile(title: onPitch ? "Sub Out" : "Sub In",
                                  systemImage: onPitch ? "figure.walk.motion" : "figure.seated.side",
                                  tint: tint) {

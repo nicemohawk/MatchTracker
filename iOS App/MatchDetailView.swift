@@ -50,15 +50,13 @@ struct MatchDetailView: View {
 
                 fadeInSection(sectionPicker)
 
+                // No per-section tint band here: the amber/brown wash it painted behind the
+                // section's own chip row (e.g. Heatmap's Satellite/Compare) read as a stray
+                // full-width band under the hidden toolbar. The chips now sit on the normal
+                // background; the hero wash above still carries the color.
                 fadeInSection(
                     content
                         .padding(.horizontal)
-                        .background(
-                            Theme.headerGradient(Theme.sectionTint(section.rawValue))
-                                .frame(height: 160)
-                                .frame(maxHeight: .infinity, alignment: .top)
-                                .allowsHitTesting(false)
-                        )
                 )
 
                 // Social proof under the analysis — only a team surface, but not paywalled to read.
@@ -73,6 +71,10 @@ struct MatchDetailView: View {
         // Clear the floating liquid-glass tab bar so the last element of every section
         // (e.g. the heatmap "Low → High" legend) isn't hidden behind it.
         .contentMargins(.bottom, 72, for: .scrollContent)
+        // Soften the top edge so the hero stat tiles fade under the inline nav title on scroll
+        // instead of colliding flush with it (the toolbar background is hidden for the wash).
+        // Preserves the header's intentional bleed to the very top.
+        .modifier(SoftTopScrollEdge())
         // The hero wash is pinned to the ScrollView (not the scrolling content) so it runs UNDER
         // the translucent nav bar — the bar's glass blurs it rather than a hard seam cutting across.
         // It fades to clear at its bottom, melting into `Theme.background` with no visible edge.
@@ -351,6 +353,18 @@ struct MatchDetailView: View {
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+        }
+    }
+}
+
+/// Applies the soft top scroll-edge effect on iOS 26 (a graceful fade of scrolling content under
+/// the top bar); a no-op on earlier systems where the effect API doesn't exist.
+private struct SoftTopScrollEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            content
         }
     }
 }

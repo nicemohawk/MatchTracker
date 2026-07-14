@@ -39,6 +39,10 @@ struct FieldsDrawer: View {
     /// motif that matches the map's dashed low-confidence polygons and the detail sheet's language.
     private let confirmedThreshold = 3
 
+    /// Below this distance from the map center a field reads as "here" rather than a rounding-to-zero
+    /// "0 m" — the map center is effectively on top of it.
+    private let hereThresholdMeters: CLLocationDistance = 30
+
     /// The two snap states, matching the old `.presentationDetents([.height(96), .medium])`.
     private enum Snap { case peek, half }
     @State private var snap: Snap = .peek
@@ -113,7 +117,7 @@ struct FieldsDrawer: View {
                     .fill(Color.secondary.opacity(0.4))
                     .frame(width: 36, height: 5)
                     .accessibilityHidden(true)
-                summary
+                summary(progress: progress)
                     .padding(.horizontal, 20)
             }
             .padding(.top, 8)
@@ -147,6 +151,9 @@ struct FieldsDrawer: View {
             .padding(.bottom, 24)
         }
         .scrollContentBackground(.hidden)
+        // Clear the card's rounded bottom (24pt radius) so the last visible row at the half snap
+        // isn't clipped by the corner curve.
+        .contentMargins(.bottom, 28, for: .scrollContent)
         .scrollDisabled(snap == .peek)
     }
 
@@ -194,7 +201,9 @@ struct FieldsDrawer: View {
 
     /// Compact enough to read cleanly at the 96pt peek detent: one headline line ("N fields ·
     /// nearest 400 m") over a quiet drag hint, so nothing clips before the drawer is expanded.
-    private var summary: some View {
+    /// `progress` (0 at peek, 1 at half) fades the drag hint out as the drawer expands — once the
+    /// list is showing, "Swipe up to browse…" is redundant and only adds noise.
+    private func summary(progress: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             if fields.isEmpty {
                 Text("No fields yet")
@@ -204,6 +213,7 @@ struct FieldsDrawer: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .opacity(1 - progress)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("^[\(fields.count) field](inflect: true)")
@@ -216,10 +226,19 @@ struct FieldsDrawer: View {
                             .lineLimit(1)
                     }
                 }
-                Text(isScanning ? "Scanning satellite imagery…" : "Swipe up to browse and manage fields.")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                // Keep the live scanning status even when expanded; only the browse hint fades.
+                if isScanning {
+                    Text("Scanning satellite imagery…")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                } else {
+                    Text("Swipe up to browse and manage fields.")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .opacity(1 - progress)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,13 +249,18 @@ struct FieldsDrawer: View {
     private var nearestSummary: String? {
         guard let nearest = sortedFields.first else { return nil }
         if let center = mapCenter {
-            return "nearest \(MatchFormat.distance(distance(nearest, from: center)))"
+            let meters = distance(nearest, from: center)
+            if meters < hereThresholdMeters { return "nearest here" }
+            return "nearest \(MatchFormat.distance(meters))"
         }
         return "nearest \(nearest.name)"
     }
 
     // MARK: - Actions
 
+    /// One prominent turf action (Add Field) leads; Scan and Seed sit quietly beside/under it as
+    /// neutral surface buttons with only a small tinted icon — so the row reads as a single accent,
+    /// not three competing saturated capsules.
     private var actions: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
@@ -253,6 +277,16 @@ struct FieldsDrawer: View {
         }
     }
 
+    /// The neutral surface fill + hairline shared by the quiet secondary actions.
+    private func quietActionBackground() -> some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Theme.surfaceElevated)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+            )
+    }
+
     private var scanButton: some View {
         Button(action: onScan) {
             HStack(spacing: 6) {
@@ -260,14 +294,17 @@ struct FieldsDrawer: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "sparkle.magnifyingglass")
+                        .foregroundStyle(Theme.signal)
                 }
                 Text(isScanning ? "Scanning…" : "Scan This Area")
+                    .foregroundStyle(.secondary)
             }
             .font(.subheadline.weight(.semibold))
             .frame(maxWidth: .infinity, minHeight: 34)
+            .padding(.vertical, 7)
+            .background(quietActionBackground())
         }
-        .buttonStyle(.bordered)
-        .tint(Theme.signal)
+        .buttonStyle(.plain)
         .disabled(isScanning)
         .accessibilityLabel("Scan this area for fields")
     }
@@ -277,23 +314,26 @@ struct FieldsDrawer: View {
             VStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "dot.radiowaves.left.and.right")
+                        .foregroundStyle(Theme.pace)
                     Text(seeder.isScanning
                          ? "Seeding nearby… \(seeder.scannedTiles)/\(seeder.totalTiles)"
                          : "Seed Nearby Fields")
+                        .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
                 .font(.subheadline.weight(.semibold))
                 if seeder.isScanning {
                     ProgressView(value: Double(seeder.scannedTiles),
                                  total: Double(max(seeder.totalTiles, 1)))
-                        .tint(Theme.turf)
+                        .tint(Theme.pace)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(quietActionBackground())
         }
-        .buttonStyle(.bordered)
-        .tint(Theme.pace)
+        .buttonStyle(.plain)
         .disabled(seeder.isScanning)
         .accessibilityLabel("Seed nearby fields from satellite imagery")
     }
@@ -525,7 +565,9 @@ struct FieldsDrawer: View {
 
     private func distanceText(for field: FieldModel) -> String? {
         guard let center = mapCenter else { return nil }
-        return MatchFormat.distance(distance(field, from: center))
+        let meters = distance(field, from: center)
+        if meters < hereThresholdMeters { return "here" }
+        return MatchFormat.distance(meters)
     }
 
     private var selectedFieldBinding: Binding<FieldModel?> {

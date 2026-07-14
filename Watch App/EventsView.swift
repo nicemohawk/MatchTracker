@@ -28,13 +28,14 @@ struct EventsView: View {
         ScrollView {
             VStack(spacing: 8) {
                 scoreHeader
-                flagButton
                 if refereeMode {
                     refereeButtons
+                    flagButton
                 } else if sport.id == SportProfile.soccer.id {
                     soccerButtons
                 } else {
                     sportButtons
+                    flagButton
                 }
             }
             .padding(.horizontal, 4)
@@ -44,15 +45,12 @@ struct EventsView: View {
 
     private var scoreHeader: some View {
         VStack(spacing: 3) {
-            HStack(spacing: 4) {
-                Text("\(workoutManager.score.us)")
-                    .foregroundStyle(WatchTheme.turf)
-                    .contentTransition(.numericText())
+            // Digits carry a small US / THEM caption so the score isn't encoded by color alone.
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                scoreColumn(value: workoutManager.score.us, caption: "US", tint: WatchTheme.turf)
                 Text("–")
                     .foregroundStyle(.secondary)
-                Text("\(workoutManager.score.them)")
-                    .foregroundStyle(WatchTheme.loss)
-                    .contentTransition(.numericText())
+                scoreColumn(value: workoutManager.score.them, caption: "THEM", tint: WatchTheme.loss)
             }
             .font(.system(size: 34, weight: .bold, design: .rounded))
             .monospacedDigit()
@@ -69,7 +67,21 @@ struct EventsView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
+    }
+
+    /// One side of the scoreline: the big colored digit with a small uppercase side caption
+    /// beneath, so US/THEM reads without relying on turf-vs-loss color.
+    private func scoreColumn(value: Int, caption: String, tint: Color) -> some View {
+        VStack(spacing: 1) {
+            Text("\(value)")
+                .foregroundStyle(tint)
+                .contentTransition(.numericText())
+            Text(caption)
+                .watchCaptionLabel()
+                .foregroundStyle(.secondary)
+        }
     }
 
     /// Automatic substitutions detected so far this match.
@@ -79,15 +91,21 @@ struct EventsView: View {
         }.count
     }
 
+    /// Flag is a secondary action now — same fat-finger tile size as My Goal / Assist, no longer
+    /// the biggest control on the page (goals lead).
     @ViewBuilder
     private var flagButton: some View {
         let button = Button {
             logEvent(.flag, label: "Flagged", tint: WatchTheme.signal)
         } label: {
-            Label("Flag", systemImage: "flag.fill")
-                .font(.title2.weight(.bold))
+            VStack(spacing: 4) {
+                Image(systemName: "flag.fill")
+                    .font(.title3)
+                Text("Flag")
+                    .font(.caption2.weight(.semibold))
+            }
         }
-        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.signal, minHeight: 64))
+        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.signal))
 
         // Hands-free double-tap triggers the user's chosen action; Flag is the default.
         if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .flag {
@@ -99,13 +117,16 @@ struct EventsView: View {
 
     private var soccerButtons: some View {
         VStack(spacing: 8) {
+            // Goals are the most frequent action, so they lead as the prominent top row.
             HStack(spacing: 8) {
-                goalUsButton
-                eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs)
+                goalUsButton(prominent: true)
+                eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs, prominent: true)
             }
+            // Secondary actions, all equal fat-finger tiles including the demoted Flag.
             HStack(spacing: 8) {
                 eventButton("My Goal", systemImage: "star.fill", kind: .goalMine)
                 eventButton("Assist", systemImage: "hand.thumbsup.fill", kind: .assist)
+                flagButton
             }
         }
     }
@@ -118,7 +139,7 @@ struct EventsView: View {
             }
             HStack(spacing: 8) {
                 eventButton("Foul", systemImage: "exclamationmark.triangle", kind: .foul)
-                goalUsButton
+                goalUsButton()
             }
             HStack(spacing: 8) {
                 eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs)
@@ -139,7 +160,7 @@ struct EventsView: View {
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
             ForEach(kinds, id: \.self) { kind in
                 if kind == .goalForUs {
-                    goalUsButton
+                    goalUsButton()
                 } else {
                     eventButton(kind.watchTitle, systemImage: kind.watchSymbol, kind: kind)
                 }
@@ -148,8 +169,8 @@ struct EventsView: View {
     }
 
     @ViewBuilder
-    private var goalUsButton: some View {
-        let button = eventButton("Goal Us", systemImage: "soccerball", kind: .goalForUs)
+    private func goalUsButton(prominent: Bool = false) -> some View {
+        let button = eventButton("Goal Us", systemImage: "soccerball", kind: .goalForUs, prominent: prominent)
         if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .goalUs {
             button.handGestureShortcut(.primaryAction)
         } else {
@@ -157,26 +178,33 @@ struct EventsView: View {
         }
     }
 
-    private func eventButton(_ title: String, systemImage: String, kind: MatchEventKind) -> some View {
+    private func eventButton(_ title: String, systemImage: String, kind: MatchEventKind, prominent: Bool = false) -> some View {
         let tint = kind.watchTint
         return Button {
             logEvent(kind, label: title, tint: tint)
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: prominent ? 5 : 4) {
                 Image(systemName: systemImage)
-                    .font(.title3)
+                    .font(prominent ? .title : .title3)
                 Text(title)
-                    .font(.caption2.weight(.semibold))
+                    .font(prominent ? .footnote.weight(.bold) : .caption2.weight(.semibold))
             }
         }
-        .buttonStyle(WatchTileButtonStyle(tint: tint))
+        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: prominent ? 68 : 56))
     }
 
     @ViewBuilder
     private var confirmationOverlay: some View {
         if let confirmation {
-            ConfirmationFlash(text: confirmation.text, tint: confirmation.tint)
-                .transition(.scale(scale: 0.85).combined(with: .opacity))
+            ZStack {
+                // Opaque scrim so the score digits behind the flash don't poke above its edge —
+                // the confirmation fully takes over the page for its brief moment.
+                Rectangle()
+                    .fill(.black.opacity(0.85))
+                    .ignoresSafeArea()
+                ConfirmationFlash(text: confirmation.text, tint: confirmation.tint)
+            }
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
         }
     }
 

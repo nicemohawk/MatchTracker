@@ -84,13 +84,16 @@ struct TeamHeaderBar: View {
     let teamCode: String
     let memberCount: Int?
     let isLoading: Bool
+    /// The roster fetch failed — the header must reflect this rather than lingering on
+    /// "Loading roster…" while an error card shows below.
+    var isOffline: Bool = false
     var onRefresh: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "shield.lefthalf.filled")
+            Image(systemName: isOffline && memberCount == nil ? "shield.slash" : "shield.lefthalf.filled")
                 .font(.title2)
-                .foregroundStyle(Theme.turf)
+                .foregroundStyle(isOffline && memberCount == nil ? Theme.bench : Theme.turf)
             VStack(alignment: .leading, spacing: 2) {
                 Text(teamCode)
                     .font(.system(.title3, design: .rounded).weight(.bold))
@@ -119,8 +122,12 @@ struct TeamHeaderBar: View {
     }
 
     private var memberCountLabel: String {
-        guard let memberCount else { return "Loading roster…" }
-        return "\(memberCount) \(memberCount == 1 ? "member" : "members")"
+        if let memberCount {
+            return "\(memberCount) \(memberCount == 1 ? "member" : "members")"
+        }
+        if isLoading { return "Loading roster…" }
+        if isOffline { return "Offline — showing local stats" }
+        return "Loading roster…"
     }
 }
 

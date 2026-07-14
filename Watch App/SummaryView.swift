@@ -21,29 +21,32 @@ struct SummaryView: View {
                 celebrationHeader
 
                 VStack(spacing: 0) {
+                    // Secondary rows are muted to white so they don't compete with the duration
+                    // hero; heart rate keeps its accent, and referee card colors stay because the
+                    // color IS the datum (a yellow card is yellow).
                     if WatchSettings.refereeMode {
                         // Officiating summary: the referee's own athletic stats are noise here.
                         statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
                         statRow("Yellow Cards", value: "\(count(of: .yellowCard))", tint: WatchTheme.cardYellow)
                         statRow("Red Cards", value: "\(count(of: .redCard))", tint: WatchTheme.loss)
-                        statRow("Fouls", value: "\(count(of: .foul))", tint: WatchTheme.sprint)
-                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: WatchTheme.signal, isLast: true)
+                        statRow("Fouls", value: "\(count(of: .foul))", tint: .primary)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
                     } else if isIndoor {
                         // Indoor: GPS-derived distance/runs/sprints are unavailable; effort is HR-driven.
-                        statRow("Time on Pitch", value: timeOnPitchString, tint: WatchTheme.sprint)
+                        statRow("Time on Pitch", value: timeOnPitchString, tint: .primary)
                         statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
-                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: WatchTheme.sprint)
+                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .primary)
                         statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
-                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: WatchTheme.signal, isLast: true)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
                     } else {
-                        statRow("Time on Pitch", value: timeOnPitchString, tint: WatchTheme.sprint)
-                        statRow("Distance", value: distanceString, tint: WatchTheme.pace)
+                        statRow("Time on Pitch", value: timeOnPitchString, tint: .primary)
+                        statRow("Distance", value: distanceString, tint: .primary)
                         statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
-                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: WatchTheme.sprint)
-                        statRow("Runs", value: "\(runCounts.runs)", tint: WatchTheme.turf)
-                        statRow("Sprints", value: "\(runCounts.sprints)", tint: WatchTheme.turf)
+                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .primary)
+                        statRow("Runs", value: "\(runCounts.runs)", tint: .primary)
+                        statRow("Sprints", value: "\(runCounts.sprints)", tint: .primary)
                         statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
-                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: WatchTheme.signal, isLast: true)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -85,6 +88,9 @@ struct SummaryView: View {
             Text("Match Complete")
                 .watchCaptionLabel()
                 .foregroundStyle(WatchTheme.turf)
+            Text(summarySubtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             Text(durationString)
                 .watchHeroNumeral()
                 .foregroundStyle(.white)
@@ -161,6 +167,24 @@ struct SummaryView: View {
 
     private var durationString: String {
         MatchTrackerFormat.hoursMinutesSeconds(interval?.duration ?? workoutManager.elapsedAtPause)
+    }
+
+    /// Small "format · date" subtitle under the header, e.g. "Match · Jul 14". Format comes from
+    /// the finished record (falling back to the live format); the date from the session start.
+    /// Degrades to just the format name when no start date is available.
+    private var summarySubtitle: String {
+        let format = workoutManager.finishedRecord?.format ?? workoutManager.matchFormat
+        let name = formatDisplayName(format)
+        guard let start = workoutManager.finishedRecord?.startDate else { return name }
+        return "\(name) · \(start.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    private func formatDisplayName(_ format: MatchFormat) -> String {
+        switch format {
+        case .match: return "Match"
+        case .smallSided: return "Small-Sided"
+        case .indoor: return "Indoor"
+        }
     }
 
     private var timeOnPitchString: String {

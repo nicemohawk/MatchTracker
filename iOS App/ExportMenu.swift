@@ -31,7 +31,9 @@ struct ExportMenu: View {
                 }
             }
         } label: {
-            Label("Export…", systemImage: "square.and.arrow.down")
+            // A document-out glyph reads as "export"; the previous `square.and.arrow.down`
+            // (download/import) both contradicted the action and echoed the outer share icon.
+            Label("Export…", systemImage: "arrow.up.doc")
         }
     }
 

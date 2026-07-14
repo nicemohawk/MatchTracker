@@ -36,42 +36,44 @@ struct MetricsView: View {
 
     // MARK: Rows
 
+    // Only the elapsed-time hero (cardYellow) and heart rate (heart red) keep a saturated accent;
+    // the remaining metrics are muted to white/secondary so the hero isn't diluted.
     private var heartRateRow: some View {
         metricRow(
             value: workoutManager.heartRate > 0 ? "\(Int(workoutManager.heartRate))" : "--",
             unit: "BPM",
-            tint: WatchTheme.heart
+            valueColor: WatchTheme.heart
         ) {
             BeatingHeart(bpm: workoutManager.heartRate, animates: !isLuminanceReduced, tint: dim(WatchTheme.heart))
         }
     }
 
     private var distanceRow: some View {
-        metricRow(value: distanceString, unit: "KM", tint: WatchTheme.pace) {
-            Image(systemName: "figure.run").foregroundStyle(dim(WatchTheme.pace))
+        metricRow(value: distanceString, unit: "KM", valueColor: .white) {
+            Image(systemName: "figure.run").foregroundStyle(.secondary)
         }
     }
 
     private var caloriesRow: some View {
-        metricRow(value: "\(Int(workoutManager.activeCalories))", unit: "CAL", tint: WatchTheme.sprint) {
-            Image(systemName: "flame.fill").foregroundStyle(dim(WatchTheme.sprint))
+        metricRow(value: "\(Int(workoutManager.activeCalories))", unit: "CAL", valueColor: .white) {
+            Image(systemName: "flame.fill").foregroundStyle(.secondary)
         }
     }
 
     private var speedRow: some View {
-        metricRow(value: speedString, unit: "KM/H", tint: WatchTheme.turf) {
-            Image(systemName: "speedometer").foregroundStyle(dim(WatchTheme.turf))
+        metricRow(value: speedString, unit: "KM/H", valueColor: .white) {
+            Image(systemName: "speedometer").foregroundStyle(.secondary)
         }
     }
 
-    private func metricRow<Icon: View>(value: String, unit: String, tint: Color, @ViewBuilder icon: () -> Icon) -> some View {
+    private func metricRow<Icon: View>(value: String, unit: String, valueColor: Color, @ViewBuilder icon: () -> Icon) -> some View {
         HStack(spacing: 6) {
             icon()
                 .font(.headline)
                 .frame(width: 20)
             Text(value)
                 .watchStatNumeral()
-                .foregroundStyle(dim(tint))
+                .foregroundStyle(dim(valueColor))
                 .contentTransition(.numericText())
             Text(unit)
                 .watchCaptionLabel()
