@@ -150,6 +150,10 @@ struct CoachDashboardView: View {
 
     private var pitchDetail: some View {
         VStack(spacing: 16) {
+            // Center the empty board vertically so an offline/waiting coach sees a composed screen,
+            // not a pitch pinned to the top over a void.
+            if players.isEmpty { Spacer(minLength: 0) }
+
             pitchCanvas
                 .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
                 .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
@@ -157,17 +161,60 @@ struct CoachDashboardView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
                 )
+                // In the two-column split the roster's own empty state is hidden behind the sidebar
+                // toggle (iPad portrait), so the pitch must explain itself when there's no one on it.
+                .overlay { if players.isEmpty { pitchEmptyOverlay } }
                 .padding(.horizontal)
 
             benchStrip
 
             selectedTiles
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.vertical)
         // Keep the pitch + tiles a sensible measure in a wide split detail column, not stretched.
         .readableWidth()
+    }
+
+    /// Waiting / offline messaging drawn directly on the empty turf. White-on-turf reads cleanly in
+    /// both app color schemes (the pitch fill is always dark), and mirrors the timeline's error line.
+    @ViewBuilder
+    private var pitchEmptyOverlay: some View {
+        if !hasLoadedTeam {
+            ProgressView()
+                .controlSize(.large)
+                .tint(.white)
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: errorMessage != nil ? "wifi.slash" : "dot.radiowaves.left.and.right")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.9))
+                Text(errorMessage != nil ? "Live feed unavailable" : "Waiting for players")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text(errorMessage != nil
+                     ? "Positions appear once the team feed reconnects."
+                     : "Live positions appear when teammates start a match.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                if errorMessage != nil {
+                    Button("Retry") { Task { await refresh() } }
+                        .font(.callout.weight(.semibold))
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.turf)
+                        .padding(.top, 2)
+                }
+            }
+            .padding(24)
+            // A soft dark scrim so the white copy stays legible over the white pitch markings
+            // (the center circle runs right behind the message at most sizes).
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.black.opacity(0.45))
+            )
+        }
     }
 
     /// The live pitch, driven by a `TimelineView(.animation)` so on-pitch players emit a soft,

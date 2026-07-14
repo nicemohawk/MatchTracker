@@ -15,6 +15,12 @@ final class PolishScreenshots: XCTestCase {
         continueAfterFailure = true
     }
 
+    // NOTE on landscape captures: there is currently no way to run this walk in landscape
+    // headlessly. xcodebuild has no destination-orientation knob, TEST_RUNNER_-prefixed env vars
+    // don't reach the runner under this scheme, and `XCUIDevice.shared.orientation = .landscapeLeft`
+    // (tried pre-launch, post-launch, and post-HealthKit-sheet with a portrait->landscape toggle)
+    // rotates the iOS 26 simulator's SCREEN but the app scene never adopts landscape — captures come
+    // out sideways with a letterbox band. Landscape review needs a manually rotated simulator.
     func testCaptureNewSurfaces() throws {
         let app = XCUIApplication()
         app.launchArguments += ["-hasOnboarded", "YES"]
@@ -132,6 +138,64 @@ final class PolishScreenshots: XCTestCase {
             sleep(1)
             export("33-match-detail-comments", app: app)
         }
+    }
+
+    /// Coach dashboard walk: the sideline live view (CoachDashboardView), reached from a toolbar
+    /// NavigationLink on Matches that is present only at regular width (iPad) when the team
+    /// entitlement is on and a team code is set. Launches entitled, sets a team code, opens the
+    /// dashboard, and captures both the Pitch and Timeline detail panes. Offline in the harness, so
+    /// these exercise the "waiting for players" / "no events yet" empty states specifically. On a
+    /// compact-width device (iPhone) the toolbar link is hidden, so the test skips itself — run it
+    /// on an iPad Pro simulator.
+    func testCaptureCoachDashboard() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-MatchTrackerEntitleTeam", "-hasOnboarded", "YES"]
+        app.launch()
+        handleHealthKitPrompt(app: app)
+        dismissHealthSyncAlertIfPresent(app: app)
+
+        // The coach toolbar link only appears with a non-empty team code, so set one first.
+        if openSettings(app: app) {
+            let nameField = app.textFields["Player name"]
+            if scrollUntilHittable(nameField, in: app, maxSwipes: 2) {
+                clearAndType(nameField, text: "Ben\n", placeholder: "Player name")
+            }
+            let teamField = app.textFields["Team code"]
+            if teamField.exists && teamField.isHittable {
+                clearAndType(teamField, text: "TEST01\n", placeholder: "Team code")
+            }
+        }
+        dismissHealthSyncAlertIfPresent(app: app)
+
+        _ = selectTab("Matches", expectingNavBar: "Matches", in: app)
+
+        // Open the coach dashboard from the Matches toolbar (topBarLeading). Its NavigationLink label
+        // is a bare `field.of.view.wide` SF Symbol with no explicit accessibility label, so match the
+        // symbol name and fall back to the first leading nav-bar button.
+        let navButtons = app.navigationBars.buttons
+        var coachButton = navButtons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'field.of.view' OR label CONTAINS[c] 'field of view'")).firstMatch
+        if !coachButton.exists, navButtons.count > 0 {
+            coachButton = navButtons.element(boundBy: 0)
+        }
+        guard coachButton.waitForExistence(timeout: 6) && coachButton.isHittable else {
+            throw XCTSkip("Coach dashboard toolbar link absent — hidden at compact width. Run on an iPad simulator.")
+        }
+        coachButton.tap()
+
+        // The dashboard is a NavigationSplitView; its detail column hosts the Pitch/Timeline picker.
+        _ = app.navigationBars["Live Team"].waitForExistence(timeout: 6)
+        sleep(3) // let the roster skeletons resolve to the offline "waiting" empty state
+        export("39-coach-pitch", app: app)
+
+        // Switch the detail pane to Timeline via the segmented control.
+        var timelineSegment = app.segmentedControls.buttons["Timeline"]
+        if !timelineSegment.exists { timelineSegment = app.buttons["Timeline"] }
+        if timelineSegment.waitForExistence(timeout: 4) && timelineSegment.isHittable {
+            timelineSegment.tap()
+            sleep(3)
+        }
+        export("39b-coach-timeline", app: app)
     }
 
     /// Onboarding walk: launched WITHOUT the -hasOnboarded seed, the per-run reinstall means the
