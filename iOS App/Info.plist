@@ -10,5 +10,9 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Import sideline footage of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save a match clip to your photo library.</string>
 </dict>
 </plist>
