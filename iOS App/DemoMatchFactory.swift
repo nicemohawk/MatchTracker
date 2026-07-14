@@ -40,11 +40,15 @@ final class DemoMatchFactory {
         var homeXOffset: Double     // shifts the midfielder's home point along the long axis
         var sprintsPerHalf: Int
         var speedScale: Double      // scales base wander speed → varies total distance
+        var firstHalfSeconds: Int
+        var halftimeSeconds: Int
+        var secondHalfSeconds: Int
         var goalsForUs: Int
         var goalsAgainst: Int
         var myGoals: Int
         var assists: Int
         var flags: Int
+        var format: MatchTrackerKit.MatchFormat = .match
     }
 
     private let healthKit: HealthKitService
@@ -58,13 +62,6 @@ final class DemoMatchFactory {
     private let fieldLength = 105.0     // long axis (m)
     private let fieldWidth = 68.0       // short axis (m)
     private let fieldHeading = 80.0     // compass bearing of the long axis (deg)
-
-    // Session timing: two 40-min halves around a 12-min halftime → 92 min total.
-    private let firstHalfSeconds = 2400
-    private let halftimeSeconds = 720
-    private let secondHalfSeconds = 2400
-    private var totalSeconds: Int { firstHalfSeconds + halftimeSeconds + secondHalfSeconds }
-    private var secondHalfStart: Int { firstHalfSeconds + halftimeSeconds }
 
     init(healthKit: HealthKitService, fields: FieldsModel, teamCode: String) {
         self.healthKit = healthKit
@@ -81,28 +78,122 @@ final class DemoMatchFactory {
                         homeXOffset: 0,
                         sprintsPerHalf: 10,
                         speedScale: 1.0,
+                        firstHalfSeconds: 2400,
+                        halftimeSeconds: 720,
+                        secondHalfSeconds: 2400,
                         goalsForUs: 2, goalsAgainst: 1, myGoals: 1, assists: 1, flags: 2)
         return try await generate(daysAgo: daysAgo, plan: plan)
     }
 
-    /// Generate a 5-match season (2, 6, 9, 13, 20 days ago). Each match uses a seeded plan so the
-    /// comparative heatmap and 4-week training-load average have real spread.
+    /// One fixture in a demo season: when it kicked off, how long it ran, roughly how far the
+    /// player covered, and how it turned out.
+    private struct Fixture {
+        var daysAgo: Int
+        var hour: Int
+        var minute: Int
+        var format: MatchTrackerKit.MatchFormat
+        var durationMinutes: Int
+        var targetDistanceKm: Double
+        var goalsForUs: Int
+        var goalsAgainst: Int
+        var myGoals: Int
+        var assists: Int
+        var flags: Int
+    }
+
+    /// Generate a 5-match demo season spread across the past ~6 weeks: weekend league matches on
+    /// Saturday/Sunday mornings, plus one Wednesday-evening small-sided pickup game, each with its
+    /// own duration, pace and scoreline — a win with the player scoring, a loss, a draw, and a
+    /// high-scoring pickup win — so the season reads as real rather than five identical fixtures.
+    /// Each match still keys off a seeded plan for full reproducibility.
     func generateSeason() async throws {
-        for daysAgo in [2, 6, 9, 13, 20] {
-            var rng = SplitMix64(seed: seed(forDaysAgo: daysAgo))
+        let daysAgoValues = seasonSchedule()
+        let fixtures = [
+            // Most recent: Sunday morning league match, a solid win with the player scoring.
+            Fixture(daysAgo: daysAgoValues[0], hour: 10, minute: 0, format: .match,
+                    durationMinutes: 92, targetDistanceKm: 7.2,
+                    goalsForUs: 3, goalsAgainst: 1, myGoals: 1, assists: 1, flags: 3),
+            // Saturday morning: a rough, shorter match, a loss.
+            Fixture(daysAgo: daysAgoValues[1], hour: 9, minute: 30, format: .match,
+                    durationMinutes: 75, targetDistanceKm: 5.4,
+                    goalsForUs: 0, goalsAgainst: 2, myGoals: 0, assists: 0, flags: 2),
+            // Midweek: Wednesday-evening small-sided pickup game, high-scoring, player braces.
+            Fixture(daysAgo: daysAgoValues[2], hour: 19, minute: 0, format: .smallSided,
+                    durationMinutes: 70, targetDistanceKm: 6.6,
+                    goalsForUs: 4, goalsAgainst: 3, myGoals: 2, assists: 1, flags: 4),
+            // Sunday morning league match, a draw.
+            Fixture(daysAgo: daysAgoValues[3], hour: 11, minute: 0, format: .match,
+                    durationMinutes: 85, targetDistanceKm: 6.0,
+                    goalsForUs: 1, goalsAgainst: 1, myGoals: 0, assists: 1, flags: 2),
+            // Oldest: Saturday morning, a long match and a clean-sheet win with the player scoring.
+            Fixture(daysAgo: daysAgoValues[4], hour: 9, minute: 0, format: .match,
+                    durationMinutes: 105, targetDistanceKm: 8.3,
+                    goalsForUs: 2, goalsAgainst: 0, myGoals: 1, assists: 0, flags: 3)
+        ]
+
+        // Pace (km/min) the movement model produces at speedScale 1.0, calibrated from the
+        // original fixed 92-min/6.83 km match. Used to size `speedScale` per fixture so total
+        // distance tracks `targetDistanceKm` despite the varying duration.
+        let baselineKmPerMinute = 6.83 / 92.0
+
+        for fixture in fixtures {
+            var rng = SplitMix64(seed: seed(forDaysAgo: fixture.daysAgo))
+            let durations = matchDurations(totalMinutes: fixture.durationMinutes)
+            let speedScale = clamp((fixture.targetDistanceKm / Double(fixture.durationMinutes)) / baselineKmPerMinute,
+                                   0.75, 1.3)
             let plan = Plan(
-                seed: seed(forDaysAgo: daysAgo),
+                seed: seed(forDaysAgo: fixture.daysAgo),
                 homeXOffset: Double.random(in: -0.05...0.05, using: &rng),
                 sprintsPerHalf: Int.random(in: 8...12, using: &rng),
-                speedScale: Double.random(in: 0.9...1.15, using: &rng),
-                goalsForUs: Int.random(in: 0...3, using: &rng),
-                goalsAgainst: Int.random(in: 0...3, using: &rng),
-                myGoals: Int.random(in: 0...2, using: &rng),
-                assists: Int.random(in: 0...2, using: &rng),
-                flags: Int.random(in: 1...3, using: &rng)
+                speedScale: speedScale,
+                firstHalfSeconds: durations.first,
+                halftimeSeconds: durations.halftime,
+                secondHalfSeconds: durations.second,
+                goalsForUs: fixture.goalsForUs,
+                goalsAgainst: fixture.goalsAgainst,
+                myGoals: fixture.myGoals,
+                assists: fixture.assists,
+                flags: fixture.flags,
+                format: fixture.format
             )
-            _ = try await generate(daysAgo: daysAgo, plan: plan)
+            _ = try await generate(daysAgo: fixture.daysAgo, hour: fixture.hour, minute: fixture.minute, plan: plan)
         }
+    }
+
+    /// Deterministic `daysAgo` values for a 5-match season: the most recent Sunday, the Saturday
+    /// before it, a Wednesday pickup game between them, an earlier Sunday, and the oldest Saturday
+    /// — spread across roughly the past six weeks from today.
+    private func seasonSchedule() -> [Int] {
+        let calendar = Calendar.current
+        let today = Date()
+
+        func daysAgo(forWeekday weekday: Int, atLeast minDaysAgo: Int) -> Int {
+            var probe = minDaysAgo
+            while probe < minDaysAgo + 7 {
+                let date = calendar.date(byAdding: .day, value: -probe, to: today) ?? today
+                if calendar.component(.weekday, from: date) == weekday { return probe }
+                probe += 1
+            }
+            return minDaysAgo
+        }
+
+        let sunday = 1, wednesday = 4, saturday = 7
+        let recentSunday = daysAgo(forWeekday: sunday, atLeast: 2)
+        let priorSaturday = daysAgo(forWeekday: saturday, atLeast: recentSunday + 4)
+        let pickupWednesday = daysAgo(forWeekday: wednesday, atLeast: priorSaturday + 2)
+        let earlierSunday = daysAgo(forWeekday: sunday, atLeast: pickupWednesday + 3)
+        let oldestSaturday = daysAgo(forWeekday: saturday, atLeast: earlierSunday + 5)
+        return [recentSunday, priorSaturday, pickupWednesday, earlierSunday, oldestSaturday]
+    }
+
+    /// Split a total match length into first-half / halftime / second-half seconds, keeping the
+    /// halftime-to-play ratio of the original fixed 92-min (40/12/40) match.
+    private func matchDurations(totalMinutes: Int) -> (first: Int, halftime: Int, second: Int) {
+        let halftimeMinutes = max(8, min(15, Int((Double(totalMinutes) * 12.0 / 92.0).rounded())))
+        let playMinutes = totalMinutes - halftimeMinutes
+        let firstHalfMinutes = playMinutes / 2
+        let secondHalfMinutes = playMinutes - firstHalfMinutes
+        return (firstHalfMinutes * 60, halftimeMinutes * 60, secondHalfMinutes * 60)
     }
 
     /// Generate one ~60-minute INDOOR session `daysAgo` back, returning the HKWorkout UUID. Indoor
@@ -129,11 +220,11 @@ final class DemoMatchFactory {
         0x5DEA_DBEE_F000_D1CE ^ (UInt64(bitPattern: Int64(daysAgo)) &* 0x9E37_79B9_7F4A_7C15)
     }
 
-    private func generate(daysAgo: Int, plan: Plan) async throws -> UUID {
+    private func generate(daysAgo: Int, hour: Int = 10, minute: Int = 0, plan: Plan) async throws -> UUID {
         ensureDemoFieldExists()
 
         var rng = SplitMix64(seed: plan.seed)
-        let start = sessionStart(daysAgo: daysAgo)
+        let start = sessionStart(daysAgo: daysAgo, hour: hour, minute: minute)
         let session = synthesizeSession(start: start, plan: plan, rng: &rng)
 
         // 1. HealthKit workout + samples + route through the real builders.
@@ -166,12 +257,12 @@ final class DemoMatchFactory {
         fields.save(field, pushToWatch: false)
     }
 
-    private func sessionStart(daysAgo: Int) -> Date {
+    private func sessionStart(daysAgo: Int, hour: Int = 10, minute: Int = 0) -> Date {
         let calendar = Calendar.current
         let day = calendar.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
         var components = calendar.dateComponents([.year, .month, .day], from: day)
-        components.hour = 10
-        components.minute = 0
+        components.hour = hour
+        components.minute = minute
         components.second = 0
         return calendar.date(from: components) ?? day
     }
@@ -196,18 +287,28 @@ final class DemoMatchFactory {
     ///  - Ornstein-Uhlenbeck velocity wander mean-reverting toward a home point (attack flips at
     ///    halftime), base walk/jog 0.7–2.6 m/s.
     ///  - 8–12 sprint bursts per half (5–7 s toward random targets at 6–7.5 m/s), acceleration-limited.
-    ///  - A 12-min halftime spent ~30 m OUTSIDE the touchline, mostly standing (PeriodDetector break).
-    ///  - A ~10-min bench spell ~10 m outside the touchline starting ~20 min into the second half
-    ///    (AutoSubDetector emits badged subOut/subIn on reconciliation).
+    ///  - A `plan`-sized halftime spent ~30 m OUTSIDE the touchline, mostly standing (PeriodDetector break).
+    ///  - A bench spell ~10 m outside the touchline roughly a third of the way into the second half,
+    ///    scaled to the half's length (AutoSubDetector emits badged subOut/subIn on reconciliation).
     ///  - HR follows speed with lag (rest ~118, jog ~150, sprint peaks ~185), decays on the bench.
     ///  - horizontalAccuracy jitter 4–12 m.
     private func synthesizeSession(start: Date, plan: Plan, rng: inout SplitMix64) -> Session {
+        let firstHalfSeconds = plan.firstHalfSeconds
+        let halftimeSeconds = plan.halftimeSeconds
+        let secondHalfSeconds = plan.secondHalfSeconds
+        let totalSeconds = firstHalfSeconds + halftimeSeconds + secondHalfSeconds
+        let secondHalfStart = firstHalfSeconds + halftimeSeconds
+
         let halfLength = fieldLength / 2
         let halfWidth = fieldWidth / 2
 
         // Sprint schedule (absolute session seconds), avoiding warm-up, halftime and the bench spell.
-        let benchStart = secondHalfStart + 1200
-        let benchEnd = benchStart + 600
+        // Bench duration/offset scale with the second half so short pickup formats still fit.
+        let benchDuration = max(180, min(600, secondHalfSeconds / 4))
+        let benchOffset = max(200, min(secondHalfSeconds - benchDuration - 200,
+                                       Int(Double(secondHalfSeconds) * 0.35)))
+        let benchStart = secondHalfStart + benchOffset
+        let benchEnd = benchStart + benchDuration
         let firstHalfSprints = scheduleSprints(count: plan.sprintsPerHalf, range: 180...(firstHalfSeconds - 120),
                                                avoid: [], rng: &rng)
         let secondHalfSprints = scheduleSprints(count: plan.sprintsPerHalf,
@@ -601,7 +702,7 @@ final class DemoMatchFactory {
             events: events,
             teamCode: teamCode,
             sportID: "soccer",
-            format: .match          // full-size pitch
+            format: plan.format     // full match, or a small-sided pickup game
         )
     }
 

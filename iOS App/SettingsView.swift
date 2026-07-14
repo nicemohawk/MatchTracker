@@ -28,11 +28,17 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("Player") {
-                    TextField("Player name", text: $playerName)
-                        .textInputAutocapitalization(.words)
-                    TextField("Team code", text: $teamCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
+                    LabeledContent("Name") {
+                        TextField("Player name", text: $playerName)
+                            .textInputAutocapitalization(.words)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Team code") {
+                        TextField("Team code", text: $teamCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
 
                 Section("Backend") {

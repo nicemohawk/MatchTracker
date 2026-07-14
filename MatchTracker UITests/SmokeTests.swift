@@ -19,7 +19,7 @@ final class SmokeTests: XCTestCase {
     /// HealthKit permission sheet), and browses into the first match.
     func testGenerateSeasonAndBrowse() {
         let app = XCUIApplication()
-        app.launchArguments += ["-MatchTrackerEntitleTeam"]
+        app.launchArguments += ["-MatchTrackerEntitleTeam", "-hasOnboarded", "YES"]
         app.launch()
 
         // The app requests HealthKit authorization during bootstrap, so the "Health Access" sheet
@@ -128,7 +128,7 @@ final class SmokeTests: XCTestCase {
     /// Verifies the Fields and Team tabs render with their distinctive nav titles.
     func testTabsRender() {
         let app = XCUIApplication()
-        app.launchArguments += ["-MatchTrackerEntitleTeam"]
+        app.launchArguments += ["-MatchTrackerEntitleTeam", "-hasOnboarded", "YES"]
         app.launch()
 
         // Dismiss the launch-time HealthKit authorization sheet before touching the tab bar.

@@ -38,16 +38,23 @@ struct FieldsView: View {
 
     var body: some View {
         NavigationStack {
-            map
-                .navigationTitle("Fields")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .sheet(isPresented: .constant(true)) { drawer }
-                .onAppear {
-                    frameFields()
-                    requestLocationIfNeeded()
-                    autoSeedIfNeeded()
-                }
+            // The drawer is a sibling of the map inside the tab's content (not a `.sheet`), so it
+            // renders BELOW the tab bar and never covers it. The map ignores the safe area to sit
+            // full-bleed; the drawer respects the bottom safe area, which is exactly what keeps its
+            // peek state hovering above the tab bar / home indicator.
+            ZStack(alignment: .bottom) {
+                map
+                drawer
+            }
+            .overlay(alignment: .trailing) { controlColumn }
+            .navigationTitle("Fields")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .onAppear {
+                frameFields()
+                requestLocationIfNeeded()
+                autoSeedIfNeeded()
+            }
         }
     }
 
@@ -78,7 +85,6 @@ struct FieldsView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
         }
-        .overlay(alignment: .trailing) { controlColumn }
         .ignoresSafeArea(edges: [.top, .bottom])
     }
 
@@ -103,8 +109,9 @@ struct FieldsView: View {
             }
         }
         .padding(.trailing, 14)
-        // Sit above the drawer's peek so the column never collides with it.
-        .padding(.bottom, 132)
+        // The column overlays the safe-area-respecting content, so it only has to clear the
+        // drawer's peek height (which already sits above the tab bar) — not the home indicator too.
+        .padding(.bottom, FieldsDrawer.totalPeekClearance + 16)
     }
 
     private func mapControlButton(_ systemImage: String,
@@ -138,11 +145,6 @@ struct FieldsView: View {
         )
         .environmentObject(fields)
         .environment(seeder)
-        .presentationDetents([.height(96), .medium])
-        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-        .presentationBackground(Theme.background)
-        .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(true)
     }
 
     // MARK: - Camera

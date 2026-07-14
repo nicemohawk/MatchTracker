@@ -18,6 +18,7 @@ struct CoachDashboardView: View {
     @State private var players: [LivePlayerStatus] = []
     @State private var selectedPlayerName: String?
     @State private var errorMessage: String?
+    @State private var hasLoadedTeam = false
 
     /// Which detail pane the coach is viewing. Pitch is the default.
     @State private var pane: DetailPane = .pitch
@@ -29,6 +30,8 @@ struct CoachDashboardView: View {
     @State private var editingEventID: UUID?
     @State private var labelDraft: String = ""
     @State private var toast: String?
+    @State private var hasLoadedEvents = false
+    @State private var eventErrorMessage: String?
 
     private enum DetailPane: String, CaseIterable, Identifiable {
         case pitch = "Pitch"
@@ -52,34 +55,65 @@ struct CoachDashboardView: View {
     private var rosterList: some View {
         List(selection: $selectedPlayerName) {
             if players.isEmpty {
-                ContentUnavailableView(
-                    "Waiting for Players",
-                    systemImage: "dot.radiowaves.left.and.right",
-                    description: Text(errorMessage ?? "Live positions appear when teammates start a match.")
-                )
+                if !hasLoadedTeam {
+                    ForEach(0..<4, id: \.self) { index in
+                        RosterSkeletonRow(width: 150 - CGFloat(index * 18))
+                            .listRowSeparator(.hidden)
+                    }
+                } else {
+                    ContentUnavailableView {
+                        Label("Waiting for Players", systemImage: "dot.radiowaves.left.and.right")
+                    } description: {
+                        Text(errorMessage ?? "Live positions appear when teammates start a match.")
+                    } actions: {
+                        if errorMessage != nil {
+                            Button("Retry") { Task { await refresh() } }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                    .listRowSeparator(.hidden)
+                }
             }
             ForEach(players, id: \.playerName) { player in
-                HStack {
-                    Circle()
-                        .fill(player.stale ? Color.gray : (player.onPitch ? Theme.turf : Theme.bench))
-                        .frame(width: 10, height: 10)
-                    VStack(alignment: .leading) {
-                        Text(player.playerName).font(.body)
-                        HStack(spacing: 10) {
-                            if let heartRate = player.heartRate {
-                                Label("\(Int(heartRate))", systemImage: "heart.fill")
-                            }
-                            Label(String(format: "%.1f km", player.distanceMeters / 1000),
-                                  systemImage: "figure.run")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                .opacity(player.stale ? 0.45 : 1)
-                .tag(player.playerName)
+                rosterRow(player)
+                    .tag(player.playerName)
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: players.map(\.playerName))
+    }
+
+    private func rosterRow(_ player: LivePlayerStatus) -> some View {
+        HStack(spacing: 12) {
+            PlayerAvatar(name: player.playerName, size: 38)
+                .overlay(alignment: .bottomTrailing) {
+                    Circle()
+                        .fill(statusTint(player))
+                        .frame(width: 11, height: 11)
+                        .overlay(Circle().strokeBorder(Theme.background, lineWidth: 2))
+                        .offset(x: 2, y: 2)
+                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(player.playerName)
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                HStack(spacing: 12) {
+                    if let heartRate = player.heartRate {
+                        Label("\(Int(heartRate))", systemImage: "heart.fill")
+                            .foregroundStyle(Theme.heart)
+                    }
+                    Label(String(format: "%.1f km", player.distanceMeters / 1000),
+                          systemImage: "figure.run")
+                        .foregroundStyle(Theme.pace)
+                }
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .labelStyle(.titleAndIcon)
+            }
+        }
+        .opacity(player.stale ? 0.5 : 1)
+    }
+
+    private func statusTint(_ player: LivePlayerStatus) -> Color {
+        player.stale ? Theme.bench : (player.onPitch ? Theme.turf : Theme.bench)
     }
 
     // MARK: Detail column (segmented)
@@ -95,13 +129,20 @@ struct CoachDashboardView: View {
             .padding(.horizontal)
             .padding(.top, 8)
 
-            switch pane {
-            case .pitch: pitchDetail
-            case .timeline: timelineDetail
+            Group {
+                switch pane {
+                case .pitch: pitchDetail
+                case .timeline: timelineDetail
+                }
             }
+            .id(pane)
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
         }
+        .animation(.easeInOut(duration: 0.28), value: pane)
+        .onChange(of: pane) { Haptics.selection() }
         .navigationTitle(teamCode)
         .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
         .overlay(alignment: .bottom) { toastBanner }
     }
 
@@ -109,36 +150,16 @@ struct CoachDashboardView: View {
 
     private var pitchDetail: some View {
         VStack(spacing: 16) {
-            Canvas { context, size in
-                let rect = SoccerPitch.fittedRect(in: size, padding: 10)
-                SoccerPitch.fillTurf(&context, rect: rect)
-                var markings = context
-                SoccerPitch.draw(in: &markings, rect: rect)
+            pitchCanvas
+                .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
+                .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+                )
+                .padding(.horizontal)
 
-                for player in players {
-                    guard let x = player.x, let y = player.y else { continue }
-                    let point = CGPoint(x: rect.minX + CGFloat(x) * rect.width,
-                                        y: rect.minY + CGFloat(y) * rect.height)
-                    let isSelected = player.playerName == selectedPlayerName
-                    let radius: CGFloat = isSelected ? 11 : 8
-                    let dotRect = CGRect(x: point.x - radius, y: point.y - radius,
-                                         width: radius * 2, height: radius * 2)
-                    let tint = player.stale ? Color.gray : (player.onPitch ? Theme.signal : Theme.bench)
-                    context.drawLayer { layer in
-                        layer.addFilter(.shadow(color: tint.opacity(0.6), radius: 5))
-                        layer.fill(Path(ellipseIn: dotRect), with: .color(tint))
-                    }
-                    if isSelected {
-                        context.stroke(Path(ellipseIn: dotRect), with: .color(Theme.goal), lineWidth: 2.5)
-                    }
-                    let label = Text(initials(player.playerName))
-                        .font(.system(size: 8, weight: .bold)).foregroundStyle(.black)
-                    context.draw(context.resolve(label), at: point)
-                }
-            }
-            .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-            .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal)
+            benchStrip
 
             selectedTiles
 
@@ -147,13 +168,102 @@ struct CoachDashboardView: View {
         .padding(.vertical)
     }
 
+    /// The live pitch, driven by a `TimelineView(.animation)` so on-pitch players emit a soft,
+    /// continuous pulse ring without per-view state.
+    private var pitchCanvas: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let rect = SoccerPitch.fittedRect(in: size, padding: 10)
+                SoccerPitch.fillTurf(&context, rect: rect)
+                var markings = context
+                SoccerPitch.draw(in: &markings, rect: rect)
+
+                let phase = timeline.date.timeIntervalSinceReferenceDate
+                let pulse = (sin(phase * 2.2) + 1) / 2   // 0…1
+
+                for player in players {
+                    guard let x = player.x, let y = player.y else { continue }
+                    let point = CGPoint(x: rect.minX + CGFloat(x) * rect.width,
+                                        y: rect.minY + CGFloat(y) * rect.height)
+                    let isSelected = player.playerName == selectedPlayerName
+                    let tint = player.stale ? Color.gray : RosterAvatar.tint(for: player.playerName)
+
+                    // Live pulse: an expanding, fading ring for players currently on the pitch.
+                    if player.onPitch && !player.stale {
+                        let ringRadius = 12 + CGFloat(pulse) * 10
+                        let ringRect = CGRect(x: point.x - ringRadius, y: point.y - ringRadius,
+                                              width: ringRadius * 2, height: ringRadius * 2)
+                        context.stroke(Path(ellipseIn: ringRect),
+                                       with: .color(tint.opacity((1 - pulse) * 0.55)),
+                                       lineWidth: 2)
+                    }
+
+                    let radius: CGFloat = isSelected ? 12 : 9
+                    let dotRect = CGRect(x: point.x - radius, y: point.y - radius,
+                                         width: radius * 2, height: radius * 2)
+                    context.drawLayer { layer in
+                        layer.addFilter(.shadow(color: .black.opacity(0.35), radius: 3, y: 1))
+                        layer.fill(Path(ellipseIn: dotRect), with: .color(tint))
+                    }
+                    context.stroke(Path(ellipseIn: dotRect),
+                                   with: .color(isSelected ? Theme.goal : .white.opacity(0.85)),
+                                   lineWidth: isSelected ? 2.5 : 1.25)
+
+                    let label = Text(RosterAvatar.initials(from: player.playerName))
+                        .font(.system(size: isSelected ? 10 : 8, weight: .bold, design: .rounded))
+                        .foregroundStyle(.black)
+                    context.draw(context.resolve(label), at: point)
+                }
+            }
+        }
+    }
+
+    /// Players not currently on the pitch, as a horizontal strip of tappable avatars beneath it.
+    @ViewBuilder
+    private var benchStrip: some View {
+        let bench = players.filter { !$0.onPitch }
+        if !bench.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Bench").captionLabel().padding(.horizontal)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(bench, id: \.playerName) { player in
+                            Button {
+                                selectedPlayerName = player.playerName
+                                Haptics.selection()
+                            } label: {
+                                VStack(spacing: 4) {
+                                    PlayerAvatar(name: player.playerName, size: 40)
+                                        .overlay(
+                                            Circle().strokeBorder(
+                                                player.playerName == selectedPlayerName ? Theme.goal : .clear,
+                                                lineWidth: 2)
+                                        )
+                                    Text(RosterAvatar.initials(from: player.playerName))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .opacity(player.stale ? 0.5 : 1)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var selectedTiles: some View {
         if let player = players.first(where: { $0.playerName == selectedPlayerName }) {
-            HStack {
-                StatTile(title: "HR", value: player.heartRate.map { "\(Int($0))" } ?? "—", systemImage: "heart.fill")
-                StatTile(title: "Distance", value: String(format: "%.2f km", player.distanceMeters / 1000), systemImage: "figure.run")
-                StatTile(title: "Status", value: player.onPitch ? "On pitch" : "Bench", systemImage: "sportscourt")
+            HStack(spacing: 12) {
+                StatTile(title: "HR", value: player.heartRate.map { "\(Int($0))" } ?? "—",
+                         systemImage: "heart.fill", tint: Theme.heart)
+                StatTile(title: "Distance", value: String(format: "%.2f km", player.distanceMeters / 1000),
+                         systemImage: "figure.run", tint: Theme.pace)
+                StatTile(title: "Status", value: player.onPitch ? "On pitch" : "Bench",
+                         systemImage: "sportscourt", tint: player.onPitch ? Theme.turf : Theme.bench)
             }
             .padding(.horizontal)
         }
@@ -166,7 +276,13 @@ struct CoachDashboardView: View {
             timelineHeader
 
             let rows = timelineRows
-            if rows.isEmpty {
+            if rows.isEmpty && !hasLoadedEvents {
+                if let eventErrorMessage {
+                    errorLine(eventErrorMessage) { Task { await refreshEvents() } }
+                } else {
+                    TimelineSkeleton()
+                }
+            } else if rows.isEmpty {
                 ContentUnavailableView(
                     "No Events Yet",
                     systemImage: "clock.arrow.circlepath",
@@ -174,31 +290,26 @@ struct CoachDashboardView: View {
                 )
                 .frame(maxHeight: .infinity)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(rows) { row in
-                                TeamEventRow(
-                                    row: row,
-                                    isEditing: editingEventID == row.id,
-                                    labelDraft: $labelDraft,
-                                    onBeginLabel: { beginLabeling(row) },
-                                    onSubmitLabel: { Task { await submitLabel(for: row) } }
-                                )
-                                .id(row.id)
-                                Divider().overlay(Theme.surfaceStroke)
-                            }
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            TeamEventRow(
+                                row: row,
+                                isEditing: editingEventID == row.id,
+                                labelDraft: $labelDraft,
+                                onBeginLabel: { beginLabeling(row) },
+                                onSubmitLabel: { Task { await submitLabel(for: row) } }
+                            )
+                            .id(row.id)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                            Divider().overlay(Theme.surfaceStroke)
                         }
-                        .padding(.horizontal)
                     }
-                    .onChange(of: rows.count) { _, _ in
-                        guard let last = rows.last else { return }
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                    .onAppear {
-                        guard let last = rows.last else { return }
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
+                    .padding(.horizontal)
+                    .animation(.spring(response: 0.42, dampingFraction: 0.82), value: rows.first?.id)
                 }
             }
         }
@@ -248,6 +359,20 @@ struct CoachDashboardView: View {
         return names.sorted()
     }
 
+    /// A quiet, retryable failure line — used where a bare error would be too loud.
+    private func errorLine(_ message: String, retry: @escaping () -> Void) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "wifi.slash").font(.title3).foregroundStyle(.secondary)
+            Text(message).font(.footnote).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Retry", action: retry)
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     @ViewBuilder
     private var toastBanner: some View {
         if let toast {
@@ -264,8 +389,9 @@ struct CoachDashboardView: View {
 
     // MARK: Merged rows
 
-    /// Coalesced, filtered, chronological (oldest-first) timeline: every `TeamEvent` from the
-    /// backend plus the local wearer's live events (deduped by event id — the server copy wins).
+    /// Coalesced, filtered, newest-first timeline: every `TeamEvent` from the backend plus the
+    /// local wearer's live events (deduped by event id — the server copy wins). Newest-first so
+    /// fresh events tick in at the top like a broadcast ticker.
     private var timelineRows: [TimelineRow] {
         var rows = teamEvents.map(TimelineRow.init(teamEvent:))
 
@@ -282,7 +408,7 @@ struct CoachDashboardView: View {
             if let filterGroup, !filterGroup.contains(row.kind) { return false }
             return true
         }
-        return rows.sorted { $0.date < $1.date }
+        return rows.sorted { $0.date > $1.date }
     }
 
     // MARK: Labeling
@@ -358,19 +484,21 @@ struct CoachDashboardView: View {
         } catch {
             errorMessage = "Live feed unavailable: \(error.localizedDescription)"
         }
+        hasLoadedTeam = true
     }
 
     private func refreshEvents() async {
         do {
             teamEvents = try await uploads.fetchTeamEvents(code: teamCode)
+            eventErrorMessage = nil
+            hasLoadedEvents = true
         } catch {
             // Non-fatal: the live pitch still works; keep the last-known events on screen.
+            if !hasLoadedEvents {
+                eventErrorMessage = "Team timeline unavailable right now."
+            }
             MatchLog.error("Team events unavailable: \(error.localizedDescription)", category: "coach")
         }
-    }
-
-    private func initials(_ name: String) -> String {
-        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined()
     }
 }
 
@@ -414,8 +542,17 @@ private struct TimelineRow: Identifiable {
 
     var title: String { kind?.title ?? kindRaw.capitalized }
     var systemImage: String { kind?.systemImage ?? "circle" }
-    var tint: Color { kind.map(\.tint) ?? Color.secondary }
-    /// A quiet "Add label" affordance shows only when the coach can actually annotate: the event
+
+    /// The glyph's semantic color. Subs read neutral bench (per the coach palette); every other
+    /// kind uses the app-wide `MatchEventKind.tint` (goals turf, cards yellow, etc.).
+    var glyphTint: Color {
+        switch kind {
+        case .subIn, .subOut: return Theme.bench
+        default: return kind.map(\.tint) ?? Color.secondary
+        }
+    }
+
+    /// A quiet "Label" affordance shows only when the coach can actually annotate: the event
     /// has neither a player note nor a coach label, and it lives server-side (has a matchUUID).
     var canLabel: Bool {
         (note?.isEmpty ?? true) && (coachLabel?.isEmpty ?? true) && matchUUID != nil
@@ -458,15 +595,22 @@ private struct TeamEventRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(row.date, format: .dateTime.hour().minute())
+            // Relative time chip — monospaced, ticks like a broadcast clock.
+            Text(row.date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 48, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: 52, alignment: .leading)
 
+            PlayerAvatar(name: row.playerName, size: 30)
+
+            // Event glyph in its semantic color, on a matching tint chip.
             Image(systemName: row.systemImage)
-                .font(.body)
-                .foregroundStyle(row.tint)
-                .frame(width: 24)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(row.glyphTint)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Theme.chipFill(row.glyphTint)))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -475,7 +619,7 @@ private struct TeamEventRow: View {
                 }
 
                 if let note = row.note, !note.isEmpty {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
+                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 if let coachLabel = row.coachLabel, !coachLabel.isEmpty {
@@ -497,16 +641,123 @@ private struct TeamEventRow: View {
                         .background(Theme.surfaceElevated, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
                 } else if row.canLabel {
-                    Button(action: onBeginLabel) {
-                        Label("Add label", systemImage: "plus.circle")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
+                    PulsingLabelChip(action: onBeginLabel)
                 }
             }
             Spacer(minLength: 0)
         }
         .padding(.vertical, 10)
     }
+}
+
+/// The quiet "Label" affordance for unlabeled events: a tinted chip with a gentle breathing
+/// pulse to draw the eye without shouting. Tapping opens the inline label field.
+private struct PulsingLabelChip: View {
+    let action: () -> Void
+    @State private var pulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            Label("Label", systemImage: "tag")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Theme.signal)
+                .padding(.horizontal, 9).padding(.vertical, 3)
+                .background(Theme.chipFill(Theme.signal), in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.chipStroke(Theme.signal), lineWidth: 1))
+                .opacity(pulsing ? 0.55 : 1)
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulsing = true
+            }
+        }
+    }
+}
+
+// MARK: - Skeletons
+
+/// A leaderboard-shaped shimmer row for the loading roster sidebar.
+private struct RosterSkeletonRow: View {
+    var width: CGFloat = 140
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle().fill(Theme.surfaceElevated).frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
+                    .frame(width: width, height: 13)
+                RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
+                    .frame(width: 90, height: 10)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .redacted(reason: .placeholder)
+        .coachShimmer()
+    }
+}
+
+/// Ticker-shaped shimmer rows shown while the timeline first loads.
+private struct TimelineSkeleton: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<6, id: \.self) { index in
+                HStack(alignment: .top, spacing: 12) {
+                    RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
+                        .frame(width: 44, height: 12)
+                    Circle().fill(Theme.surfaceElevated).frame(width: 30, height: 30)
+                    Circle().fill(Theme.surfaceElevated).frame(width: 30, height: 30)
+                    VStack(alignment: .leading, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
+                            .frame(width: 160 - CGFloat(index * 14), height: 13)
+                        RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
+                            .frame(width: 100, height: 10)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 10)
+                Divider().overlay(Theme.surfaceStroke)
+            }
+        }
+        .padding(.horizontal)
+        .redacted(reason: .placeholder)
+        .coachShimmer()
+    }
+}
+
+// MARK: - Shimmer
+
+/// A lightweight left-to-right sheen for redacted placeholders (local to the coach surface so it
+/// stays self-contained; mirrors the roster leaderboard's shimmer).
+private struct CoachShimmer: ViewModifier {
+    @State private var phase: CGFloat = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                GeometryReader { geometry in
+                    LinearGradient(
+                        colors: [.clear, Color.white.opacity(0.06), .clear],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                    .frame(width: geometry.size.width * 1.5)
+                    .offset(x: phase * geometry.size.width * 1.5)
+                }
+                .allowsHitTesting(false)
+            )
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
+            }
+    }
+}
+
+private extension View {
+    func coachShimmer() -> some View { modifier(CoachShimmer()) }
 }

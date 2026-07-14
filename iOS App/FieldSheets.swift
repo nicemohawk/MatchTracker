@@ -131,8 +131,8 @@ struct CornerEditorView: View {
             Map(initialPosition: .region(field.rectangle.mapRegion)) {
                 if corners.count == 4 {
                     MapPolygon(coordinates: corners.map(\.clCoordinate))
-                        .foregroundStyle(Color.yellow.opacity(0.15))
-                        .stroke(.yellow, lineWidth: 2)
+                        .foregroundStyle(Theme.turf.opacity(0.15))
+                        .stroke(Theme.turf, lineWidth: 2)
                     ForEach(corners.indices, id: \.self) { index in
                         Annotation("", coordinate: corners[index].clCoordinate) {
                             cornerHandle(index: index, proxy: proxy)
@@ -142,29 +142,67 @@ struct CornerEditorView: View {
             }
             .mapStyle(.imagery)
         }
+        .overlay(alignment: .bottom) { guidanceBar }
         .navigationTitle("Adjust Corners")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") { save() }
-                    .disabled(corners.count != 4)
-            }
-        }
         .onAppear {
             if corners.isEmpty { corners = field.rectangle.corners }
         }
     }
 
+    /// A dark guidance bar over the imagery: what to do, plus a turf Save capsule. Dragging a
+    /// handle nudges low-confidence geometry into a trained observation.
+    private var guidanceBar: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "hand.draw.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.turf)
+                Text(draggingIndex == nil
+                     ? "Drag any of the four corners to match the pitch."
+                     : "Corner \((draggingIndex ?? 0) + 1) of 4")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+            }
+            Button { save() } label: {
+                Text("Save Corrections")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.turf)
+            .clipShape(Capsule())
+            .disabled(corners.count != 4)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
     private func cornerHandle(index: Int, proxy: MapProxy) -> some View {
-        Circle()
-            .fill(draggingIndex == index ? Color.orange : Color.yellow)
-            .frame(width: 26, height: 26)
-            .overlay(Circle().stroke(.white, lineWidth: 2))
-            .shadow(radius: 2)
+        let isDragging = draggingIndex == index
+        return Circle()
+            .fill(isDragging ? Theme.signal : Theme.turf)
+            .frame(width: isDragging ? 34 : 30, height: isDragging ? 34 : 30)
+            .overlay(Circle().stroke(.white, lineWidth: 2.5))
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+            // Enlarge the touch target well beyond the visible dot.
+            .padding(12)
+            .contentShape(Circle())
+            .animation(.easeOut(duration: 0.15), value: isDragging)
             .gesture(
                 DragGesture(coordinateSpace: .global)
                     .onChanged { value in
-                        draggingIndex = index
+                        if draggingIndex != index {
+                            draggingIndex = index
+                            Haptics.selection()
+                        }
                         if let coordinate = proxy.convert(value.location, from: .global) {
                             corners[index] = Coordinate2D(latitude: coordinate.latitude,
                                                           longitude: coordinate.longitude)

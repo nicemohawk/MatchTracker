@@ -30,6 +30,10 @@ struct MatchDetailView: View {
 
     @State private var section: Section
     @State private var ringProgress: Double = 0
+    /// One-time entrance flag — flips true on the first `onAppear` and never resets, so the
+    /// choreography does NOT replay when returning from a push or switching section chips.
+    @State private var hasAppeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Indoor play has no GPS route, so the map/route-derived sections don't apply.
     private var isIndoor: Bool { summary.record?.format == .indoor }
@@ -44,20 +48,22 @@ struct MatchDetailView: View {
             VStack(spacing: 16) {
                 header
 
-                sectionPicker
+                fadeInSection(sectionPicker)
 
-                content
-                    .padding(.horizontal)
-                    .background(
-                        Theme.headerGradient(Theme.sectionTint(section.rawValue))
-                            .frame(height: 160)
-                            .frame(maxHeight: .infinity, alignment: .top)
-                            .allowsHitTesting(false)
-                    )
+                fadeInSection(
+                    content
+                        .padding(.horizontal)
+                        .background(
+                            Theme.headerGradient(Theme.sectionTint(section.rawValue))
+                                .frame(height: 160)
+                                .frame(maxHeight: .infinity, alignment: .top)
+                                .allowsHitTesting(false)
+                        )
+                )
 
                 // Social proof under the analysis — only a team surface, but not paywalled to read.
                 if !SettingsStore.shared.teamCode.isEmpty {
-                    CommentsSection(matchUUID: summary.id)
+                    fadeInSection(CommentsSection(matchUUID: summary.id))
                 }
             }
             // Bottom-only: the hero header bleeds up to the very top of the scroll content (and
@@ -103,6 +109,12 @@ struct MatchDetailView: View {
         .task {
             model.attach(store.detailModel(for: summary))
             await model.detail?.load()
+        }
+        .onAppear {
+            // Fire the entrance choreography exactly once. The guard makes a pop-back or a
+            // section-chip switch (both of which re-invoke onAppear) a no-op.
+            guard !hasAppeared else { return }
+            hasAppeared = true
         }
     }
 
@@ -186,6 +198,10 @@ struct MatchDetailView: View {
                     Text("\(Int(workrate))")
                         .heroNumeral()
                         .foregroundStyle(.primary)
+                        // Counts up in lock-step with the ring as the score arrives; snaps under
+                        // Reduce Motion (entranceRingAnimation is nil).
+                        .contentTransition(.numericText(value: workrate))
+                        .animation(entranceRingAnimation, value: workrate)
                     Text("Composite effort score")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -194,26 +210,38 @@ struct MatchDetailView: View {
             }
 
             HStack(spacing: 10) {
-                StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
-                         systemImage: "clock", tint: Theme.signal)
+                staggeredEntrance(
+                    StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
+                             systemImage: "clock", tint: Theme.signal),
+                    index: 0)
                 if isIndoor {
                     // No route to integrate distance from — surface on-pitch time instead.
-                    StatTile(title: "Time on Pitch",
-                             value: MatchFormat.shortDuration(detail?.analytics?.workrate.timeOnPitch ?? summary.duration),
-                             systemImage: "stopwatch", tint: Theme.pace)
+                    staggeredEntrance(
+                        StatTile(title: "Time on Pitch",
+                                 value: MatchFormat.shortDuration(detail?.analytics?.workrate.timeOnPitch ?? summary.duration),
+                                 systemImage: "stopwatch", tint: Theme.pace),
+                        index: 1)
                 } else {
-                    StatTile(title: "Distance",
-                             value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
-                             systemImage: "figure.run", tint: Theme.pace)
+                    staggeredEntrance(
+                        StatTile(title: "Distance",
+                                 value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
+                                 systemImage: "figure.run", tint: Theme.pace),
+                        index: 1)
                 }
-                StatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
-                         systemImage: "hare", tint: Theme.sprint)
+                staggeredEntrance(
+                    StatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
+                             systemImage: "hare", tint: Theme.sprint),
+                    index: 2)
                 if let hr = detail?.heartRate {
-                    StatTile(title: "Avg HR", value: "\(Int(hr.average))",
-                             systemImage: "heart.fill", tint: Theme.heart)
+                    staggeredEntrance(
+                        StatTile(title: "Avg HR", value: "\(Int(hr.average))",
+                                 systemImage: "heart.fill", tint: Theme.heart),
+                        index: 3)
                 } else {
-                    StatTile(title: "Runs", value: "\(detail?.analytics?.workrate.runCount ?? 0)",
-                             systemImage: "bolt.fill", tint: Theme.turf)
+                    staggeredEntrance(
+                        StatTile(title: "Runs", value: "\(detail?.analytics?.workrate.runCount ?? 0)",
+                                 systemImage: "bolt.fill", tint: Theme.turf),
+                        index: 3)
                 }
             }
         }
@@ -223,11 +251,54 @@ struct MatchDetailView: View {
         .padding(.bottom, 26)
         .frame(maxWidth: .infinity)
         .onChange(of: workrate) { _, newValue in
-            withAnimation(.easeOut(duration: 1.0)) { ringProgress = min(1, newValue / 100) }
+            animateRing(to: newValue)
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 1.0)) { ringProgress = min(1, workrate / 100) }
+            animateRing(to: workrate)
         }
+    }
+
+    /// One-time entrance animation for the hero ring/numeral — a near-critically-damped spring
+    /// reads as a smooth ease-out with only a whisper of settle. Nil under Reduce Motion so the
+    /// ring trim and count-up snap instead of animating.
+    private var entranceRingAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.9, dampingFraction: 0.9)
+    }
+
+    /// Drives the ring trim to the score, animating with the entrance spring (or snapping under
+    /// Reduce Motion). Called both on first appear and when the async score lands.
+    private func animateRing(to score: Double) {
+        let target = min(1, score / 100)
+        if let animation = entranceRingAnimation {
+            withAnimation(animation) { ringProgress = target }
+        } else {
+            ringProgress = target
+        }
+    }
+
+    /// Rise-and-fade entrance for the four hero stat tiles: opacity + an 8pt lift with a light
+    /// ~60ms stagger. Under Reduce Motion it degrades to a plain fade — no offset, no stagger.
+    private func staggeredEntrance<Content: View>(_ content: Content, index: Int) -> some View {
+        content
+            .opacity(hasAppeared ? 1 : 0)
+            .offset(y: (hasAppeared || reduceMotion) ? 0 : 8)
+            .animation(
+                reduceMotion
+                    ? .easeOut(duration: 0.3)
+                    : .easeOut(duration: 0.45).delay(0.12 + Double(index) * 0.06),
+                value: hasAppeared
+            )
+    }
+
+    /// Quiet fade-in for everything below the hero (section chips, section content, comments) —
+    /// nothing bouncy. A plain opacity ramp in both motion modes.
+    private func fadeInSection<Content: View>(_ content: Content) -> some View {
+        content
+            .opacity(hasAppeared ? 1 : 0)
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.3) : .easeOut(duration: 0.5).delay(0.18),
+                value: hasAppeared
+            )
     }
 
     /// Turf→signal hero wash, pinned behind the whole ScrollView (see `body`). It fades to clear at

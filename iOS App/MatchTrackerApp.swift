@@ -133,8 +133,23 @@ final class AppEnvironment: ObservableObject {
 struct RootTabView: View {
     @Environment(LiveMatchStore.self) private var liveMatches
     @State private var selectedTab = "matches"
+    /// Whether the Matches tab is showing its root list (no detail pushed). The settings circle
+    /// is a root-screen affordance: it hides on other tabs and on pushed detail screens.
+    @State private var matchesAtRoot = true
+    // First-run onboarding gate. Written once the cover finishes; existing installs (and the UI
+    // tests that walk them) skip the cover entirely.
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
 
     var body: some View {
+        tabContent
+            .fullScreenCover(isPresented: .init(get: { !hasOnboarded },
+                                                set: { if $0 { hasOnboarded = false } })) {
+                OnboardingView()
+            }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
         // On iOS 26 the tab bar minimizes on scroll, the live match rides in a Liquid Glass
         // bottom accessory (Apple Music's now-playing pattern), and Settings is the system's
         // detached circle beside the bar via `role: .search` — visually part of the tab bar,
@@ -152,7 +167,7 @@ struct RootTabView: View {
     private var modernTabView: some View {
         TabView(selection: $selectedTab) {
             Tab("Matches", systemImage: "figure.soccer", value: "matches") {
-                MatchesView()
+                MatchesView(isAtRoot: $matchesAtRoot)
             }
             Tab("Fields", systemImage: "map", value: "fields") {
                 FieldsView()
@@ -161,8 +176,12 @@ struct RootTabView: View {
                 TeamView()
             }
             // The search role renders as the separated glass circle at the bar's trailing edge.
-            Tab("Settings", systemImage: "gearshape", value: "settings", role: .search) {
-                SettingsView()
+            // Root-screen only: it shows on the Matches root — not on other tabs or pushed
+            // detail screens — and stays put while Settings itself is open.
+            if (selectedTab == "matches" && matchesAtRoot) || selectedTab == "settings" {
+                Tab("Settings", systemImage: "gearshape", value: "settings", role: .search) {
+                    SettingsView()
+                }
             }
         }
         .tint(Theme.turf)

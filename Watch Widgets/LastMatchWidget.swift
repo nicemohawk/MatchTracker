@@ -48,6 +48,7 @@ struct LastMatchView: View {
 
     @ViewBuilder private var inline: some View {
         if let snapshot {
+            // Inline complications are rendered monochrome by the system, so no tint here.
             Label("\(score(snapshot)) · \(distance(snapshot))", systemImage: "soccerball")
         } else {
             Text("No matches yet")
@@ -59,6 +60,7 @@ struct LastMatchView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Image(systemName: "soccerball")
+                        .foregroundStyle(WidgetPalette.turf)
                     Text(score(snapshot))
                         .font(.headline)
                     Spacer(minLength: 0)
@@ -99,7 +101,10 @@ struct LastMatchWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "LastMatchWidget", provider: LastMatchProvider()) { entry in
             LastMatchView(snapshot: entry.snapshot)
-                .containerBackground(.clear, for: .widget)
+                // Rectangular accessories get the system's translucent tray; inline stays clear.
+                .containerBackground(for: .widget) {
+                    AccessoryWidgetBackground()
+                }
         }
         .configurationDisplayName("Last Match")
         .description("Your most recent match at a glance.")

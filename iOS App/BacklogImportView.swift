@@ -15,6 +15,9 @@ struct BacklogImportView: View {
 
     @State private var includeDisguisedRuns = false
     @State private var showingPaywall = false
+    @State private var displayedCount = 0
+    @State private var sealShown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
@@ -88,19 +91,42 @@ struct BacklogImportView: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 40))
                 .foregroundStyle(.black)
-            Text(importer.pendingCount > 0 ? "\(importer.pendingCount) past matches" : "Import your history")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.black)
+            Group {
+                if importer.pendingCount > 0 {
+                    Text("\(displayedCount) past matches")
+                        .contentTransition(.numericText())
+                        .monospacedDigit()
+                } else {
+                    Text("Import your history")
+                }
+            }
+            .font(.system(size: 28, weight: .bold, design: .rounded))
+            .foregroundStyle(.black)
+
+            Text("Priming your backlog builds your fields and unlocks season trends.")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.black.opacity(0.75))
+                .multilineTextAlignment(.center)
+
             if let span = spanText {
                 Text(span)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.black.opacity(0.7))
+                    .font(.footnote)
+                    .foregroundStyle(.black.opacity(0.6))
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
+        .padding(.horizontal, 16)
         .background(Theme.turfFlow, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: Theme.turf.opacity(0.35), radius: 18, x: 0, y: 8)
+        .onAppear {
+            guard displayedCount == 0 else { return }
+            if reduceMotion {
+                displayedCount = importer.pendingCount
+            } else {
+                withAnimation(.easeOut(duration: 0.7)) { displayedCount = importer.pendingCount }
+            }
+        }
     }
 
     /// Honest route coverage: native soccer workouts have no GPS route, so most of the backlog
@@ -175,16 +201,21 @@ struct BacklogImportView: View {
                 ProgressView(value: Double(importer.completed),
                              total: Double(max(importer.total, 1)))
                     .tint(Theme.turf)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.9), value: importer.completed)
 
                 HStack {
                     Text("\(importer.completed) of \(importer.total)")
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: importer.completed)
                     Spacer()
                     if let date = importer.currentDate {
-                        Text(date, format: .dateTime.month().year())
+                        Text(date, format: .dateTime.month(.abbreviated).day().year())
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
+                            .contentTransition(.numericText())
+                            .animation(.spring(response: 0.4, dampingFraction: 0.9), value: date)
                     }
                 }
             }
@@ -212,21 +243,37 @@ struct BacklogImportView: View {
     private func completionState(_ summary: BacklogImporter.Summary) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(spacing: 10) {
-                Image(systemName: summary.cancelled ? "pause.circle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 44))
+                Image(systemName: summary.cancelled ? "pause.circle.fill" : "checkmark.seal.fill")
+                    .font(.system(size: 52))
                     .foregroundStyle(Theme.turf)
-                Text(summary.cancelled ? "Import paused" : "History imported")
+                    .glow(Theme.turf, radius: sealShown ? 16 : 0)
+                    .scaleEffect(sealShown ? 1 : 0.5)
+                    .opacity(sealShown ? 1 : 0)
+                Text(summary.cancelled ? "Import paused" : "\(summary.totalMatches) matches imported")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
                 if let span = summarySpan(summary) {
                     Text(span).font(.subheadline).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 20)
+            .onAppear {
+                let notCancelled = !summary.cancelled
+                if reduceMotion {
+                    sealShown = true
+                } else {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.55)) { sealShown = true }
+                }
+                if notCancelled {
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                }
+            }
 
             VStack(spacing: 10) {
-                statRow(Theme.turf, "figure.soccer", "\(summary.totalMatches) matches imported",
-                        summary.routelessImported > 0 ? "\(summary.routelessImported) scored from heart rate" : nil)
+                if summary.routelessImported > 0 {
+                    statRow(Theme.heart, "heart.fill", "\(summary.routelessImported) scored from heart rate", nil)
+                }
                 if summary.recoveredFromRuns > 0 {
                     statRow(Theme.pace, "figure.run", "\(summary.recoveredFromRuns) recovered from runs & walks", nil)
                 }

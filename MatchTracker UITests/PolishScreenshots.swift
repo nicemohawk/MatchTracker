@@ -17,6 +17,7 @@ final class PolishScreenshots: XCTestCase {
 
     func testCaptureNewSurfaces() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-hasOnboarded", "YES"]
         app.launch()
         handleHealthKitPrompt(app: app)
 
@@ -52,6 +53,21 @@ final class PolishScreenshots: XCTestCase {
         sleep(2)
         export("31-team-tab", app: app)
 
+        // Fields: the custom drawer must leave the tab bar visible (user-reported regression).
+        _ = selectTab("Fields", expectingNavBar: "Fields", in: app)
+        dismissLocationPromptIfPresent(timeout: 5)
+        sleep(2)
+        export("34-fields-drawer", app: app)
+        let addField = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'add field' OR label == 'Add'")).firstMatch
+        if addField.waitForExistence(timeout: 4) && addField.isHittable {
+            addField.tap()
+            sleep(2)
+            export("35-add-field-sheet", app: app)
+            let cancel = app.buttons["Cancel"]
+            if cancel.exists && cancel.isHittable { cancel.tap() }
+        }
+
         // Match detail: open the newest match and walk to the bottom (comments section).
         _ = selectTab("Matches", expectingNavBar: "Matches", in: app)
         let row = app.staticTexts
@@ -64,6 +80,27 @@ final class PolishScreenshots: XCTestCase {
             sleep(1)
             export("33-match-detail-comments", app: app)
         }
+    }
+
+    /// Onboarding walk: launched WITHOUT the -hasOnboarded seed, the per-run reinstall means the
+    /// first-run cover shows. Captures each page, then drives through so the session ends clean.
+    func testCaptureOnboarding() throws {
+        let app = XCUIApplication()
+        app.launch()
+        sleep(2)
+        export("40-onboarding-1", app: app)
+        let primary = app.buttons["Continue"]
+        if primary.waitForExistence(timeout: 6) {
+            primary.tap(); sleep(1)
+            export("41-onboarding-2", app: app)
+            if primary.exists { primary.tap(); sleep(1) }
+            export("42-onboarding-3", app: app)
+        }
+        // Leave via Skip (Health access is exercised by the smoke test's sheet driver).
+        let skip = app.buttons["Skip"]
+        if skip.exists && skip.isHittable { skip.tap() }
+        handleHealthKitPrompt(app: app, timeout: 8)
+        _ = app.tabBars.firstMatch.waitForExistence(timeout: 8)
     }
 
     /// Saves a PNG to $SHOT_DIR (runner env, host-visible path) and always attaches to the result.

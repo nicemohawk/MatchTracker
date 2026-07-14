@@ -13,7 +13,15 @@ struct HeatmapSection: View {
     @State private var compareWithSeason = false
     @State private var comparisonMode: ComparisonMode = .compare
     @State private var isHoldingCompare = false
-    @AppStorage("heatmapCompareHintDismissed") private var compareHintDismissed = false
+    @State private var hintPulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// One-time discoverability: the "Hold to flip" pill shows until the user's first successful
+    /// hold, then never again (persisted). Key name kept stable across builds.
+    @AppStorage("heatmapFlipHintShown") private var flipHintDismissed = false
+
+    /// The Heatmap section's semantic accent (see `Theme.sectionTint`) — used to tint the active
+    /// display chips so they read as "on" the way every other chip in the app does.
+    private let accent = Theme.sprint
 
     /// The two ways to read a match against its season average.
     private enum ComparisonMode: String, CaseIterable, Identifiable {
@@ -24,16 +32,7 @@ struct HeatmapSection: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Toggle(isOn: $showSatellite) {
-                Label("Overlay on satellite", systemImage: "globe.americas.fill")
-            }
-            .font(.subheadline)
-
-            Toggle(isOn: $compareWithSeason) {
-                Label("Compare with season average", systemImage: "square.2.layers.3d")
-            }
-            .font(.subheadline)
-            .disabled(showSatellite)
+            displayChips
 
             if showSatellite {
                 SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap)
@@ -61,6 +60,45 @@ struct HeatmapSection: View {
         }
     }
 
+    // MARK: - Display chips
+
+    /// Compact capsule chips (the app's chip idiom) replacing the old full-width toggle band, which
+    /// read as a muddy olive block. Same bindings/behavior: "Satellite" mirrors `showSatellite`,
+    /// "Compare" mirrors `compareWithSeason` and is disabled while satellite is on.
+    private var displayChips: some View {
+        HStack(spacing: 8) {
+            displayChip(title: "Satellite", systemImage: "globe.americas.fill", isOn: showSatellite) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showSatellite.toggle() }
+            }
+            displayChip(title: "Compare", systemImage: "square.2.layers.3d",
+                        isOn: compareWithSeason, disabled: showSatellite) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { compareWithSeason.toggle() }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func displayChip(title: String, systemImage: String, isOn: Bool,
+                             disabled: Bool = false, toggle: @escaping () -> Void) -> some View {
+        Button {
+            guard !disabled else { return }
+            Haptics.selection()
+            toggle()
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.system(.footnote, design: .rounded).weight(.semibold))
+                .foregroundStyle(isOn ? accent : Color.primary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 34)
+                .background(Capsule().fill(isOn ? Theme.chipFill(accent) : Theme.surfaceElevated))
+                .overlay(Capsule().strokeBorder(isOn ? Theme.chipStroke(accent) : Theme.surfaceStroke, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+    }
+
     private var singleMatchPitch: some View {
         PitchHeatmapCanvas(render: .heat(analytics.heatmap))
             .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
@@ -77,11 +115,6 @@ struct HeatmapSection: View {
         switch comparisonMode {
         case .compare:
             comparePitch(seasonAverage: seasonAverage)
-            if !compareHintDismissed {
-                Label("Hold the pitch to compare", systemImage: "hand.tap.fill")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .transition(.opacity)
-            }
             HeatmapLegend()
         case .difference:
             if let diff = analytics.heatmap.difference(from: seasonAverage) {
@@ -127,12 +160,22 @@ struct HeatmapSection: View {
     private func comparePitch(seasonAverage: HeatmapGrid) -> some View {
         ZStack {
             PitchHeatmapCanvas(render: .heat(analytics.heatmap))
+            // Incoming season layer scales 0.98→1 as it crossfades, so the flip feels physical.
             PitchHeatmapCanvas(render: .heat(seasonAverage))
                 .opacity(isHoldingCompare ? 1 : 0)
+                .scaleEffect(isHoldingCompare ? 1 : 0.98)
 
             captionCapsule
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .padding(10)
+
+            if !flipHintDismissed && !isHoldingCompare {
+                flipHintPill
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 14)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
         }
         .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
         .background(Theme.pitchTurfBottom)
@@ -166,12 +209,33 @@ struct HeatmapSection: View {
             .transition(.opacity)
     }
 
+    /// Glass discoverability pill overlaid on the pitch — the hold-to-flip gesture is otherwise
+    /// invisible. Gently pulses (unless Reduce Motion) and is dismissed forever on first hold.
+    private var flipHintPill: some View {
+        Label("Hold to flip", systemImage: "hand.tap.fill")
+            .font(.system(.caption, design: .rounded).weight(.semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(accent.opacity(0.45), lineWidth: 1))
+            .shadow(color: .black.opacity(0.28), radius: 8, y: 3)
+            .scaleEffect(hintPulse ? 1.06 : 1.0)
+            .opacity(hintPulse ? 1.0 : 0.82)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                    hintPulse = true
+                }
+            }
+    }
+
     private func setHolding(_ holding: Bool) {
         guard holding != isHoldingCompare else { return }
         Haptics.selection()
-        withAnimation(.easeInOut(duration: 0.15)) { isHoldingCompare = holding }
-        if holding && !compareHintDismissed {
-            withAnimation(.easeInOut(duration: 0.2)) { compareHintDismissed = true }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isHoldingCompare = holding }
+        if holding && !flipHintDismissed {
+            withAnimation(.easeInOut(duration: 0.25)) { flipHintDismissed = true }
         }
     }
 

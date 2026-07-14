@@ -67,11 +67,14 @@ struct LiveMatchAccessory: View {
             }
             Spacer(minLength: 8)
             if let update = liveMatches.latest {
+                distanceLabel(update)
+                lastEventGlyph
                 Text(score(update))
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: score(update))
                     .foregroundStyle(.primary)
-                pitchPill(update)
             }
             Image(systemName: "chevron.up")
                 .font(.footnote.weight(.bold))
@@ -89,6 +92,8 @@ struct LiveMatchAccessory: View {
                 Text(score(update))
                     .font(.system(.subheadline, design: .rounded).weight(.bold))
                     .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: score(update))
                     .foregroundStyle(.primary)
                 clock(update)
                     .font(.system(.caption, design: .rounded).monospacedDigit())
@@ -116,15 +121,22 @@ struct LiveMatchAccessory: View {
         }
     }
 
-    /// Mini on-pitch / bench status pill.
-    private func pitchPill(_ update: LiveMatchUpdate) -> some View {
-        let tint = update.onPitch ? Theme.turf : Theme.bench
-        return Image(systemName: update.onPitch ? "figure.soccer" : "chair")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.15), in: Capsule())
+    /// Compact distance readout (km) in the pace tint.
+    private func distanceLabel(_ update: LiveMatchUpdate) -> some View {
+        Text(String(format: "%.1f km", update.distanceMeters / 1000))
+            .font(.system(.caption, design: .rounded).weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(Theme.pace)
+    }
+
+    /// Glyph for the most recent event, tinted by its kind — a glanceable "what just happened".
+    @ViewBuilder private var lastEventGlyph: some View {
+        if let kind = liveMatches.events.last?.kind {
+            Image(systemName: kind.systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(kind.tint)
+                .transition(.scale.combined(with: .opacity))
+        }
     }
 
     /// Field projector for the live position dot, resolved from streamed points — the same
@@ -138,8 +150,8 @@ struct LiveMatchAccessory: View {
 }
 
 /// A softly pulsing coral dot — the "recording"/live indicator, echoing Apple Music's animated
-/// now-playing glyph.
-private struct LivePulseDot: View {
+/// now-playing glyph. Shared by the accessory and the full `LiveMatchView` header.
+struct LivePulseDot: View {
     var diameter: CGFloat = 10
     @State private var pulsing = false
 

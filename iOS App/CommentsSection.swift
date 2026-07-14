@@ -29,7 +29,10 @@ struct CommentsSection: View {
 
             content
 
-            composer
+            // No composer while unreachable — a send box above "unavailable" reads as broken.
+            if phase != .failed {
+                composer
+            }
         }
         .padding(.horizontal)
         .task {

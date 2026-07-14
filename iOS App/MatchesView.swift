@@ -5,6 +5,8 @@ import SwiftUI
 import MatchTrackerKit
 
 struct MatchesView: View {
+    /// True while no detail is pushed; drives the settings circle's root-only visibility.
+    @Binding var isAtRoot: Bool
     @EnvironmentObject private var matches: MatchStore
     @EnvironmentObject private var fields: FieldsModel
     @Environment(LiveMatchStore.self) private var liveMatches
@@ -12,9 +14,17 @@ struct MatchesView: View {
     @Environment(BacklogImporter.self) private var backlogImporter
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingImport = false
+    @State private var navigationPath: [UUID] = []
+
+    init(isAtRoot: Binding<Bool> = .constant(true)) {
+        _isAtRoot = isAtRoot
+    }
+#if DEBUG
+    @State private var isGeneratingDemo = false
+#endif
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if matches.matches.isEmpty && !liveMatches.isLive {
                     emptyState
@@ -166,17 +176,81 @@ struct MatchesView: View {
         return FieldProjector(rectangle: field.rectangle)
     }
 
+    /// Welcoming themed empty state: a small pitch illustration, an on-brand prompt to record on
+    /// the watch, and — in DEBUG only — an inline sample-match generator (mirrors Settings' demo
+    /// tools) so testers can populate the list without an Apple Watch.
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Matches Yet", systemImage: "figure.soccer")
-        } description: {
-            Text("Recorded matches from your Apple Watch will appear here.")
-        } actions: {
+        VStack(spacing: 22) {
+            Canvas { context, size in
+                let rect = SoccerPitch.fittedRect(in: size, padding: 6)
+                SoccerPitch.fillTurf(&context, rect: rect)
+                SoccerPitch.draw(in: &context, rect: rect)
+            }
+            .frame(width: 220, height: 143)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1))
+            .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 6)
+            .accessibilityHidden(true)
+
+            VStack(spacing: 8) {
+                Text("No matches yet")
+                    .font(.system(.title2, design: .rounded).weight(.bold))
+                Text("Record a match on your Apple Watch and it will appear here — with heatmaps, runs, and your workrate.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 40)
+            }
+
             if let error = matches.loadError {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
+
+#if DEBUG
+            Button {
+                addSampleMatch()
+            } label: {
+                HStack(spacing: 8) {
+                    if isGeneratingDemo {
+                        ProgressView().tint(Theme.turf)
+                    } else {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    Text(isGeneratingDemo ? "Adding…" : "Add a sample match")
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                }
+                .foregroundStyle(Theme.turf)
+                .padding(.horizontal, 18)
+                .frame(height: 44)
+                .background(Theme.chipFill(Theme.turf), in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.chipStroke(Theme.turf), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingDemo)
+#endif
+        }
+        .padding()
+    }
+
+#if DEBUG
+    /// Generates one synthetic match through the real analysis pipeline, then refreshes the list —
+    /// a minimal inline replica of SettingsView's developer generator.
+    private func addSampleMatch() {
+        isGeneratingDemo = true
+        Task {
+            let factory = DemoMatchFactory(
+                healthKit: matches.healthKit,
+                fields: fields,
+                teamCode: SettingsStore.shared.teamCode.isEmpty ? "TEST01" : SettingsStore.shared.teamCode
+            )
+            try? await factory.generateMatch(daysAgo: 1)
+            await matches.refresh()
+            isGeneratingDemo = false
         }
     }
+#endif
 }
 
 /// Card press feedback: a quick settle-down scale, mirroring what a UICollectionView highlight

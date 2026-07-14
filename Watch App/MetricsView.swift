@@ -5,22 +5,23 @@
 
 import SwiftUI
 
-/// Page 2 of the live session: the Apple-Workout-style metrics screen — big yellow elapsed
-/// timer, heart rate with a beating heart, distance, active calories and current speed.
+/// Page 2 of the live session: the Apple-Workout-style metrics screen. The elapsed timer is the
+/// anchor — a big rounded monospaced numeral — with heart rate (Theme.heart, a subtle beat),
+/// distance (pace blue), active calories (sprint amber) and current speed (turf) stacked beneath.
 ///
-/// Supports always-on display: when the luminance is reduced we drop the seconds from the timer
-/// and stop the heart animation to save power.
+/// Supports always-on display: when the luminance is reduced we drop the seconds from the timer,
+/// stop the heart animation and dim the palette to save power and reduce burn-in.
 struct MetricsView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: isLuminanceReduced ? 1.0 : 0.05)) { context in
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(elapsedString(at: context.date))
-                    .font(.system(size: 44, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.yellow)
-                    .monospacedDigit()
+                    .watchHeroNumeral()
+                    .foregroundStyle(dim(WatchTheme.cardYellow))
+                    .contentTransition(.numericText())
 
                 heartRateRow
                 distanceRow
@@ -39,27 +40,27 @@ struct MetricsView: View {
         metricRow(
             value: workoutManager.heartRate > 0 ? "\(Int(workoutManager.heartRate))" : "--",
             unit: "BPM",
-            tint: .red
+            tint: WatchTheme.heart
         ) {
-            BeatingHeart(bpm: workoutManager.heartRate, animates: !isLuminanceReduced)
+            BeatingHeart(bpm: workoutManager.heartRate, animates: !isLuminanceReduced, tint: dim(WatchTheme.heart))
         }
     }
 
     private var distanceRow: some View {
-        metricRow(value: distanceString, unit: "MI", tint: .blue) {
-            Image(systemName: "figure.run").foregroundStyle(.blue)
+        metricRow(value: distanceString, unit: "MI", tint: WatchTheme.pace) {
+            Image(systemName: "figure.run").foregroundStyle(dim(WatchTheme.pace))
         }
     }
 
     private var caloriesRow: some View {
-        metricRow(value: "\(Int(workoutManager.activeCalories))", unit: "CAL", tint: .orange) {
-            Image(systemName: "flame.fill").foregroundStyle(.orange)
+        metricRow(value: "\(Int(workoutManager.activeCalories))", unit: "CAL", tint: WatchTheme.sprint) {
+            Image(systemName: "flame.fill").foregroundStyle(dim(WatchTheme.sprint))
         }
     }
 
     private var speedRow: some View {
-        metricRow(value: speedString, unit: "MPH", tint: .green) {
-            Image(systemName: "speedometer").foregroundStyle(.green)
+        metricRow(value: speedString, unit: "MPH", tint: WatchTheme.turf) {
+            Image(systemName: "speedometer").foregroundStyle(dim(WatchTheme.turf))
         }
     }
 
@@ -69,16 +70,22 @@ struct MetricsView: View {
                 .font(.headline)
                 .frame(width: 20)
             Text(value)
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .monospacedDigit()
+                .watchStatNumeral()
+                .foregroundStyle(dim(tint))
+                .contentTransition(.numericText())
             Text(unit)
-                .font(.caption2)
+                .watchCaptionLabel()
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
     }
 
     // MARK: Formatting
+
+    /// Dims a tint in always-on so accents read softly against the reduced-luminance face.
+    private func dim(_ color: Color) -> Color {
+        color.opacity(isLuminanceReduced ? 0.65 : 1)
+    }
 
     private func elapsedString(at date: Date) -> String {
         let elapsed = Int(workoutManager.elapsedTime(at: date).rounded(.down))
@@ -105,19 +112,28 @@ struct MetricsView: View {
     }
 }
 
-/// A heart glyph that pulses at the wearer's current heart rate (paused in always-on).
+/// A heart glyph that pulses at the wearer's current heart rate, with the beat magnitude loosely
+/// scaled to how hard they're working. Paused and static in always-on.
 private struct BeatingHeart: View {
     let bpm: Double
     let animates: Bool
+    var tint: Color = WatchTheme.heart
     @State private var enlarged = false
 
     var body: some View {
         Image(systemName: "heart.fill")
-            .foregroundStyle(.red)
-            .scaleEffect(enlarged ? 1.15 : 0.9)
+            .foregroundStyle(tint)
+            .scaleEffect(enlarged ? peakScale : 0.92)
             .animation(animates ? beatAnimation : .default, value: enlarged)
             .onAppear { if animates { enlarged.toggle() } }
             .onChange(of: animates) { _, isOn in enlarged = isOn ? true : false }
+    }
+
+    /// Peak scale grows subtly with intensity: a resting heart barely swells, a maxed-out one
+    /// pushes a little harder. Clamped so the pulse always stays gentle.
+    private var peakScale: CGFloat {
+        let intensity = min(max((bpm - 60) / 120, 0), 1) // 0 at 60 bpm, 1 by 180 bpm
+        return 1.05 + 0.1 * intensity
     }
 
     private var beatAnimation: Animation {
