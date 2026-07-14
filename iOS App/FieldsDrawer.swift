@@ -50,39 +50,45 @@ struct FieldsDrawer: View {
     static let peekHeight: CGFloat = 96
 
     /// On iOS 26 the floating Liquid Glass tab bar does NOT contribute a bottom safe-area inset
-    /// (content is expected to flow beneath it), so the drawer surface reaches the physical screen
-    /// bottom and its lower edge would hide behind the pills. This allowance keeps the drawer's
-    /// CONTENT above the bar while the glass surface still flows underneath. Pre-26 the tab bar
-    /// insets normally and no allowance is needed.
+    /// (content flows beneath it), so the card lifts itself clear of the pills explicitly. Pre-26
+    /// the tab bar insets normally and only the small gap applies.
     static var tabBarAllowance: CGFloat {
         if #available(iOS 26.0, *) { return 70 } else { return 0 }
     }
 
-    /// Total height the peek occupies from the screen bottom — what overlays (the map control
-    /// column) must clear.
-    static var totalPeekClearance: CGFloat { peekHeight + tabBarAllowance }
+    /// Gap between the card's bottom edge and the tab bar pills.
+    static let bottomGap: CGFloat = 8
+
+    /// Total height the peek occupies from the bottom of the safe area — what overlays (the map
+    /// control column) must clear.
+    static var totalPeekClearance: CGFloat { peekHeight + tabBarAllowance + bottomGap }
 
     var body: some View {
         GeometryReader { proxy in
-            let available = proxy.size.height
-            let peek = Self.peekHeight + Self.tabBarAllowance
-            // Half snap ~45% of the available (safe-area) height, floored so it always clears peek.
+            let available = proxy.size.height - Self.tabBarAllowance - Self.bottomGap
+            let peek = Self.peekHeight
+            // Half snap ~45% of the available height, floored so it always clears peek.
             let half = max(available * 0.45, peek + 120)
             let base = snap == .peek ? peek : half
             let height = rubberBanded(base - dragOffset, lower: peek, upper: half)
 
+            // A floating card (Apple Maps-style), not a full-width slab: inset from the screen
+            // edges, rounded on all corners, hovering just above the tab bar with the map showing
+            // around it — never sliding underneath the floating pills.
             drawerBody(peek: peek, half: half,
                        progress: min(max((height - peek) / (half - peek), 0), 1))
                 .frame(maxWidth: .infinity)
                 .frame(height: height, alignment: .top)
                 .modifier(DrawerGlass())
+                .padding(.horizontal, 8)
+                .padding(.bottom, Self.tabBarAllowance + Self.bottomGap)
                 // Pin to the bottom of the safe area; empty space above stays non-interactive so
                 // the map behind it keeps receiving touches.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 // When the tab bar minimizes on scroll-down the bottom safe area (and thus the
                 // available height) changes; animate the resize so the drawer glides instead of
-                // jittering. Keyed on `available` only, so it never animates the drag itself.
-                .animation(.spring(response: 0.35, dampingFraction: 0.9), value: available)
+                // jittering. Keyed on the proxy height only, so it never animates the drag itself.
+                .animation(.spring(response: 0.35, dampingFraction: 0.9), value: proxy.size.height)
         }
         .sheet(item: selectedFieldBinding) { field in
             FieldDetailSheet(field: field)
@@ -138,7 +144,7 @@ struct FieldsDrawer: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
-            .padding(.bottom, 44 + Self.tabBarAllowance)
+            .padding(.bottom, 24)
         }
         .scrollContentBackground(.hidden)
         .scrollDisabled(snap == .peek)
@@ -538,11 +544,8 @@ struct FieldsDrawer: View {
 /// language (see `MapControlGlass`).
 private struct DrawerGlass: ViewModifier {
     func body(content: Content) -> some View {
-        let shape = UnevenRoundedRectangle(
-            topLeadingRadius: 24, bottomLeadingRadius: 0,
-            bottomTrailingRadius: 0, topTrailingRadius: 24,
-            style: .continuous
-        )
+        // All four corners rounded: the drawer is a floating card, not an edge-attached panel.
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
         return Group {
             if #available(iOS 26.0, *) {
                 content
