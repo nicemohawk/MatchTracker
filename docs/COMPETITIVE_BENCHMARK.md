@@ -99,6 +99,16 @@ Ordered by how much each blocks the "undeniably best" claim. Each: why it matter
 
 ---
 
+## 5. Gap status (2026-07 waves) and the ball-skill decision
+
+Post-benchmark execution status:
+
+- **Gap 1 (metric credibility): shipped.** `SoccerLoadMetrics` (FIFA-convention sprint/HSR bands, debounced accel/decel efforts, distance-per-minute, top speed) with ground-truth tests, surfaced as the Match Load grid with the bands footnoted in-app.
+- **Gap 2 (video): MVP + capture shipped.** Import-and-auto-clip around watch-tagged events (no AI needed — our timestamps do the work), then in-app capture with wall-clock-exact alignment and a live event ticker. Remaining stretch: montage export and data overlays.
+- **Gap 3 (load context): shipped.** 7-day:28-day acute:chronic ratio with balanced/ramping/high status in the workrate section.
+- **Gap 4 (community flywheel): client + contract shipped.** Peer-cohort percentile card (age band/position/everyone) degrading gracefully; backend §12 (k-anonymity ≥25, aggregate-only) specified in BACKEND_UPGRADE_PROMPT_V2 — server implementation is the open half.
+- **Gap 5 (ball-skill metrics): DECIDED — option (b), positioning over parity.** MatchTracker is *physical + tactical + team* from hardware you already own. We do not chase Playermaker's boot-sensor telemetry: it requires proprietary hardware, targets a different buyer (academy programs), and dilutes the no-hardware moat that differentiates every other row of this table. Instead: (1) coarse technical proxies ride the video pipeline as it matures (touch counts near tagged events, kick moments from clip audio are plausible later inferences — no commitment until the video base is dense); (2) the positioning is stated honestly in marketing — we measure how you move and how the team plays, not your first touch; (3) revisit only if a widely-owned sensor (e.g. AirPods-class motion or a commodity boot wearable with an open API) makes integration hardware-free for the user. This is an explicit product boundary, not an unacknowledged hole.
+
 ### Sources
 
 - Strava: [New subscriber features](https://press.strava.com/articles/strava-unveils-suite-of-new-subscriber-features) · [Pricing 2026](https://checkthat.ai/brands/strava/pricing) · [Heatmaps guide](https://the5krunner.com/2026/01/16/strava-heatmaps-guide/)

@@ -145,6 +145,39 @@ final class PolishScreenshots: XCTestCase {
                 export("32b-workrate-load", app: app)
             }
 
+            // Video section: the sideline-video invite card (import + record entry points).
+            // Scroll back up first — the chip row is part of the scroll content and the workrate
+            // capture left it off-screen. The Video chip is the last in the horizontally scrolling
+            // chip row — drag the row left (anchored on the visible Workrate chip) until hittable.
+            for _ in 0..<3 { app.swipeDown(velocity: .fast) }
+            sleep(1)
+            let videoChip = app.buttons["Video"]
+            // NOTE: `isHittable` THROWS ("activation point invalid") for a chip scrolled out of
+            // the row's viewport — probe visibility via frame containment instead, and tap by
+            // coordinate to bypass the hittability machinery entirely.
+            let window = app.windows.firstMatch
+            func chipVisible() -> Bool {
+                guard videoChip.exists else { return false }
+                let frame = videoChip.frame
+                guard !frame.isEmpty else { return false }
+                return window.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+            }
+            var chipDrags = 0
+            while !chipVisible() && chipDrags < 3, workrateChip.exists {
+                // Drag within the row's interior — an edge-crossing drag becomes the navigation
+                // back-swipe and pops the detail screen.
+                let rowCenter = workrateChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                rowCenter.withOffset(CGVector(dx: 220, dy: 0))
+                    .press(forDuration: 0.1, thenDragTo: rowCenter.withOffset(CGVector(dx: -160, dy: 0)))
+                chipDrags += 1
+                usleep(500_000)
+            }
+            if chipVisible() {
+                videoChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                sleep(1)
+                export("32c-video-invite", app: app)
+            }
+
             for _ in 0..<8 { app.swipeUp(velocity: .fast) }
             sleep(1)
             export("33-match-detail-comments", app: app)
