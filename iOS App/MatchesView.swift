@@ -19,32 +19,35 @@ struct MatchesView: View {
                 if matches.matches.isEmpty && !liveMatches.isLive {
                     emptyState
                 } else {
-                    List {
-                        if showBacklogTeaser {
-                            backlogTeaser
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        }
-                        // On iOS 26+ the live match rides in the tab bar's bottom accessory
-                        // (see RootTabView), so this in-list card would be a duplicate affordance.
-                        if #unavailable(iOS 26.0), liveMatches.isLive {
-                            liveCard
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        }
-                        ForEach(matches.matches) { summary in
-                            NavigationLink(value: summary.id) {
-                                MatchRow(summary: summary)
+                    // ScrollView + LazyVStack (not List) so cards get scroll transitions and a
+                    // pressed-state scale — List swallows both.
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            if showBacklogTeaser {
+                                backlogTeaser
                             }
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            // On iOS 26+ the live match rides in the tab bar's bottom accessory
+                            // (see RootTabView), so this in-list card would be a duplicate affordance.
+                            if #unavailable(iOS 26.0), liveMatches.isLive {
+                                liveCard
+                            }
+                            ForEach(matches.matches) { summary in
+                                NavigationLink(value: summary.id) {
+                                    MatchRow(summary: summary)
+                                }
+                                .buttonStyle(PressableCardStyle())
+                                .scrollTransition(.interactive(timingCurve: .easeOut),
+                                                  axis: .vertical) { content, phase in
+                                    content
+                                        .opacity(phase.isIdentity ? 1 : 0.55)
+                                        .scaleEffect(phase.isIdentity ? 1 : 0.965)
+                                }
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
                 }
             }
             .background(Theme.background.ignoresSafeArea())
@@ -137,6 +140,8 @@ struct MatchesView: View {
                         Text("\(update.usGoals ?? 0)–\(update.themGoals ?? 0) · \(String(format: "%.1f km", update.distanceMeters / 1000))")
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.3), value: update.distanceMeters)
                     }
                 }
                 Spacer()
@@ -171,6 +176,17 @@ struct MatchesView: View {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
         }
+    }
+}
+
+/// Card press feedback: a quick settle-down scale, mirroring what a UICollectionView highlight
+/// gives for free. Applied to the match cards now that they live in a ScrollView.
+struct PressableCardStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(.spring(duration: 0.25), value: configuration.isPressed)
     }
 }
 

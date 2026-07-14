@@ -24,15 +24,15 @@ struct StartView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     Button {
+                        WatchHaptics.click()
                         workoutManager.matchFormat = selectedFormat
                         workoutManager.detectedField = fieldDetector.matchedField
                         workoutManager.phase = .countdown
                     } label: {
                         Label("Start Match", systemImage: "figure.soccer")
                             .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .tint(.green)
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 52, prominent: true))
 
                     formatPicker
 
@@ -42,21 +42,20 @@ struct StartView: View {
                         FieldTrainingView()
                     } label: {
                         Label("Train Field", systemImage: "map")
-                            .frame(maxWidth: .infinity)
                     }
-                    .tint(.blue)
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.pace, minHeight: 44))
 
                     NavigationLink {
                         WatchSettingsView()
                     } label: {
                         Label("Settings", systemImage: "gearshape")
-                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.bench, minHeight: 44))
 
                     if WatchSettings.refereeMode {
                         Label("Referee mode", systemImage: "rectangle.portrait.fill")
                             .font(.footnote)
-                            .foregroundStyle(.yellow)
+                            .foregroundStyle(WatchTheme.cardYellow)
                     }
 
                     if let teamCode = connectivity.teamCode, !teamCode.isEmpty {
@@ -93,30 +92,49 @@ struct StartView: View {
 
     private func formatChip(_ format: MatchFormat) -> some View {
         let isSelected = selectedFormat == format
+        let tint = isSelected ? WatchTheme.turf : WatchTheme.bench
         return Button {
-            selectedFormat = format
+            WatchHaptics.click()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                selectedFormat = format
+            }
             userDidChooseFormat = true
             WatchSettings.matchFormat = format
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
                 Image(systemName: format.symbolName)
+                    .font(.system(size: 15, weight: .semibold))
                 Text(format.shortTitle)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, weight: .semibold))
             }
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .foregroundStyle(isSelected ? WatchTheme.turf : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+                if isSelected {
+                    shape.fill(WatchTheme.chipFill(tint))
+                    shape.strokeBorder(WatchTheme.chipStroke(tint), lineWidth: 1)
+                } else {
+                    shape.fill(WatchTheme.surface)
+                    shape.strokeBorder(WatchTheme.surfaceStroke, lineWidth: 1)
+                }
+            }
         }
-        .buttonStyle(.bordered)
-        .tint(isSelected ? .green : .gray)
+        .buttonStyle(.plain)
     }
 
     private var fieldStatusLine: some View {
-        HStack(spacing: 4) {
-            Image(systemName: fieldDetector.matchedField == nil ? "location.slash" : "mappin.and.ellipse")
+        let matched = fieldDetector.matchedField != nil
+        return HStack(spacing: 5) {
+            Image(systemName: matched ? "mappin.and.ellipse" : "location.slash")
             Text(fieldDetector.statusText)
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
         .font(.footnote)
-        .foregroundStyle(fieldDetector.matchedField == nil ? Color.secondary : Color.green)
+        .foregroundStyle(matched ? WatchTheme.turf : Color.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
     }
 }
 

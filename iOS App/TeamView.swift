@@ -1,5 +1,10 @@
 // TeamView.swift
 // MatchTracker
+//
+// The Team tab, reimagined as a Strava-club leaderboard rather than a settings form: a metric
+// picker re-ranks teammates with a spring, the podium gets medal treatment, and each row expands
+// inline to the full stat set. Setup (join / switch teams / features) lives in supporting cards
+// so the leaderboard is the focus. See TeamRosterViews.swift and TeamJoinCard.swift.
 
 import SwiftUI
 import MatchTrackerKit
@@ -17,6 +22,8 @@ struct TeamView: View {
     @State private var loadState: LoadState = .idle
     @State private var newTeamCode = ""
     @State private var showingPaywall = false
+    @State private var selectedMetric: TeamMetric = .workrate
+    @State private var expandedPlayer: String?
 
     enum LoadState {
         case idle, loading, loaded(TeamStats), failed(String)
@@ -24,30 +31,37 @@ struct TeamView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Your Team") {
-                    TextField("Player name", text: $playerName)
-                        .textInputAutocapitalization(.words)
-                    TextField("Team code", text: $teamCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                    Button("Save & Refresh") { commitAndLoad() }
-                        .disabled(teamCode.isEmpty)
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    if settings.teamCode.isEmpty {
+                        JoinTeamCard(playerName: $playerName, teamCode: $teamCode, onJoin: commitAndLoad)
+                    } else {
+                        TeamHeaderBar(
+                            teamCode: settings.teamCode,
+                            memberCount: loadedMemberCount,
+                            isLoading: isLoading,
+                            onRefresh: { Task { await load() } }
+                        )
+                        leaderboardSection
+                        MembershipsCard(
+                            newTeamCode: $newTeamCode,
+                            onShowPaywall: { showingPaywall = true },
+                            onSelect: selectTeam
+                        )
+                        TeamFeaturesCard(teamCode: settings.teamCode, onShowPaywall: { showingPaywall = true })
+                    }
                 }
-
-                membershipsSection
-
-                teamFeaturesSection
-
-                rosterSection
+                .padding(.horizontal)
+                .padding(.vertical, 10)
             }
-            .scrollContentBackground(.hidden)
             .background(Theme.background.ignoresSafeArea())
+            .scrollContentBackground(.hidden)
             .navigationTitle("Team")
+            .refreshable { await load() }
             .onAppear {
                 teamCode = settings.teamCode
                 playerName = settings.playerName
-                if !teamCode.isEmpty { Task { await load() } }
+                if !teamCode.isEmpty, case .idle = loadState { Task { await load() } }
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallView(entitlements: entitlements)
@@ -55,163 +69,92 @@ struct TeamView: View {
         }
     }
 
-    /// Formation + chat, both team-subscription features.
-    @ViewBuilder
-    private var teamFeaturesSection: some View {
-        if !settings.teamCode.isEmpty {
-            Section("Team Features") {
-                if entitlements.entitledToTeam {
-                    NavigationLink {
-                        FormationView(teamCode: settings.teamCode)
-                    } label: {
-                        Label("Formation", systemImage: "square.grid.3x3.middle.filled")
-                    }
-                    NavigationLink {
-                        TeamChatView()
-                    } label: {
-                        Label("Match Chat", systemImage: "bubble.left.and.bubble.right")
-                    }
-                } else {
-                    Button {
-                        showingPaywall = true
-                    } label: {
-                        Label("Unlock formation, chat & live dashboard", systemImage: "lock")
-                    }
-                }
-            }
-        }
-    }
-
-    /// Multi-team memberships: the starred team is the default for uploads and the watch.
-    /// A second membership is a team-subscription feature.
-    @ViewBuilder
-    private var membershipsSection: some View {
-        let memberships = settings.teamMemberships
-        if !memberships.isEmpty || entitlements.entitledToTeam {
-            Section("My Teams") {
-                ForEach(memberships) { membership in
-                    membershipRow(membership)
-                }
-                HStack {
-                    TextField("Add team code", text: $newTeamCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                    Button("Add") { addMembership() }
-                        .disabled(newTeamCode.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                if !entitlements.entitledToTeam && memberships.count >= 1 {
-                    Button {
-                        showingPaywall = true
-                    } label: {
-                        Label("Multiple teams require Team features", systemImage: "lock")
-                            .font(.caption)
-                    }
-                }
-            }
-        }
-    }
-
-    private func membershipRow(_ membership: TeamMembership) -> some View {
-        HStack {
-            Button {
-                settings.teamCode = membership.code
-                teamCode = membership.code
-                environment.settingsChanged()
-                Task { await load() }
-            } label: {
-                Image(systemName: membership.code == settings.teamCode ? "star.fill" : "star")
-                    .foregroundStyle(Theme.bench)
-            }
-            .buttonStyle(.borderless)
-
-            VStack(alignment: .leading) {
-                Text(membership.code).font(.body.monospaced())
-                if let name = membership.name { Text(name).font(.caption).foregroundStyle(.secondary) }
-            }
-            Spacer()
-            // Initials-only display for this team (minors privacy; enforced server-side too).
-            Toggle("Initials", isOn: initialsBinding(for: membership))
-                .labelsHidden()
-                .toggleStyle(.button)
-                .font(.caption2)
-
-            Button(role: .destructive) {
-                settings.teamMemberships.removeAll { $0.code == membership.code }
-                environment.settingsChanged()
-            } label: {
-                Image(systemName: "minus.circle")
-            }
-            .buttonStyle(.borderless)
-        }
-    }
-
-    private func initialsBinding(for membership: TeamMembership) -> Binding<Bool> {
-        Binding(
-            get: { settings.teamMemberships.first { $0.code == membership.code }?.displayInitialsOnly ?? false },
-            set: { newValue in
-                var memberships = settings.teamMemberships
-                if let index = memberships.firstIndex(where: { $0.code == membership.code }) {
-                    memberships[index].displayInitialsOnly = newValue
-                    settings.teamMemberships = memberships
-                }
-            }
-        )
-    }
-
-    private func addMembership() {
-        let code = newTeamCode.trimmingCharacters(in: .whitespaces).uppercased()
-        guard !code.isEmpty else { return }
-        var memberships = settings.teamMemberships
-        guard !memberships.contains(where: { $0.code == code }) else { newTeamCode = ""; return }
-        // The second team (and beyond) is gated behind the team subscription.
-        if !memberships.isEmpty && !entitlements.entitledToTeam {
-            showingPaywall = true
-            return
-        }
-        memberships.append(TeamMembership(code: code, name: nil, displayInitialsOnly: false))
-        settings.teamMemberships = memberships
-        newTeamCode = ""
-        if settings.teamCode.isEmpty {
-            settings.teamCode = code
-            teamCode = code
-        }
-        environment.settingsChanged()
-    }
+    // MARK: - Leaderboard
 
     @ViewBuilder
-    private var rosterSection: some View {
+    private var leaderboardSection: some View {
         switch loadState {
-        case .idle:
-            Section {
-                ContentUnavailableView(
-                    "No Team Code",
-                    systemImage: "person.3",
-                    description: Text("Enter a team code to see roster stats.")
-                )
-            }
-        case .loading:
-            Section { HStack { Spacer(); ProgressView(); Spacer() } }
+        case .idle, .loading:
+            SkeletonLeaderboard()
         case .loaded(let stats) where stats.players.isEmpty:
-            Section("Roster") {
-                ContentUnavailableView(
-                    "No Teammates Yet",
-                    systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("Stats appear once teammates upload matches.")
-                )
-            }
+            emptyRosterCard
         case .loaded(let stats):
-            Section("Roster · \(stats.teamCode)") {
-                RosterHeader()
-                ForEach(stats.players, id: \.name) { player in
-                    RosterRow(player: player)
+            MetricPicker(selection: $selectedMetric) { metric in
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                    selectedMetric = metric
                 }
             }
-        case .failed(let message):
-            Section("Roster") {
-                Text(message).font(.callout).foregroundStyle(.secondary)
-                localFallback
+            let ranked = rankedPlayers(stats.players)
+            LazyVStack(spacing: 10) {
+                ForEach(Array(ranked.enumerated()), id: \.element.name) { index, player in
+                    LeaderboardRow(
+                        player: player,
+                        rank: index + 1,
+                        metric: selectedMetric,
+                        isYou: isYou(player.name),
+                        isExpanded: expandedPlayer == player.name,
+                        onTap: { toggleExpanded(player.name) }
+                    )
+                }
             }
+            .animation(.spring(response: 0.45, dampingFraction: 0.82), value: selectedMetric)
+        case .failed(let message):
+            failureCard(message)
         }
+    }
+
+    /// Sort by the selected metric (descending), tie-broken by name so ordering stays stable.
+    private func rankedPlayers(_ players: [TeamStats.Player]) -> [TeamStats.Player] {
+        players.sorted { lhs, rhs in
+            let left = selectedMetric.value(lhs)
+            let right = selectedMetric.value(rhs)
+            if left == right { return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending }
+            return left > right
+        }
+    }
+
+    private func toggleExpanded(_ name: String) {
+        Haptics.selection()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            expandedPlayer = expandedPlayer == name ? nil : name
+        }
+    }
+
+    private func isYou(_ name: String) -> Bool {
+        let mine = settings.playerName.trimmingCharacters(in: .whitespaces)
+        guard !mine.isEmpty else { return false }
+        return name.localizedCaseInsensitiveCompare(mine) == .orderedSame
+    }
+
+    // MARK: - State cards
+
+    private var emptyRosterCard: some View {
+        VStack {
+            ContentUnavailableView(
+                "No Teammates Yet",
+                systemImage: "person.crop.circle.badge.questionmark",
+                description: Text("Stats appear once teammates upload matches.")
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .themedCard()
+    }
+
+    private func failureCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label {
+                Text("Couldn't reach the team")
+                    .font(.system(.headline, design: .rounded))
+            } icon: {
+                Image(systemName: "wifi.exclamationmark").foregroundStyle(Theme.sprint)
+            }
+            Text(message).font(.caption).foregroundStyle(.secondary)
+            localFallback
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .themedCard()
     }
 
     /// Local-only aggregates from this device's matches when the backend is unavailable.
@@ -221,23 +164,58 @@ struct TeamView: View {
         let goals = matches.matches.reduce(0) { total, summary in
             total + (summary.record?.events.filter { $0.kind == .goalMine }.count ?? 0)
         }
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("Your local totals").font(.caption.weight(.semibold))
-            HStack {
-                Text("\(count) matches")
-                Spacer()
-                Text(MatchFormat.distance(distance))
-                Spacer()
-                Text("\(goals) goals")
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Your local totals").captionLabel()
+            HStack(spacing: 18) {
+                fallbackStat("\(count)", "matches")
+                fallbackStat(MatchFormat.distance(distance), "distance")
+                fallbackStat("\(goals)", "goals")
             }
-            .font(.caption).foregroundStyle(.secondary)
         }
+        .padding(.top, 4)
+    }
+
+    private func fallbackStat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .monospacedDigit()
+            Text(label).captionLabel()
+        }
+    }
+
+    // MARK: - Derived state
+
+    private var loadedMemberCount: Int? {
+        if case .loaded(let stats) = loadState { return stats.players.count }
+        return nil
+    }
+
+    private var isLoading: Bool {
+        if case .loading = loadState { return true }
+        return false
+    }
+
+    // MARK: - Actions
+
+    /// Star a different membership as the upload/watch default and reload its roster.
+    private func selectTeam(_ code: String) {
+        settings.teamCode = code
+        teamCode = code
+        environment.settingsChanged()
+        expandedPlayer = nil
+        Task { await load() }
     }
 
     private func commitAndLoad() {
         settings.playerName = playerName
-        settings.teamCode = teamCode.uppercased()
-        teamCode = settings.teamCode
+        let code = teamCode.uppercased()
+        settings.teamCode = code
+        teamCode = code
+        // Mirror the joined code into memberships so it appears in My Teams for switching/removal.
+        if !settings.teamMemberships.contains(where: { $0.code == code }) {
+            settings.teamMemberships.append(TeamMembership(code: code, name: nil, displayInitialsOnly: false))
+        }
         environment.settingsChanged()
         Task { await load() }
     }
@@ -251,38 +229,5 @@ struct TeamView: View {
         } catch {
             loadState = .failed(error.localizedDescription)
         }
-    }
-}
-
-struct RosterHeader: View {
-    var body: some View {
-        HStack {
-            Text("Player").frame(maxWidth: .infinity, alignment: .leading)
-            Text("M").frame(width: 30, alignment: .trailing)
-            Text("Min").frame(width: 38, alignment: .trailing)
-            Text("km").frame(width: 46, alignment: .trailing)
-            Text("WR").frame(width: 34, alignment: .trailing)
-            Text("Spr").frame(width: 34, alignment: .trailing)
-            Text("G/A").frame(width: 42, alignment: .trailing)
-        }
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(.secondary)
-    }
-}
-
-struct RosterRow: View {
-    let player: TeamStats.Player
-
-    var body: some View {
-        HStack {
-            Text(player.name).frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
-            Text("\(player.matchesPlayed)").frame(width: 30, alignment: .trailing)
-            Text(player.minutesPlayed.map { String(format: "%.0f", $0) } ?? "—").frame(width: 38, alignment: .trailing)
-            Text(String(format: "%.1f", player.totalDistanceMeters / 1000)).frame(width: 46, alignment: .trailing)
-            Text("\(Int(player.averageWorkrateScore))").frame(width: 34, alignment: .trailing)
-            Text(player.sprints.map { "\($0)" } ?? "—").frame(width: 34, alignment: .trailing)
-            Text("\(player.goals)/\(player.assists)").frame(width: 42, alignment: .trailing)
-        }
-        .font(.caption.monospacedDigit())
     }
 }

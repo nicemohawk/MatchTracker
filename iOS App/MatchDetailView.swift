@@ -54,6 +54,11 @@ struct MatchDetailView: View {
                             .frame(maxHeight: .infinity, alignment: .top)
                             .allowsHitTesting(false)
                     )
+
+                // Social proof under the analysis — only a team surface, but not paywalled to read.
+                if !SettingsStore.shared.teamCode.isEmpty {
+                    CommentsSection(matchUUID: summary.id)
+                }
             }
             // Bottom-only: the hero header bleeds up to the very top of the scroll content (and
             // behind the translucent nav bar). Container horizontal padding is unchanged.

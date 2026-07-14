@@ -14,54 +14,56 @@ struct ControlsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    controlButton(title: "End", systemImage: "xmark", tint: .red) {
+            VStack(spacing: 14) {
+                HStack(spacing: 14) {
+                    controlTile(title: "End", systemImage: "xmark", tint: WatchTheme.loss) {
+                        WatchHaptics.stop()
                         Task { await endMatch() }
                     }
-                    controlButton(title: isPaused ? "Resume" : "Pause",
-                                  systemImage: isPaused ? "play.fill" : "pause",
-                                  tint: .yellow) {
+                    controlTile(title: isPaused ? "Resume" : "Pause",
+                                systemImage: isPaused ? "play.fill" : "pause",
+                                tint: WatchTheme.sprint) {
+                        WatchHaptics.notify()
                         if isPaused { workoutManager.resume() } else { workoutManager.pause() }
                     }
                 }
 
-                HStack(spacing: 10) {
-                    controlButton(title: "Lock", systemImage: "drop.fill", tint: .blue) {
+                HStack(spacing: 14) {
+                    controlTile(title: "Lock", systemImage: "drop.fill", tint: WatchTheme.pace) {
+                        WatchHaptics.click()
                         WKInterfaceDevice.current().enableWaterLock()
                     }
                     subButton
                 }
 
                 if WatchSettings.refereeMode {
-                    HStack(spacing: 10) {
-                        controlButton(title: "Start Half", systemImage: "play.circle", tint: .green) {
+                    HStack(spacing: 14) {
+                        controlTile(title: "Start Half", systemImage: "play.circle", tint: WatchTheme.turf) {
+                            WatchHaptics.click()
                             workoutManager.log(.periodStart)
                         }
-                        controlButton(title: "End Half", systemImage: "stop.circle", tint: .orange) {
+                        controlTile(title: "End Half", systemImage: "stop.circle", tint: WatchTheme.sprint) {
+                            WatchHaptics.click()
                             workoutManager.log(.periodEnd)
                         }
                     }
                 }
             }
             .padding(.horizontal, 4)
+            .padding(.vertical, 6)
         }
     }
 
     @ViewBuilder
     private var subButton: some View {
-        let button = Button {
+        let onPitch = workoutManager.onPitch
+        let tint = onPitch ? WatchTheme.sprint : WatchTheme.turf
+        let button = controlTile(title: onPitch ? "Sub Out" : "Sub In",
+                                 systemImage: onPitch ? "figure.walk.motion" : "figure.seated.side",
+                                 tint: tint) {
+            WatchHaptics.click()
             workoutManager.toggleSub()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: workoutManager.onPitch ? "figure.walk.motion" : "figure.seated.side")
-                    .font(.title3)
-                Text(workoutManager.onPitch ? "Sub Out" : "Sub In")
-                    .font(.caption)
-            }
-            .frame(maxWidth: .infinity, minHeight: 60)
         }
-        .tint(workoutManager.onPitch ? .orange : .green)
 
         // Optional hands-free double-tap mapping (Settings > Double Tap). Referees are never
         // subbed, so the gesture stays unmapped here in referee mode.
@@ -73,17 +75,20 @@ struct ControlsView: View {
         }
     }
 
-    private func controlButton(title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
+    /// One Apple-Workout-style control: a round tinted button with its label beneath.
+    private func controlTile(title: String, systemImage: String, tint: Color,
+                             action: @escaping () -> Void) -> some View {
+        VStack(spacing: 6) {
+            Button(action: action) {
                 Image(systemName: systemImage)
-                    .font(.title3)
-                Text(title)
-                    .font(.caption)
             }
-            .frame(maxWidth: .infinity, minHeight: 60)
+            .buttonStyle(WatchControlButtonStyle(tint: tint))
+
+            Text(title)
+                .watchCaptionLabel()
+                .foregroundStyle(.secondary)
         }
-        .tint(tint)
+        .frame(maxWidth: .infinity)
     }
 
     private func endMatch() async {

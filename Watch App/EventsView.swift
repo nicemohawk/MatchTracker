@@ -8,13 +8,21 @@ import MatchTrackerKit
 
 /// Page 3 of the live session: event logging. Players get the giant Flag button plus
 /// goal/assist logging; referee mode swaps to cards and fouls; other sports get their own
-/// vocabulary from the sport profile. Every log gives a success haptic and a brief overlay.
+/// vocabulary from the sport profile. Every log gives a semantic haptic and a brief flash so
+/// the player knows it registered without looking closely.
 struct EventsView: View {
     @Environment(WorkoutManager.self) private var workoutManager
-    @State private var confirmation: String?
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @State private var confirmation: Confirmation?
 
     private var refereeMode: Bool { WatchSettings.refereeMode }
     private var sport: SportProfile { WatchSettings.sportProfile }
+
+    /// A single event confirmation: the label to flash plus the tint that colors its checkmark.
+    private struct Confirmation: Equatable {
+        let text: String
+        let tint: Color
+    }
 
     var body: some View {
         ScrollView {
@@ -35,20 +43,33 @@ struct EventsView: View {
     }
 
     private var scoreHeader: some View {
-        VStack(spacing: 2) {
-            Text("\(workoutManager.score.us)–\(workoutManager.score.them)")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .monospacedDigit()
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Text("\(workoutManager.score.us)")
+                    .foregroundStyle(WatchTheme.turf)
+                    .contentTransition(.numericText())
+                Text("–")
+                    .foregroundStyle(.secondary)
+                Text("\(workoutManager.score.them)")
+                    .foregroundStyle(WatchTheme.loss)
+                    .contentTransition(.numericText())
+            }
+            .font(.system(size: 34, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .animation(.snappy, value: workoutManager.score.us)
+            .animation(.snappy, value: workoutManager.score.them)
+
             Text("\(workoutManager.loggedEventCount) events")
-                .font(.caption2)
+                .watchCaptionLabel()
                 .foregroundStyle(.secondary)
             if autoSubCount > 0 {
                 Label("\(autoSubCount) auto", systemImage: "wand.and.stars")
                     .font(.caption2)
-                    .foregroundStyle(.teal)
+                    .foregroundStyle(WatchTheme.signal)
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
     /// Automatic substitutions detected so far this match.
@@ -61,13 +82,12 @@ struct EventsView: View {
     @ViewBuilder
     private var flagButton: some View {
         let button = Button {
-            logEvent(.flag, label: "Flagged")
+            logEvent(.flag, label: "Flagged", tint: WatchTheme.signal)
         } label: {
             Label("Flag", systemImage: "flag.fill")
                 .font(.title2.weight(.bold))
-                .frame(maxWidth: .infinity, minHeight: 64)
         }
-        .tint(.purple)
+        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.signal, minHeight: 64))
 
         // Hands-free double-tap triggers the user's chosen action; Flag is the default.
         if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .flag {
@@ -81,11 +101,11 @@ struct EventsView: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 goalUsButton
-                eventButton("Goal Them", systemImage: "soccerball.inverse", tint: .red, kind: .goalAgainstUs)
+                eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs)
             }
             HStack(spacing: 8) {
-                eventButton("My Goal", systemImage: "star.fill", tint: .yellow, kind: .goalMine)
-                eventButton("Assist", systemImage: "hand.thumbsup.fill", tint: .blue, kind: .assist)
+                eventButton("My Goal", systemImage: "star.fill", kind: .goalMine)
+                eventButton("Assist", systemImage: "hand.thumbsup.fill", kind: .assist)
             }
         }
     }
@@ -93,15 +113,15 @@ struct EventsView: View {
     private var refereeButtons: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                eventButton("Yellow", systemImage: "rectangle.portrait.fill", tint: .yellow, kind: .yellowCard)
-                eventButton("Red", systemImage: "rectangle.portrait.fill", tint: .red, kind: .redCard)
+                eventButton("Yellow", systemImage: "rectangle.portrait.fill", kind: .yellowCard)
+                eventButton("Red", systemImage: "rectangle.portrait.fill", kind: .redCard)
             }
             HStack(spacing: 8) {
-                eventButton("Foul", systemImage: "exclamationmark.triangle", tint: .orange, kind: .foul)
+                eventButton("Foul", systemImage: "exclamationmark.triangle", kind: .foul)
                 goalUsButton
             }
             HStack(spacing: 8) {
-                eventButton("Goal Them", systemImage: "soccerball.inverse", tint: .red, kind: .goalAgainstUs)
+                eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs)
             }
         }
     }
@@ -121,8 +141,7 @@ struct EventsView: View {
                 if kind == .goalForUs {
                     goalUsButton
                 } else {
-                    eventButton(kind.watchTitle, systemImage: kind.watchSymbol,
-                                tint: kind.watchTint, kind: kind)
+                    eventButton(kind.watchTitle, systemImage: kind.watchSymbol, kind: kind)
                 }
             }
         }
@@ -130,7 +149,7 @@ struct EventsView: View {
 
     @ViewBuilder
     private var goalUsButton: some View {
-        let button = eventButton("Goal Us", systemImage: "soccerball", tint: .green, kind: .goalForUs)
+        let button = eventButton("Goal Us", systemImage: "soccerball", kind: .goalForUs)
         if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .goalUs {
             button.handGestureShortcut(.primaryAction)
         } else {
@@ -138,40 +157,41 @@ struct EventsView: View {
         }
     }
 
-    private func eventButton(_ title: String, systemImage: String, tint: Color, kind: MatchEventKind) -> some View {
-        Button {
-            logEvent(kind, label: title)
+    private func eventButton(_ title: String, systemImage: String, kind: MatchEventKind) -> some View {
+        let tint = kind.watchTint
+        return Button {
+            logEvent(kind, label: title, tint: tint)
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .font(.title3)
                 Text(title)
-                    .font(.caption2)
+                    .font(.caption2.weight(.semibold))
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
         }
-        .tint(tint)
+        .buttonStyle(WatchTileButtonStyle(tint: tint))
     }
 
     @ViewBuilder
     private var confirmationOverlay: some View {
         if let confirmation {
-            VStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.green)
-                Text(confirmation)
-                    .font(.headline)
-            }
-            .padding()
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-            .transition(.scale.combined(with: .opacity))
+            ConfirmationFlash(text: confirmation.text, tint: confirmation.tint)
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
         }
     }
 
-    private func logEvent(_ kind: MatchEventKind, label: String) {
+    /// Log the event, fire its semantic haptic, and flash a tinted confirmation. Respects
+    /// always-on: under reduced luminance the flash fades in plainly without the spring.
+    private func logEvent(_ kind: MatchEventKind, label: String, tint: Color) {
         workoutManager.log(kind)
-        withAnimation(.snappy) { confirmation = label }
+        WatchHaptics.forEvent(positive: kind.isPositiveMoment,
+                              caution: kind.isCaution,
+                              negative: kind.isNegativeMoment)
+        let flash = Confirmation(text: label, tint: tint)
+        withAnimation(isLuminanceReduced ? .easeIn(duration: 0.15)
+                                         : .spring(response: 0.3, dampingFraction: 0.7)) {
+            confirmation = flash
+        }
         Task {
             try? await Task.sleep(for: .seconds(1))
             withAnimation(.easeOut) { confirmation = nil }
@@ -212,15 +232,34 @@ extension MatchEventKind {
 
     var watchTint: Color {
         switch self {
-        case .goalForUs: return .green
-        case .goalAgainstUs, .redCard: return .red
-        case .goalMine: return .yellow
-        case .assist: return .blue
-        case .yellowCard: return .yellow
-        case .foul: return .orange
-        case .turnover: return .teal
-        case .timeout: return .gray
-        default: return .purple
+        case .goalForUs: return WatchTheme.turf
+        case .goalAgainstUs, .redCard: return WatchTheme.loss
+        case .goalMine: return WatchTheme.sprint
+        case .assist: return WatchTheme.pace
+        case .yellowCard: return WatchTheme.cardYellow
+        case .foul: return WatchTheme.sprint
+        case .turnover: return WatchTheme.signal
+        case .timeout: return WatchTheme.bench
+        default: return WatchTheme.signal
         }
     }
+
+    /// Positive moments earn a success haptic — our goals, my goals, assists.
+    var isPositiveMoment: Bool {
+        switch self {
+        case .goalForUs, .goalMine, .assist: return true
+        default: return false
+        }
+    }
+
+    /// Cautions (cards, fouls) earn a notification buzz.
+    var isCaution: Bool {
+        switch self {
+        case .yellowCard, .redCard, .foul: return true
+        default: return false
+        }
+    }
+
+    /// A goal conceded earns a distinct failure buzz.
+    var isNegativeMoment: Bool { self == .goalAgainstUs }
 }

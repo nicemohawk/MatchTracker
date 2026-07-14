@@ -50,6 +50,7 @@ struct WatchSettingsView: View {
             if let teamCode = connectivity.teamCode, !teamCode.isEmpty {
                 Section("Team") {
                     Label(teamCode, systemImage: "person.3")
+                        .foregroundStyle(WatchTheme.signal)
                 }
             }
         }

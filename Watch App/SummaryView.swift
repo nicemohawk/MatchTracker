@@ -13,61 +13,61 @@ struct SummaryView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(ConnectivityManager.self) private var connectivity
     @State private var showFieldPrompt = false
+    @State private var celebrated = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Match Complete")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.green)
+                celebrationHeader
 
-                if let fieldName {
-                    Label(fieldName, systemImage: "mappin.and.ellipse")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    if WatchSettings.refereeMode {
+                        // Officiating summary: the referee's own athletic stats are noise here.
+                        statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                        statRow("Yellow Cards", value: "\(count(of: .yellowCard))", tint: WatchTheme.cardYellow)
+                        statRow("Red Cards", value: "\(count(of: .redCard))", tint: WatchTheme.loss)
+                        statRow("Fouls", value: "\(count(of: .foul))", tint: WatchTheme.sprint)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: WatchTheme.signal, isLast: true)
+                    } else if isIndoor {
+                        // Indoor: GPS-derived distance/runs/sprints are unavailable; effort is HR-driven.
+                        statRow("Time on Pitch", value: timeOnPitchString, tint: WatchTheme.sprint)
+                        statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
+                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: WatchTheme.sprint)
+                        statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: WatchTheme.signal, isLast: true)
+                    } else {
+                        statRow("Time on Pitch", value: timeOnPitchString, tint: WatchTheme.sprint)
+                        statRow("Distance", value: distanceString, tint: WatchTheme.pace)
+                        statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
+                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: WatchTheme.sprint)
+                        statRow("Runs", value: "\(runCounts.runs)", tint: WatchTheme.turf)
+                        statRow("Sprints", value: "\(runCounts.sprints)", tint: WatchTheme.turf)
+                        statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: WatchTheme.signal, isLast: true)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .watchCard()
 
-                summaryRow("Duration", value: durationString, tint: .yellow)
-                if WatchSettings.refereeMode {
-                    // Officiating summary: the referee's own athletic stats are noise here.
-                    summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
-                    summaryRow("Yellow Cards", value: "\(count(of: .yellowCard))", tint: .yellow)
-                    summaryRow("Red Cards", value: "\(count(of: .redCard))", tint: .red)
-                    summaryRow("Fouls", value: "\(count(of: .foul))", tint: .orange)
-                    summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
-                } else if isIndoor {
-                    // Indoor: GPS-derived distance/runs/sprints are unavailable; effort is HR-driven.
-                    summaryRow("Time on Pitch", value: timeOnPitchString, tint: .orange)
-                    summaryRow("Avg Heart Rate", value: averageHeartRateString, tint: .red)
-                    summaryRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .orange)
-                    summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
-                    summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
+                if isIndoor {
                     Label("Indoor session — effort from heart rate", systemImage: "house")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                } else {
-                    summaryRow("Time on Pitch", value: timeOnPitchString, tint: .orange)
-                    summaryRow("Distance", value: distanceString, tint: .blue)
-                    summaryRow("Avg Heart Rate", value: averageHeartRateString, tint: .red)
-                    summaryRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .orange)
-                    summaryRow("Runs", value: "\(runCounts.runs)", tint: .green)
-                    summaryRow("Sprints", value: "\(runCounts.sprints)", tint: .green)
-                    summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
-                    summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
                 }
 
                 if autoDetectedSubCount > 0 {
                     Label("\(autoDetectedSubCount) auto sub\(autoDetectedSubCount == 1 ? "" : "s")",
                           systemImage: "wand.and.stars")
                         .font(.caption2)
-                        .foregroundStyle(.teal)
+                        .foregroundStyle(WatchTheme.signal)
                 }
 
                 Button("Done") {
+                    WatchHaptics.click()
                     workoutManager.reset()
                 }
-                .tint(.green)
-                .frame(maxWidth: .infinity)
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 44, prominent: true))
                 .padding(.top, 4)
             }
             .padding(.horizontal, 4)
@@ -78,6 +78,28 @@ struct SummaryView: View {
         }
     }
 
+    /// Duration hero with the field name, styled after Apple's workout summary. Springs in on
+    /// appear as a small celebration.
+    private var celebrationHeader: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Match Complete")
+                .watchCaptionLabel()
+                .foregroundStyle(WatchTheme.turf)
+            Text(durationString)
+                .watchHeroNumeral()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+            if let fieldName {
+                Label(fieldName, systemImage: "mappin.and.ellipse")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .scaleEffect(celebrated ? 1.0 : 0.9)
+        .opacity(celebrated ? 1.0 : 0.0)
+    }
+
     // MARK: Actions
 
     private func finishUp() {
@@ -86,6 +108,9 @@ struct SummaryView: View {
         }
         if workoutManager.proposedField != nil {
             showFieldPrompt = true
+        }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            celebrated = true
         }
     }
 
@@ -155,17 +180,25 @@ struct SummaryView: View {
         return "\(Int(bpm)) BPM"
     }
 
-    private func summaryRow(_ title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(tint)
-                .monospacedDigit()
+    /// One labeled stat row: uppercase caption on the left, a colored monospaced value on the
+    /// right, with a hairline divider beneath (suppressed on the final row).
+    private func statRow(_ title: String, value: String, tint: Color, isLast: Bool = false) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+            }
+            .padding(.vertical, 7)
+            if !isLast {
+                Divider().overlay(WatchTheme.surfaceStroke)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -181,7 +214,7 @@ private struct ProposedFieldSheet: View {
             VStack(spacing: 12) {
                 Image(systemName: "mappin.circle.fill")
                     .font(.largeTitle)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(WatchTheme.turf)
                 Text("New field detected — save?")
                     .font(.headline)
                     .multilineTextAlignment(.center)
@@ -189,10 +222,11 @@ private struct ProposedFieldSheet: View {
                 TextField("Field name", text: $name)
 
                 Button("Save Field") {
+                    WatchHaptics.success()
                     saveProposedField()
                     dismiss()
                 }
-                .tint(.green)
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 44, prominent: true))
 
                 Button("Not Now") { dismiss() }
                     .tint(.secondary)
