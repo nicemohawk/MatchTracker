@@ -333,6 +333,16 @@ public struct APIClient: Sendable {
         return try Self.jsonDecoder().decode(TeamFormation.self, from: data)
     }
 
+    /// This player's peer-cohort standing (`GET /players/me/benchmark?cohort=…`, V2 §12).
+    /// `cohort` selects the comparison group (age band / position / everyone). Idempotent GET.
+    /// The backend enforces k-anonymity, answering `404` (`insufficient_data`) until the cohort
+    /// reaches ≥25 players — callers surface that as a quiet "unlocks as the community grows"
+    /// state, never an error. Any non-2xx throws `APIError.httpStatus`.
+    public func benchmark(cohort: BenchmarkCohort) async throws -> CohortBenchmark {
+        let data = try await get(path: "/players/me/benchmark?cohort=\(cohort.wireValue)")
+        return try Self.jsonDecoder().decode(CohortBenchmark.self, from: data)
+    }
+
     /// Last-known live status for every teammate (`GET /teams/{code}/live`).
     public func liveTeam(code: String) async throws -> [LivePlayerStatus] {
         let data = try await get(path: "/teams/\(code)/live")

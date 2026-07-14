@@ -264,11 +264,84 @@ Returns every team member's events from matches whose events fall within the las
 - `204` on success; `404` when `event_id` is unknown for that `match_uuid`; `403` non-member;
   `402/403` when the entitlement is inactive.
 
+## 12. Peer-cohort benchmarking
+
+The roster leaderboard (§V1 `/teams/{code}/stats`) is *intra-team* only. Catapult One and SoccerBee
+let a player rank against their age group, position, and the whole population; this endpoint gives
+MatchTracker the same "where do I stand?" hook — the compounding, return-driving loop called out in
+gap #4 — built on the workrate/run data we already collect. It is a **community** feature, not a
+team-subscription one: any player with an API key sees it (the client hides it only when no key is
+bootstrapped), so it works for solo players with no team.
+
+`GET /players/me/benchmark?cohort=age_band|position|all`
+Resolve the requesting player from the API key's device registry (the same "me" resolution the
+device-scoped endpoints use — no `player_id` in the path, and never accept one from the client).
+Compute the player's percentile rank (0–100, higher = better) within the selected cohort for each
+metric, over a rolling recent window (suggest last 90 days of that player's uploaded sessions,
+aggregated per player so a single high-volume player can't skew a cohort):
+
+- `workrate` — mean `workrate_score`.
+- `distance_per_match_m` — mean `total_distance_m` per match (per-match, not lifetime total, so
+  cohort members with different match counts compare fairly).
+- `sprint_distance_m` — sprint-zone distance (derive from `speed_zones.sprinting_s` × the sprint
+  speed band, or a dedicated column if you add one; keep the definition consistent with the
+  industry sprint-threshold convention flagged in the competitive doc's gap #1).
+- `high_speed_running_m` — high-speed-running-band distance (the HSR band below sprint).
+- `top_speed_ms` — the player's representative top speed (e.g. 95th-percentile instantaneous speed
+  across the window, to reject a single GPS spike).
+
+```json
+{ "cohort": "30–39 · Midfield", "sample_size": 1240,
+  "percentiles": { "workrate": 78.0, "distance_per_match_m": 64.0, "sprint_distance_m": 52.0,
+                   "high_speed_running_m": 71.0, "top_speed_ms": 45.0 },
+  "contribution_streak": 5, "badge_count": 3 }
+```
+
+**Cohort computation.**
+- `age_band` — from the player's **optional** birth year. Bucket into decade-ish bands
+  (`<20`, `20–29`, `30–39`, `40–49`, `50+`; pick the exact edges once and keep them in a config
+  table, not code). Birth year is **never required**: a player who hasn't supplied one simply
+  can't request `cohort=age_band` (answer `404 insufficient_data`, same as an under-populated
+  cohort — never an error, never a prompt to hand over a birthday). Store it on `players`
+  (`birth_year` int null) set via the existing device/profile write; do not add a mandatory field.
+- `position` — from the modal `position_role` (+ optional `position_side`) across the player's
+  recent `PositionAnalyzer` uploads (the sessions already carry `position_role`/`position_side`).
+  A player with no position-bearing uploads can't request `cohort=position` → `404`.
+- `all` — every player with qualifying sessions in the window; always available once the global
+  population itself clears the k-anonymity floor.
+- The `cohort` string in the response is a human-readable descriptor the client shows verbatim
+  ("30–39 · Midfield", "Midfield", "Everyone") — the server owns this copy so bands/labels can
+  evolve without a client release.
+
+**k-anonymity (hard privacy gate).** Never return a benchmark for a cohort with **fewer than 25
+players**. Below the floor, answer `404` with `{"reason": "insufficient_data"}` (the client renders
+a quiet "Benchmarks unlock as the community grows" one-liner, identical in spirit to §3's formation
+gate). A percentile against a handful of people would both be statistically meaningless and leak
+individual standings.
+
+**Privacy constraints.** This endpoint returns **aggregates only** — percentiles and a sample
+count. It must **never enumerate cohort members**, expose another player's name or raw metric, or
+let the caller derive an individual's value (that's why the ≥25 floor and per-player aggregation
+matter). `initials_only` (§5) is moot here because no other member is ever named. The player only
+ever sees their own rank within an anonymous crowd.
+
+**Touchline-walk contribution rewards (optional).** To close the same community-flywheel loop from
+gap #4 (seed the field-definition network by *rewarding* touchline walks), the response MAY carry
+two optional counters for the requesting player: `contribution_streak` (consecutive periods —
+weeks — in which they contributed at least one touchline field-walk) and `badge_count` (milestone
+badges earned for field contributions). Both are **optional** wire fields: omit them entirely for
+players/backends with no contribution history (the client treats absence as "no rewards yet" and
+shows nothing, never a zero). These are the player's *own* counts — not a leaderboard of others.
+
+Idempotent read; no writes. Auth: the standard `Authorization: APIKey {key}` header. No entitlement
+gate (reads stay open; this is a free community hook, consistent with §7's read policy).
+
 ## Migrations
 
 1. `live_status`, `match_comments`, `device_teams`, `entitlements` tables; `sport_id` columns;
    `players.initials_only`/`consent_acknowledged_at`; `teams.requires_consent`;
-   `fields.seeded`; sessions stats blob accepts `mean_x`/`mean_y`.
+   `fields.seeded`; sessions stats blob accepts `mean_x`/`mean_y`; `players.birth_year` int null
+   (optional, for §12 age-band cohorts — never required).
 2. Backfill: `device_teams` from existing `players.team_code`; everything else defaults.
 3. All new columns nullable/defaulted — V1 clients keep working untouched.
 
@@ -300,3 +373,9 @@ Returns every team member's events from matches whose events fall within the las
     through, and requires membership. `POST .../events/{id}/annotation` sets `coach_label` without
     touching the player's `note`, is an idempotent overwrite, requires membership + active team
     entitlement, and 404s for an unknown event.
+13. Benchmark: `GET /players/me/benchmark?cohort=all` returns 0–100 percentiles + `sample_size`
+    once the cohort has ≥25 players and `404 insufficient_data` below it; `cohort=age_band` 404s
+    for a player with no `birth_year` (never errors, never demands one) and `cohort=position` 404s
+    with no position-bearing uploads; the response is aggregate-only and never names or enumerates
+    another cohort member; `contribution_streak`/`badge_count` are present only with contribution
+    history and absent otherwise.

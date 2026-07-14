@@ -78,3 +78,13 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
 - Later gaps (benchmark §4): video capture/highlight MVP, community flywheel
   (peer-cohort benchmarking), ball-skill metrics decision. Landscape iPad review
   requires a manually rotated sim (headless rotation documented as blocked).
+
+## Waves 5–7 shipped (benchmark-driven)
+
+- Wave 5: SoccerLoadMetrics (FIFA bands) + Match Load grid + 7D:28D acute:chronic context.
+- Wave 6: sideline video MVP (import, event auto-clips, boundary playback, trim export, sync nudge).
+- Wave 7: peer-cohort benchmarking (Kit wire type + endpoint, "How you compare" percentile card
+  with quiet growth state, backend prompt §12 w/ k-anonymity).
+- Remaining: video capture phase 2 (in-app AVCapture w/ wall-clock start, montage export,
+  data overlays); ball-skill metrics strategic decision (benchmark §4.5); iPad landscape
+  visual review (needs manually rotated sim); backend implementation of §12.

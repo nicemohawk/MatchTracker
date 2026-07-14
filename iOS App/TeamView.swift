@@ -44,6 +44,7 @@ struct TeamView: View {
                             onRefresh: { Task { await load() } }
                         )
                         leaderboardSection
+                        CohortBenchmarkCard()
                         MembershipsCard(
                             newTeamCode: $newTeamCode,
                             onShowPaywall: { showingPaywall = true },

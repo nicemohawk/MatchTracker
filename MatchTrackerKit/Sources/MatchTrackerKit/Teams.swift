@@ -148,6 +148,99 @@ public struct TeamFormation: Codable, Sendable {
     }
 }
 
+/// Which peer group a benchmark request compares against. Wire value goes in the `cohort` query
+/// of `GET /players/me/benchmark` (V2 §12): age band from the player's optional birth year,
+/// playing position from `PositionAnalyzer` uploads, or everyone.
+public enum BenchmarkCohort: String, CaseIterable, Identifiable, Sendable {
+    case ageBand, position, everyone
+
+    public var id: String { rawValue }
+
+    /// The `cohort=` query value the backend expects (`age_band` | `position` | `all`).
+    public var wireValue: String {
+        switch self {
+        case .ageBand: return "age_band"
+        case .position: return "position"
+        case .everyone: return "all"
+        }
+    }
+
+    /// Short chip label for the client picker.
+    public var label: String {
+        switch self {
+        case .ageBand: return "Age band"
+        case .position: return "Position"
+        case .everyone: return "Everyone"
+        }
+    }
+}
+
+/// This player's standing within a peer cohort, from `GET /players/me/benchmark?cohort=…`
+/// (V2 §12). Every `percentile` is 0–100 — the player's rank within the cohort for that metric.
+///
+/// k-anonymity is enforced server-side: the endpoint answers `404 insufficient_data` until a
+/// cohort has ≥25 players, so a *decoded* value's `sampleSize` is always at or above that floor,
+/// and the response never enumerates cohort members — only aggregates.
+///
+/// `contributionStreak` / `badgeCount` are optional touchline-walk contribution rewards: absent on
+/// backends (or players) without any field-walk history, present as small counters otherwise.
+public struct CohortBenchmark: Codable, Sendable {
+    /// Human-readable cohort descriptor, e.g. "30–39 · Midfield" or "Everyone".
+    public var cohort: String
+    /// Number of players in the cohort (≥ the k-anonymity floor whenever this decodes).
+    public var sampleSize: Int
+    /// Per-metric percentiles (0–100), keyed to match the wire under `percentiles`.
+    public var percentiles: Percentiles
+    /// Contribution reward: the player's current touchline-walk streak, if any.
+    public var contributionStreak: Int?
+    /// Contribution reward: badges earned from field-walk contributions, if any.
+    public var badgeCount: Int?
+
+    public init(cohort: String, sampleSize: Int, percentiles: Percentiles,
+                contributionStreak: Int? = nil, badgeCount: Int? = nil) {
+        self.cohort = cohort
+        self.sampleSize = sampleSize
+        self.percentiles = percentiles
+        self.contributionStreak = contributionStreak
+        self.badgeCount = badgeCount
+    }
+
+    /// The 0–100 percentile rank for each benchmarked metric. Nested under `percentiles` on the
+    /// wire, mirroring the `speed_zones` blob shape on `MatchStats`.
+    public struct Percentiles: Codable, Sendable {
+        public var workrate: Double
+        public var distancePerMatchMeters: Double
+        public var sprintDistanceMeters: Double
+        public var highSpeedRunningMeters: Double
+        public var topSpeedMetersPerSecond: Double
+
+        public init(workrate: Double, distancePerMatchMeters: Double, sprintDistanceMeters: Double,
+                    highSpeedRunningMeters: Double, topSpeedMetersPerSecond: Double) {
+            self.workrate = workrate
+            self.distancePerMatchMeters = distancePerMatchMeters
+            self.sprintDistanceMeters = sprintDistanceMeters
+            self.highSpeedRunningMeters = highSpeedRunningMeters
+            self.topSpeedMetersPerSecond = topSpeedMetersPerSecond
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case workrate
+            case distancePerMatchMeters = "distance_per_match_m"
+            case sprintDistanceMeters = "sprint_distance_m"
+            case highSpeedRunningMeters = "high_speed_running_m"
+            case topSpeedMetersPerSecond = "top_speed_ms"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case cohort
+        case sampleSize = "sample_size"
+        case percentiles
+        case contributionStreak = "contribution_streak"
+        case badgeCount = "badge_count"
+    }
+}
+
 /// Last-known live status for one teammate, from `GET /teams/{code}/live` (V2 §1). `x` / `y` are
 /// normalized field coordinates when the relaying phone knows the field, else nil. `stale` is set
 /// by the server when `updatedAt` is older than 30 s.

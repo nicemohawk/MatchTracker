@@ -469,6 +469,55 @@ final class RoadmapBackendTests: XCTestCase {
         XCTAssertEqual(json["label"] as? String, "great finish")
     }
 
+    // MARK: - CohortBenchmark (peer benchmarking, V2 §12)
+
+    func testBenchmarkDecodeQueryAndRewards() async throws {
+        let body = """
+        {"cohort":"30–39 · Midfield","sample_size":1240,
+         "percentiles":{"workrate":78.0,"distance_per_match_m":64.0,"sprint_distance_m":52.0,
+                        "high_speed_running_m":71.0,"top_speed_ms":45.0},
+         "contribution_streak":5,"badge_count":3}
+        """.data(using: .utf8)!
+        StubURLProtocol.reset(statusCode: 200, body: body)
+
+        let benchmark = try await stubbedClient().benchmark(cohort: .position)
+        XCTAssertEqual(benchmark.cohort, "30–39 · Midfield")
+        XCTAssertEqual(benchmark.sampleSize, 1240)
+        XCTAssertEqual(benchmark.percentiles.workrate, 78.0)
+        XCTAssertEqual(benchmark.percentiles.distancePerMatchMeters, 64.0)
+        XCTAssertEqual(benchmark.percentiles.sprintDistanceMeters, 52.0)
+        XCTAssertEqual(benchmark.percentiles.highSpeedRunningMeters, 71.0)
+        XCTAssertEqual(benchmark.percentiles.topSpeedMetersPerSecond, 45.0)
+        XCTAssertEqual(benchmark.contributionStreak, 5)
+        XCTAssertEqual(benchmark.badgeCount, 3)
+
+        let request = try XCTUnwrap(StubURLProtocol.recorder.requests.first?.request)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.path, "/players/me/benchmark")
+        XCTAssertEqual(request.url?.query, "cohort=position")
+    }
+
+    func testBenchmarkDecodesWithoutOptionalRewards() throws {
+        let wire = """
+        {"cohort":"Everyone","sample_size":9820,
+         "percentiles":{"workrate":50.0,"distance_per_match_m":50.0,"sprint_distance_m":50.0,
+                        "high_speed_running_m":50.0,"top_speed_ms":50.0}}
+        """.data(using: .utf8)!
+        let benchmark = try Self.isoDecoder.decode(CohortBenchmark.self, from: wire)
+        XCTAssertEqual(benchmark.cohort, "Everyone")
+        XCTAssertEqual(benchmark.sampleSize, 9820)
+        XCTAssertEqual(benchmark.percentiles.topSpeedMetersPerSecond, 50.0)
+        // Contribution rewards are optional — absent on the wire decodes to nil, not a throw.
+        XCTAssertNil(benchmark.contributionStreak)
+        XCTAssertNil(benchmark.badgeCount)
+    }
+
+    func testBenchmarkCohortWireValues() {
+        XCTAssertEqual(BenchmarkCohort.ageBand.wireValue, "age_band")
+        XCTAssertEqual(BenchmarkCohort.position.wireValue, "position")
+        XCTAssertEqual(BenchmarkCohort.everyone.wireValue, "all")
+    }
+
     // MARK: - UploadQueue
 
     private func makeQueueDirectory() throws -> URL {
