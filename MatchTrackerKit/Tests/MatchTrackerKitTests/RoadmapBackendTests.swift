@@ -358,9 +358,10 @@ final class RoadmapBackendTests: XCTestCase {
         XCTAssertEqual(request.url?.path, "/teams/ABC123/formation")
     }
 
-    func testPostLiveStripsWatchOnlyFields() async throws {
+    func testPostLiveStripsTrackButForwardsEvents() async throws {
         StubURLProtocol.reset(statusCode: 204)
         let matchID = UUID()
+        let eventID = Self.goldenA
         let point = TrackPoint(coordinate: Coordinate2D(latitude: 40, longitude: -83),
                                timestamp: Date(timeIntervalSince1970: 0), speedMetersPerSecond: 1,
                                courseDegrees: 0, horizontalAccuracy: 5)
@@ -368,7 +369,9 @@ final class RoadmapBackendTests: XCTestCase {
                                      elapsed: 60, heartRate: 150, distanceMeters: 500,
                                      currentSpeed: 2, onPitch: true,
                                      latestPoints: [point],
-                                     newEvents: [MatchEvent(kind: .flag, date: Date(timeIntervalSince1970: 0))],
+                                     newEvents: [MatchEvent(id: eventID, kind: .goalMine,
+                                                            date: Date(timeIntervalSince1970: 30),
+                                                            note: "header")],
                                      usGoals: 2, themGoals: 1)
         try await stubbedClient().postLive(update, matchUUID: matchID, teamCode: "ABC123")
 
@@ -380,8 +383,90 @@ final class RoadmapBackendTests: XCTestCase {
         XCTAssertEqual(json["sequence"] as? Int, 7)
         XCTAssertEqual(json["elapsed_s"] as? Double, 60)
         XCTAssertEqual(json["us_goals"] as? Int, 2)
+        // Raw track is still stripped; tagged events now reach the server as new_events.
         XCTAssertNil(json["latest_points"])
-        XCTAssertNil(json["new_events"])
+        let events = try XCTUnwrap(json["new_events"] as? [[String: Any]])
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?["id"] as? String, eventID.uuidString)
+        XCTAssertEqual(events.first?["kind"] as? String, "goalMine")
+        XCTAssertEqual(events.first?["note"] as? String, "header")
+    }
+
+    func testPostLiveEncodesEmptyEventsAsEmptyArray() async throws {
+        StubURLProtocol.reset(statusCode: 204)
+        let update = LiveMatchUpdate(sequence: 1, timestamp: Date(timeIntervalSince1970: 0),
+                                     elapsed: 0, distanceMeters: 0, onPitch: false)
+        try await stubbedClient().postLive(update, matchUUID: UUID(), teamCode: "ABC123")
+        let recorded = try XCTUnwrap(StubURLProtocol.recorder.requests.first)
+        let json = try jsonObject(try XCTUnwrap(recorded.body))
+        let events = try XCTUnwrap(json["new_events"] as? [Any])
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    // MARK: - TeamEvent (team timeline, V2 §11)
+
+    func testTeamEventDecodesWireIncludingCoachLabel() throws {
+        let matchID = UUID()
+        let eventID = Self.goldenA
+        let wire = """
+        {"id":"\(eventID.uuidString)","player_name":"Ben L","match_uuid":"\(matchID.uuidString)",
+         "kind":"goalMine","date":"2023-11-14T22:13:20Z","note":"top corner",
+         "coach_label":"great finish","source":"manual"}
+        """.data(using: .utf8)!
+        let event = try Self.isoDecoder.decode(TeamEvent.self, from: wire)
+        XCTAssertEqual(event.id, eventID)
+        XCTAssertEqual(event.playerName, "Ben L")
+        XCTAssertEqual(event.matchUUID, matchID)
+        XCTAssertEqual(event.kindRawValue, "goalMine")
+        XCTAssertEqual(event.kind, .goalMine)
+        XCTAssertEqual(event.note, "top corner")
+        XCTAssertEqual(event.coachLabel, "great finish")
+        XCTAssertEqual(event.source, .manual)
+    }
+
+    func testTeamEventToleratesUnknownKindAndSourceAndMissingLabel() throws {
+        let wire = """
+        {"id":"\(Self.goldenB.uuidString)","player_name":"Sam K","match_uuid":"\(UUID().uuidString)",
+         "kind":"cornerKick","date":"2023-11-14T22:13:20Z","source":"referee"}
+        """.data(using: .utf8)!
+        let event = try Self.isoDecoder.decode(TeamEvent.self, from: wire)
+        // Unknown kind is preserved raw; the parsed kind is nil rather than a throw.
+        XCTAssertEqual(event.kindRawValue, "cornerKick")
+        XCTAssertNil(event.kind)
+        // Unknown source string decodes tolerantly to nil.
+        XCTAssertNil(event.source)
+        XCTAssertNil(event.note)
+        XCTAssertNil(event.coachLabel)
+    }
+
+    func testTeamEventsUnwrapAndQuery() async throws {
+        let body = """
+        {"events":[{"id":"\(Self.goldenA.uuidString)","player_name":"Ben L",
+         "match_uuid":"\(UUID().uuidString)","kind":"flag","date":"2023-11-14T22:13:20Z"}]}
+        """.data(using: .utf8)!
+        StubURLProtocol.reset(statusCode: 200, body: body)
+
+        let events = try await stubbedClient().teamEvents(code: "ABC123", sinceHours: 12)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.playerName, "Ben L")
+        let request = try XCTUnwrap(StubURLProtocol.recorder.requests.first?.request)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.path, "/teams/ABC123/events")
+        XCTAssertEqual(request.url?.query, "since_hours=12")
+    }
+
+    func testAnnotateEventPostsLabelToNestedPath() async throws {
+        StubURLProtocol.reset(statusCode: 204)
+        let matchID = UUID()
+        let eventID = Self.goldenA
+        try await stubbedClient().annotateEvent(id: eventID, matchUUID: matchID, label: "great finish")
+
+        let recorded = try XCTUnwrap(StubURLProtocol.recorder.requests.first)
+        XCTAssertEqual(recorded.request.httpMethod, "POST")
+        XCTAssertEqual(recorded.request.url?.path,
+                       "/matches/\(matchID.uuidString)/events/\(eventID.uuidString)/annotation")
+        let json = try jsonObject(try XCTUnwrap(recorded.body))
+        XCTAssertEqual(json["label"] as? String, "great finish")
     }
 
     // MARK: - UploadQueue

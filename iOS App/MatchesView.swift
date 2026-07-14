@@ -9,8 +9,9 @@ struct MatchesView: View {
     @EnvironmentObject private var fields: FieldsModel
     @Environment(LiveMatchStore.self) private var liveMatches
     @Environment(EntitlementStore.self) private var entitlements
+    @Environment(BacklogImporter.self) private var backlogImporter
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var showingSettings = false
+    @State private var showingImport = false
 
     var body: some View {
         NavigationStack {
@@ -19,7 +20,15 @@ struct MatchesView: View {
                     emptyState
                 } else {
                     List {
-                        if liveMatches.isLive {
+                        if showBacklogTeaser {
+                            backlogTeaser
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        }
+                        // On iOS 26+ the live match rides in the tab bar's bottom accessory
+                        // (see RootTabView), so this in-list card would be a duplicate affordance.
+                        if #unavailable(iOS 26.0), liveMatches.isLive {
                             liveCard
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
@@ -57,13 +66,6 @@ struct MatchesView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
             }
             .refreshable { await matches.refresh() }
             .overlay {
@@ -71,10 +73,49 @@ struct MatchesView: View {
                     ProgressView()
                 }
             }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
-            }
+            .task { await backlogImporter.scanIfNeeded() }
+            .sheet(isPresented: $showingImport) { BacklogImportView() }
         }
+    }
+
+    /// Quiet upsell for the historic-backlog import: shown once there's a meaningful backlog of
+    /// workout-only matches and the player hasn't imported yet. Scan + teaser are free; the batch
+    /// import itself is gated inside the sheet.
+    private var showBacklogTeaser: Bool {
+        backlogImporter.pendingCount >= 5 && !backlogImporter.hasImported
+    }
+
+    private var backlogTeaser: some View {
+        Button {
+            Haptics.selection()
+            showingImport = true
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title2)
+                    .foregroundStyle(Theme.turf)
+                    .symbolEffect(.pulse)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(backlogImporter.pendingCount) past matches found")
+                        .font(.system(.subheadline, design: .rounded).weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text("Import your history to build fields & season trends")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "sparkles")
+                    .font(.footnote.bold())
+                    .foregroundStyle(Theme.signal)
+            }
+            .padding(16)
+            .themedCard()
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Theme.chipStroke(Theme.turf), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     /// Watch-streamed match in progress: jump to the live sideline dashboard.
@@ -147,19 +188,23 @@ struct MatchRow: View {
                     Text(summary.startDate, format: .dateTime.weekday().month().day().hour().minute())
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .monospacedDigit()
-                    Text(fieldName ?? "Unknown field")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text(fieldName ?? "Unknown field")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        formatBadge
+                    }
                 }
                 Spacer()
                 if let score {
                     Text(score)
                         .font(.system(.subheadline, design: .rounded).weight(.bold))
                         .monospacedDigit()
-                        .foregroundStyle(.black)
+                        .foregroundStyle(scoreTint)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(scoreTint, in: Capsule())
+                        .background(Theme.chipFill(scoreTint), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.chipStroke(scoreTint), lineWidth: 1))
                 } else if let position {
                     PositionBadge(role: position.role, side: position.side, confidence: position.confidence)
                 }
@@ -176,6 +221,28 @@ struct MatchRow: View {
         .padding(16)
         .themedCard()
         .task { await loadBadge() }
+    }
+
+    /// A small glyph + label for non-default match formats (pickup / indoor). `.match` shows nothing.
+    @ViewBuilder
+    private var formatBadge: some View {
+        switch summary.record?.format ?? .match {
+        case .match:
+            EmptyView()
+        case .smallSided:
+            formatLabel(icon: "figure.cooldown", text: "Pickup")
+        case .indoor:
+            formatLabel(icon: "house", text: "Indoor")
+        }
+    }
+
+    private func formatLabel(icon: String, text: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+            Text(text)
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
 
     private func metric(_ value: String, _ label: String, _ tint: Color) -> some View {
@@ -201,8 +268,8 @@ struct MatchRow: View {
         guard let events = summary.record?.events else { return Theme.bench }
         let us = events.filter { $0.kind == .goalForUs || $0.kind == .goalMine }.count
         let them = events.filter { $0.kind == .goalAgainstUs }.count
-        if us > them { return Theme.goal }
-        if us < them { return Theme.heart }
+        if us > them { return Theme.turf }
+        if us < them { return Theme.loss }
         return Theme.bench
     }
 
@@ -210,7 +277,10 @@ struct MatchRow: View {
         let detail = store.detailModel(for: summary)
         await detail.load()
         if let analytics = detail.analytics {
-            position = (analytics.position.role, analytics.position.side, analytics.position.confidence)
+            // Indoor sessions carry only a placeholder position estimate — don't badge one.
+            if summary.record?.format != .indoor {
+                position = (analytics.position.role, analytics.position.side, analytics.position.confidence)
+            }
             fieldName = analytics.fieldName
         } else if let fieldID = summary.record?.fieldID {
             // Record-only match: resolve the field name directly (no analytics available).

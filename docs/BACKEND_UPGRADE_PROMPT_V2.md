@@ -57,10 +57,24 @@ New table `live_status` (one row per device, overwritten):
 ```json
 { "match_uuid": "…", "team_code": "ABC123", "sequence": 42, "timestamp": "2026-07-13T15:04:05Z",
   "elapsed_s": 1810.5, "heart_rate": 156.0, "distance_m": 4321.0, "current_speed": 3.2,
-  "on_pitch": true, "us_goals": 1, "them_goals": 0, "x": 0.62, "y": 0.31 }
+  "on_pitch": true, "us_goals": 1, "them_goals": 0, "x": 0.62, "y": 0.31,
+  "new_events": [ { "id": "…", "kind": "goalMine", "date": "2026-07-13T15:04:03Z",
+                    "note": "header", "source": "manual" } ] }
 ```
 Rules: reject `sequence` <= stored sequence for the same match (200 with `{"stale": true}`,
 not an error); 204 on accept. Rate limit ~1 req/2 s per device.
+
+`new_events` (optional; absent/empty ⇒ none) carries events the wearer tagged since the last
+update — the same `MatchEvent` shape sessions upload (`id`, `kind`, `date`, optional `note`,
+optional `source`). The raw GPS track is **not** relayed live; only these tagged events are. On
+receipt, **append** each event, keyed by its `id`, to a **team-scoped live event log** (dedup by
+event uuid — a replayed live POST re-sending the same event ids is a no-op, never a duplicate).
+A stale `sequence` (rejected above) must not append its `new_events` either. When the finished
+match is later uploaded via `/devices/{id}/sessions`, reconcile: the session's `events[]` are the
+source of truth and **replace** the provisional live-log copies of the same uuids (so an edited
+note or a manual event that overrode an automatic one wins); live-log events whose uuid never
+arrives in an uploaded session are retained until they age out of the `since_hours` window (§11).
+These reconciled events feed the team timeline in §11.
 
 `GET /teams/{code}/live` → last-known status for every device on the team:
 ```json
@@ -206,6 +220,49 @@ licensed imagery:
 - `sessions.events[]` items now include `"source": "manual" | "automatic"` (absent ⇒ manual).
   Store it; expose it back in any endpoint returning events. Aggregations (goals/assists in
   team stats) count both sources.
+- Sessions also carry optional `format` (`match|small_sided|indoor`, `NULL` ≡ `match`) and
+  `stats.effort_source` (`gps+hr|gps|hr`); store/echo both, treat unknown strings as opaque.
+
+## 11. Team event timeline
+
+The coach view coalesces every player's tagged match events (goals, cards, subs, flags, free-text
+notes) into a single chronological feed the coach reviews and — for events a player left
+unlabeled — annotates with a coach label. Events come from two sources that share the same event
+`uuid`: the live event log fed by `new_events` on `/devices/{id}/live` (§1) during a match, and the
+reconciled `sessions.events[]` after upload. The timeline is the union, deduped by event uuid.
+
+`GET /teams/{code}/events?since_hours=6`
+Returns every team member's events from matches whose events fall within the last `since_hours`
+(default 6), ordered **oldest-first** (ascending `date`):
+```json
+{ "events": [
+    { "id": "…", "player_name": "Ben L", "match_uuid": "…", "kind": "goalMine",
+      "date": "2026-07-13T15:04:03Z", "note": "top corner", "coach_label": "great finish",
+      "source": "manual" }
+] }
+```
+- `player_name` is the event's author, resolved server-side and **subject to `initials_only`**
+  (§5) exactly like every other name-bearing response — render "B. L." when the author's player
+  row is flagged. Never trust the client to redact.
+- `kind` is the raw event-kind string (`goalMine`, `flag`, `yellowCard`, …). Pass unknown kinds
+  through verbatim — the client preserves and displays them; do not coerce or drop them.
+- `note` is the **player's own** note (may be absent). `coach_label` is the coach annotation
+  (below), a **separate** field — never fold one into the other; both may be present at once.
+- `source` (`manual` / `automatic`, absent ⇒ manual) is echoed per §10.
+- Auth: requires **team membership** of the requesting device (§6, `X-Device-ID`). Reads stay
+  open to any member (no entitlement needed — a lapsed coach can still review), consistent with §7.
+
+`POST /matches/{match_uuid}/events/{event_id}/annotation`
+```json
+{ "label": "great finish" }
+```
+- Stores `label` as the event's `coach_label`, **separate from the player's `note`** (never
+  overwrites it). **Idempotent overwrite**: re-posting replaces the previous `coach_label`; an
+  empty/absent label clears it.
+- Auth: requires **team membership** AND an active `team` entitlement (§7) for the posting device
+  — annotating is a coach write, gated like other team-scoped writes.
+- `204` on success; `404` when `event_id` is unknown for that `match_uuid`; `403` non-member;
+  `402/403` when the entitlement is inactive.
 
 ## Migrations
 
@@ -234,3 +291,12 @@ licensed imagery:
    min_confidence 0.25; a later real observation clears the seed flag. Phase 2 seed-request
    enqueues once per day per device.
 10. V1 regression suite still green (legacy endpoints untouched).
+11. Live events: a `/devices/{id}/live` POST carrying `new_events` appends them to the team live
+    event log keyed by event uuid; replaying the same POST (or resending overlapping event ids)
+    adds no duplicates; a stale-sequence POST appends nothing; on session upload the uploaded
+    `events[]` replace the live-log copies of the same uuids.
+12. Team timeline: `GET /teams/{code}/events` merges live-log and uploaded events deduped by uuid,
+    ordered oldest-first, enforces `initials_only` on `player_name`, passes unknown `kind` strings
+    through, and requires membership. `POST .../events/{id}/annotation` sets `coach_label` without
+    touching the player's `note`, is an idempotent overwrite, requires membership + active team
+    entitlement, and 404s for an unknown event.

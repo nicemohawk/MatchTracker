@@ -98,6 +98,32 @@ final class MatchStore: ObservableObject {
             .compactMap { $0.value.analytics?.heatmap }
     }
 
+    /// The player's season-to-date run norms (mean/σ of run distance and peak speed) pooled across
+    /// every OTHER analyzed match currently cached, so a run can be judged unusual for *this*
+    /// player. Uses only already-cached analytics — never triggers a HealthKit load — and returns
+    /// nil until at least two matches are cached, when a mean/σ would be meaningless.
+    func runBaselines(excluding excludedID: UUID) -> RunBaselines? {
+        let otherRuns = detailCache
+            .filter { $0.key != excludedID }
+            .compactMap { $0.value.analytics?.runs }
+        guard otherRuns.count >= 2 else { return nil }
+        let runs = otherRuns.flatMap { $0 }
+        guard runs.count >= 2 else { return nil }
+
+        let (meanDistance, stdDistance) = Self.meanAndStandardDeviation(runs.map(\.distanceMeters))
+        let (meanPeak, stdPeak) = Self.meanAndStandardDeviation(runs.map(\.peakSpeed))
+        return RunBaselines(meanDistance: meanDistance, stdDistance: stdDistance,
+                            meanPeakSpeed: meanPeak, stdPeakSpeed: stdPeak)
+    }
+
+    /// Population mean and standard deviation of a non-empty sample.
+    private static func meanAndStandardDeviation(_ values: [Double]) -> (mean: Double, std: Double) {
+        guard !values.isEmpty else { return (0, 0) }
+        let mean = values.reduce(0, +) / Double(values.count)
+        let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count)
+        return (mean, variance.squareRoot())
+    }
+
     /// Average workrate score across matches analyzed in the last `days`, for training-load
     /// context. Only already-cached details count — this never triggers HealthKit loads.
     func recentAverageWorkrate(days: Int, excluding excludedID: UUID? = nil) -> Double? {

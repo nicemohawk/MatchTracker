@@ -102,4 +102,48 @@ final class PeriodDetectorTests: XCTestCase {
         XCTAssertEqual(endOffset, 1800, accuracy: 60)
         XCTAssertEqual(resumeOffset, 2520, accuracy: 60)
     }
+
+    // MARK: - Pickup sessions (expectedPeriods == 0)
+
+    /// A ~2 h pickup game with three 6-minute rest breaks and no fixed halves. With
+    /// `expectedPeriods == 0` every qualifying break becomes a boundary, not just one midpoint gap.
+    func testPickupSessionReturnsAllQualifyingBreaks() throws {
+        let rectangle = rect()
+        let projector = FieldProjector(rectangle: rectangle)
+        let benchCoordinate = place(rectangle, x: 1.6, y: 0.5)   // well past the end line
+
+        var points: [TrackPoint] = []
+        var seed = 0.0
+        var offset = 0.0
+        // Four 20-minute playing blocks separated by three 6-minute (360 s) breaks.
+        let breakStarts = [1200.0, 2760.0, 4320.0]
+        for block in 0..<4 {
+            let playEnd = offset + 1200
+            while offset < playEnd {
+                points.append(playingPoint(rectangle, at: offset, seed: seed)); seed += 1; offset += 3
+            }
+            if block < 3 {
+                let breakEnd = offset + 360
+                while offset < breakEnd {
+                    points.append(TrackPoint(coordinate: benchCoordinate, timestamp: start.addingTimeInterval(offset),
+                                             speedMetersPerSecond: 0.0, courseDegrees: -1, horizontalAccuracy: 8))
+                    offset += 10
+                }
+            }
+        }
+
+        var configuration = PeriodDetectorConfiguration()
+        configuration.expectedPeriods = 0
+        let events = PeriodDetector.detectPeriods(track: points, events: [], projector: projector,
+                                                  configuration: configuration)
+
+        XCTAssertEqual(events.filter { $0.kind == .periodEnd }.count, 3)
+        XCTAssertEqual(events.filter { $0.kind == .periodStart }.count, 3)
+        XCTAssertTrue(events.allSatisfy { $0.source == .automatic })
+
+        let ends = events.filter { $0.kind == .periodEnd }.map { $0.date.timeIntervalSince(start) }.sorted()
+        for (detected, expected) in zip(ends, breakStarts) {
+            XCTAssertEqual(detected, expected, accuracy: 60)
+        }
+    }
 }

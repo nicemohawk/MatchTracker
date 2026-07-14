@@ -10,26 +10,38 @@ struct PositionSection: View {
     private var estimate: PositionEstimate { analytics.position }
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 14) {
-                PositionBadge(role: estimate.role, side: estimate.side, confidence: estimate.confidence)
-                    .scaleEffect(1.4)
-                    .frame(width: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(PositionBadge.fullName(role: estimate.role, side: estimate.side))
-                        .font(.title3.weight(.semibold))
-                    Text("Confidence \(Int(estimate.confidence * 100))%")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-
+        VStack(spacing: 18) {
             PositionPitch(estimate: estimate)
                 .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-                .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
+                .background(Theme.pitchTurfBottom)
+                .overlay(alignment: .topLeading) { positionChip.padding(14) }
+                .fullBleed()
 
             ThirdsBars(shares: thirdShares)
         }
+    }
+
+    /// The role/side badge + confidence, floated large over the top-left of the pitch on a glass
+    /// chip so it stays legible against the turf while the pitch itself reads as the hero.
+    private var positionChip: some View {
+        HStack(spacing: 12) {
+            PositionBadge(role: estimate.role, side: estimate.side, confidence: estimate.confidence)
+                .scaleEffect(1.4)
+                .frame(width: 50)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(PositionBadge.fullName(role: estimate.role, side: estimate.side))
+                    .font(.system(.title3, design: .rounded).weight(.semibold))
+                Text("Confidence \(Int(estimate.confidence * 100))%")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
     }
 
     /// Share of positional occupancy across defensive / middle / attacking thirds (long axis).
@@ -87,11 +99,11 @@ struct ThirdsBars: View {
     private let labels = ["Defensive", "Middle", "Attacking"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Share of Thirds").font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Share of Thirds").font(.system(.title3, design: .rounded).weight(.bold))
             ForEach(Array(shares.enumerated()), id: \.offset) { index, share in
-                HStack(spacing: 10) {
-                    Text(labels[index]).font(.caption).frame(width: 74, alignment: .leading)
+                HStack(spacing: 12) {
+                    Text(labels[index]).font(.subheadline).frame(width: 86, alignment: .leading)
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Theme.surfaceStroke)
@@ -99,9 +111,10 @@ struct ThirdsBars: View {
                                 .frame(width: geometry.size.width * share)
                         }
                     }
-                    .frame(height: 12)
-                    Text("\(Int(share * 100))%").font(.caption).monospacedDigit()
-                        .frame(width: 38, alignment: .trailing).foregroundStyle(.secondary)
+                    .frame(height: 16)
+                    Text("\(Int(share * 100))%")
+                        .font(.system(.title3, design: .rounded).weight(.semibold)).monospacedDigit()
+                        .frame(width: 54, alignment: .trailing)
                 }
             }
         }

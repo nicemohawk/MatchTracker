@@ -23,8 +23,10 @@ public struct MatchStats: Codable, Sendable {
     /// clustering (V2 §3) can place each player without the raw track.
     public var meanX: Double?
     public var meanY: Double?
+    /// Which signals fed `workrateScore` (`"gps+hr"` / `"gps"` / `"hr"`); wire `effort_source`.
+    public var effortSource: String?
 
-    public init(totalDistanceMeters: Double = 0, timeOnPitch: TimeInterval = 0, sprintCount: Int = 0, runCount: Int = 0, workrateScore: Double = 0, speedZones: SpeedZones = SpeedZones(), averageHeartRate: Double? = nil, positionRole: PositionRole? = nil, positionSide: PositionSide? = nil, meanX: Double? = nil, meanY: Double? = nil) {
+    public init(totalDistanceMeters: Double = 0, timeOnPitch: TimeInterval = 0, sprintCount: Int = 0, runCount: Int = 0, workrateScore: Double = 0, speedZones: SpeedZones = SpeedZones(), averageHeartRate: Double? = nil, positionRole: PositionRole? = nil, positionSide: PositionSide? = nil, meanX: Double? = nil, meanY: Double? = nil, effortSource: String? = nil) {
         self.totalDistanceMeters = totalDistanceMeters
         self.timeOnPitch = timeOnPitch
         self.sprintCount = sprintCount
@@ -36,6 +38,7 @@ public struct MatchStats: Codable, Sendable {
         self.positionSide = positionSide
         self.meanX = meanX
         self.meanY = meanY
+        self.effortSource = effortSource
     }
 
     /// Derive the upload stats from the Kit's analytics outputs. This is the single place the
@@ -52,7 +55,8 @@ public struct MatchStats: Codable, Sendable {
             positionRole: position?.role,
             positionSide: position?.side,
             meanX: position.map { Double($0.meanPoint.x) },
-            meanY: position.map { Double($0.meanPoint.y) }
+            meanY: position.map { Double($0.meanPoint.y) },
+            effortSource: report.effortSource
         )
     }
 
@@ -68,6 +72,7 @@ public struct MatchStats: Codable, Sendable {
         case positionSide = "position_side"
         case meanX = "mean_x"
         case meanY = "mean_y"
+        case effortSource = "effort_source"
     }
 
     /// Wire shape of `speed_zones`: seconds per zone with `_s`-suffixed keys.
@@ -91,6 +96,7 @@ public struct MatchStats: Codable, Sendable {
         try container.encodeIfPresent(positionSide, forKey: .positionSide)
         try container.encodeIfPresent(meanX, forKey: .meanX)
         try container.encodeIfPresent(meanY, forKey: .meanY)
+        try container.encodeIfPresent(effortSource, forKey: .effortSource)
 
         var zones = container.nestedContainer(keyedBy: SpeedZoneKeys.self, forKey: .speedZones)
         try zones.encode(speedZones.standing, forKey: .standing)
@@ -112,6 +118,7 @@ public struct MatchStats: Codable, Sendable {
         positionSide = try container.decodeIfPresent(PositionSide.self, forKey: .positionSide)
         meanX = try container.decodeIfPresent(Double.self, forKey: .meanX)
         meanY = try container.decodeIfPresent(Double.self, forKey: .meanY)
+        effortSource = try container.decodeIfPresent(String.self, forKey: .effortSource)
 
         if let zones = try? container.nestedContainer(keyedBy: SpeedZoneKeys.self, forKey: .speedZones) {
             speedZones = SpeedZones(
@@ -140,9 +147,12 @@ public struct MatchPayload: Codable, Sendable {
     public var playerName: String?
     /// Sport this match was played as (wire `sport_id`); nil ≡ soccer, matching the backend default.
     public var sportID: String?
+    /// Match format wire value (`match` / `small_sided` / `indoor`, wire `format`); nil ≡ match.
+    /// Set from `MatchFormat.wireValue` so `smallSided` serializes as `small_sided`.
+    public var format: String?
     public var stats: MatchStats
 
-    public init(uuid: UUID, recordedAt: Date, coordinates: [[Double]], events: [MatchEvent], fieldUUID: UUID?, teamCode: String?, playerName: String? = nil, sportID: String? = nil, stats: MatchStats) {
+    public init(uuid: UUID, recordedAt: Date, coordinates: [[Double]], events: [MatchEvent], fieldUUID: UUID?, teamCode: String?, playerName: String? = nil, sportID: String? = nil, format: String? = nil, stats: MatchStats) {
         self.uuid = uuid
         self.recordedAt = recordedAt
         self.coordinates = coordinates
@@ -151,6 +161,7 @@ public struct MatchPayload: Codable, Sendable {
         self.teamCode = teamCode
         self.playerName = playerName
         self.sportID = sportID
+        self.format = format
         self.stats = stats
     }
 
@@ -163,6 +174,7 @@ public struct MatchPayload: Codable, Sendable {
         case teamCode = "team_code"
         case playerName = "player_name"
         case sportID = "sport_id"
+        case format
         case stats
     }
 
@@ -181,6 +193,7 @@ public struct MatchPayload: Codable, Sendable {
         try container.encodeIfPresent(teamCode, forKey: .teamCode)
         try container.encodeIfPresent(playerName, forKey: .playerName)
         try container.encodeIfPresent(sportID, forKey: .sportID)
+        try container.encodeIfPresent(format, forKey: .format)
         try container.encode(stats, forKey: .stats)
     }
 
@@ -195,6 +208,7 @@ public struct MatchPayload: Codable, Sendable {
         teamCode = try container.decodeIfPresent(String.self, forKey: .teamCode)
         playerName = try container.decodeIfPresent(String.self, forKey: .playerName)
         sportID = try container.decodeIfPresent(String.self, forKey: .sportID)
+        format = try container.decodeIfPresent(String.self, forKey: .format)
         stats = try container.decode(MatchStats.self, forKey: .stats)
     }
 }
@@ -325,8 +339,24 @@ public struct APIClient: Sendable {
         return try Self.jsonDecoder().decode(LiveEnvelope.self, from: data).players
     }
 
+    /// Unified team event timeline (`GET /teams/{code}/events?since_hours=`, V2 §11): every
+    /// teammate's tagged events from recent matches, coalesced and ordered oldest-first.
+    public func teamEvents(code: String, sinceHours: Int = 6) async throws -> [TeamEvent] {
+        let data = try await get(path: "/teams/\(code)/events?since_hours=\(sinceHours)")
+        return try Self.jsonDecoder().decode(TeamEventsEnvelope.self, from: data).events
+    }
+
+    /// Attach (or overwrite) a coach label on one team event
+    /// (`POST /matches/{match_uuid}/events/{id}/annotation`, V2 §11). Idempotent: re-posting a
+    /// different label replaces `coach_label`; the player's own note is never touched.
+    public func annotateEvent(id: UUID, matchUUID: UUID, label: String) async throws {
+        try await postJSON(path: "/matches/\(matchUUID.uuidString)/events/\(id.uuidString)/annotation",
+                           body: AnnotationPost(label: label))
+    }
+
     /// Relay one live update to the backend (`POST /devices/{id}/live`, V2 §1). The watch->phone-only
-    /// `latestPoints` / `newEvents` are stripped; `matchUUID` and `teamCode` are added.
+    /// `latestPoints` (raw track) are stripped, but `newEvents` are forwarded as `new_events` so live
+    /// events reach the team-scoped event log (V2 §11); `matchUUID` and `teamCode` are added.
     public func postLive(_ update: LiveMatchUpdate, matchUUID: UUID, teamCode: String) async throws {
         try await postJSON(path: "/devices/\(deviceID.uuidString)/live",
                            body: LiveWire(update: update, matchUUID: matchUUID, teamCode: teamCode))
@@ -363,11 +393,17 @@ public struct APIClient: Sendable {
     private struct SessionsEnvelope: Encodable { var sessions: [MatchPayload] }
     private struct CommentsEnvelope: Decodable { var comments: [MatchComment] }
     private struct LiveEnvelope: Decodable { var players: [LivePlayerStatus] }
+    private struct TeamEventsEnvelope: Decodable { var events: [TeamEvent] }
+
+    /// Coach annotation body: just the label. The server keys the event by the path uuids.
+    private struct AnnotationPost: Encodable { var label: String }
 
     /// Minimal comment POST body: the backend derives `posted_at` and (usually) the author.
     private struct CommentPost: Encodable { var id: UUID; var body: String; var author: String }
 
-    /// `LiveMatchUpdate` reduced to the backend contract: no track/event deltas, plus routing keys.
+    /// `LiveMatchUpdate` reduced to the backend contract: the raw track delta (`latestPoints`) is
+    /// dropped, but `newEvents` are forwarded as `new_events` so the server can append them to the
+    /// team-scoped live event log (V2 §1/§11). Routing keys `matchUUID` / `teamCode` are added.
     private struct LiveWire: Encodable {
         var matchUUID: UUID
         var teamCode: String
@@ -380,6 +416,8 @@ public struct APIClient: Sendable {
         var onPitch: Bool
         var usGoals: Int?
         var themGoals: Int?
+        /// Events logged since the last update, forwarded verbatim via `MatchEvent`'s own Codable.
+        var newEvents: [MatchEvent]
 
         init(update: LiveMatchUpdate, matchUUID: UUID, teamCode: String) {
             self.matchUUID = matchUUID
@@ -393,6 +431,7 @@ public struct APIClient: Sendable {
             self.onPitch = update.onPitch
             self.usGoals = update.usGoals
             self.themGoals = update.themGoals
+            self.newEvents = update.newEvents
         }
 
         enum CodingKeys: String, CodingKey {
@@ -407,6 +446,7 @@ public struct APIClient: Sendable {
             case onPitch = "on_pitch"
             case usGoals = "us_goals"
             case themGoals = "them_goals"
+            case newEvents = "new_events"
         }
     }
 

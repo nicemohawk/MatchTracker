@@ -14,6 +14,8 @@ struct MatchDetailView: View {
     init(summary: MatchSummary) {
         self.summary = summary
         _model = StateObject(wrappedValue: DetailLoader())
+        // Indoor sessions have no heatmap, so open on Workrate — the first section they show.
+        _section = State(initialValue: summary.record?.format == .indoor ? .workrate : .heatmap)
     }
 
     enum Section: String, CaseIterable, Identifiable {
@@ -26,8 +28,16 @@ struct MatchDetailView: View {
         var id: String { rawValue }
     }
 
-    @State private var section: Section = .heatmap
+    @State private var section: Section
     @State private var ringProgress: Double = 0
+
+    /// Indoor play has no GPS route, so the map/route-derived sections don't apply.
+    private var isIndoor: Bool { summary.record?.format == .indoor }
+
+    /// Sections offered for this match. Indoor reduces to the route-free trio.
+    private var visibleSections: [Section] {
+        isIndoor ? [.workrate, .events, .video] : Section.allCases
+    }
 
     var body: some View {
         ScrollView {
@@ -45,14 +55,26 @@ struct MatchDetailView: View {
                             .allowsHitTesting(false)
                     )
             }
-            .padding(.vertical)
+            // Bottom-only: the hero header bleeds up to the very top of the scroll content (and
+            // behind the translucent nav bar). Container horizontal padding is unchanged.
+            .padding(.bottom)
         }
         // Clear the floating liquid-glass tab bar so the last element of every section
         // (e.g. the heatmap "Low → High" legend) isn't hidden behind it.
         .contentMargins(.bottom, 72, for: .scrollContent)
+        // The hero wash is pinned to the ScrollView (not the scrolling content) so it runs UNDER
+        // the translucent nav bar — the bar's glass blurs it rather than a hard seam cutting across.
+        // It fades to clear at its bottom, melting into `Theme.background` with no visible edge.
+        .background(alignment: .top) {
+            heroWash
+                .frame(height: 340)
+                .ignoresSafeArea(edges: .top)
+        }
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text(summary.startDate, format: .dateTime.month().day()))
         .navigationBarTitleDisplayMode(.inline)
+        // No bar background/hairline, so the wash reads as one continuous field behind the glass.
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -108,7 +130,7 @@ struct MatchDetailView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Section.allCases) { item in
+                    ForEach(visibleSections) { item in
                         sectionChip(item).id(item)
                     }
                 }
@@ -133,16 +155,15 @@ struct MatchDetailView: View {
         } label: {
             Text(item.rawValue)
                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .foregroundStyle(isSelected ? Color.black : Color.primary)
+                .foregroundStyle(isSelected ? tint : Color.primary)
                 .padding(.horizontal, 16)
                 .frame(minHeight: 44)
                 .background(
-                    Capsule().fill(isSelected ? tint : Theme.surfaceElevated)
+                    Capsule().fill(isSelected ? Theme.chipFill(tint) : Theme.surfaceElevated)
                 )
                 .overlay(
-                    Capsule().strokeBorder(isSelected ? .clear : Theme.surfaceStroke, lineWidth: 1)
+                    Capsule().strokeBorder(isSelected ? Theme.chipStroke(tint) : Theme.surfaceStroke, lineWidth: 1)
                 )
-                .glow(isSelected ? tint : .clear, radius: isSelected ? 8 : 0)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -170,9 +191,16 @@ struct MatchDetailView: View {
             HStack(spacing: 10) {
                 StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
                          systemImage: "clock", tint: Theme.signal)
-                StatTile(title: "Distance",
-                         value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
-                         systemImage: "figure.run", tint: Theme.pace)
+                if isIndoor {
+                    // No route to integrate distance from — surface on-pitch time instead.
+                    StatTile(title: "Time on Pitch",
+                             value: MatchFormat.shortDuration(detail?.analytics?.workrate.timeOnPitch ?? summary.duration),
+                             systemImage: "stopwatch", tint: Theme.pace)
+                } else {
+                    StatTile(title: "Distance",
+                             value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
+                             systemImage: "figure.run", tint: Theme.pace)
+                }
                 StatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
                          systemImage: "hare", tint: Theme.sprint)
                 if let hr = detail?.heartRate {
@@ -184,26 +212,32 @@ struct MatchDetailView: View {
                 }
             }
         }
-        .padding(18)
-        .background(
-            ZStack {
-                Theme.surface
-                Theme.heroWash
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 8)
-        .padding(.horizontal)
+        // Interior padding for the ring + numerals + chips; the wash below fills full width.
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 26)
+        .frame(maxWidth: .infinity)
         .onChange(of: workrate) { _, newValue in
             withAnimation(.easeOut(duration: 1.0)) { ringProgress = min(1, newValue / 100) }
         }
         .onAppear {
             withAnimation(.easeOut(duration: 1.0)) { ringProgress = min(1, workrate / 100) }
         }
+    }
+
+    /// Turf→signal hero wash, pinned behind the whole ScrollView (see `body`). It fades to clear at
+    /// the bottom so it melts into `Theme.background` with no hard line, and — being a ScrollView
+    /// background rather than scroll content — extends up under the translucent nav bar, which
+    /// blurs it. Dark keeps a luminous tint; light stays a whisper (trait-adaptive via `tintWash`).
+    private var heroWash: some View {
+        LinearGradient(
+            colors: [
+                Theme.tintWash(Theme.turf, dark: 0.30, light: 0.14),
+                Theme.tintWash(Theme.signal, dark: 0.20, light: 0.09),
+                Color.clear
+            ],
+            startPoint: .top, endPoint: .bottom
+        )
     }
 
     @ViewBuilder
@@ -230,6 +264,10 @@ struct MatchDetailView: View {
                 EventsSection(detail: detail)
             } else if section == .video {
                 VideoHighlightsSection(detail: detail, matchStart: summary.startDate)
+            } else if isIndoor {
+                ContentUnavailableView("Indoor session — effort from heart rate", systemImage: "house",
+                                       description: Text("This indoor session has no GPS route. Workrate is estimated from heart rate; heatmap, runs and position aren't available. The events timeline still works."))
+                    .frame(minHeight: 200)
             } else {
                 ContentUnavailableView("No GPS Data Recorded", systemImage: "location.slash",
                                        description: Text("This match has no GPS route, so heatmap, runs, workrate and position aren't available. The events timeline still works."))

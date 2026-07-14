@@ -44,7 +44,12 @@ final class UploadService: ObservableObject {
     /// the cached Keychain value on any failure. Best-effort — never throws to the caller.
     func bootstrapAPIKey() async {
         do {
-            let database = CKContainer.default().publicCloudDatabase
+            // Explicit identifier instead of CKContainer.default(): .default() raises an
+            // uncatchable CKException (containerIdentifier nil) when entitlements are absent
+            // (e.g. unsigned CI/simctl builds); the explicit form fails with a recoverable
+            // error instead and we fall through to the Keychain-cached key.
+            let containerID = "iCloud.\(Bundle.main.bundleIdentifier ?? "com.nicemohawk.MatchTracker")"
+            let database = CKContainer(identifier: containerID).publicCloudDatabase
             let record = try await database.record(for: CKRecord.ID(recordName: "default"))
             if let key = record["apiKey"] as? String {
                 apiKey = key
@@ -229,6 +234,18 @@ final class UploadService: ObservableObject {
     func fetchLiveTeam(code: String) async throws -> [LivePlayerStatus] {
         guard let client else { throw TeamStatsError.noAPIKey }
         return try await client.liveTeam(code: code)
+    }
+
+    /// Unified team event timeline for the coach view (`GET /teams/{code}/events`, V2 §11).
+    func fetchTeamEvents(code: String, sinceHours: Int = 6) async throws -> [TeamEvent] {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        return try await client.teamEvents(code: code, sinceHours: sinceHours)
+    }
+
+    /// Attach a coach label to one team event (`POST .../annotation`, V2 §11).
+    func annotateTeamEvent(id: UUID, matchUUID: UUID, label: String) async throws {
+        guard let client else { throw TeamStatsError.noAPIKey }
+        try await client.annotateEvent(id: id, matchUUID: matchUUID, label: label)
     }
 
     // MARK: - Fields

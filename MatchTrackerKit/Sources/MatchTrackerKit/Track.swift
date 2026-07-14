@@ -95,10 +95,11 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     public var teamCode: String?
     public var sportID: String?             // nil == soccer (SportProfile.id)
     public var headings: [HeadingSample]?   // optional device-heading samples for track fusion
+    public var format: MatchFormat?         // nil ≡ .match (wire "format")
 
-    // Synthesized Codable: both new fields are optional, so JSON written before they existed
-    // still decodes cleanly (the keys are simply absent).
-    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil) {
+    // Synthesized Codable: every added field is optional, so JSON written before they existed
+    // still decodes cleanly (the keys are simply absent, `format` nil ≡ .match).
+    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil) {
         self.id = id
         self.startDate = startDate
         self.endDate = endDate
@@ -107,6 +108,7 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
         self.teamCode = teamCode
         self.sportID = sportID
         self.headings = headings
+        self.format = format
     }
 }
 

@@ -29,6 +29,7 @@ enum WatchSettings {
         static let refereeMode = "refereeMode"
         static let doubleTapAction = "doubleTapAction"
         static let sportID = "sportID"
+        static let matchFormat = "matchFormat"
     }
 
     static var refereeMode: Bool {
@@ -51,5 +52,14 @@ enum WatchSettings {
 
     static var sportProfile: SportProfile {
         SportProfile.all.first { $0.id == sportID } ?? .soccer
+    }
+
+    /// Last-chosen match format for the start-screen quick pick (Match / Pickup / Indoor).
+    static var matchFormat: MatchFormat {
+        get {
+            AppGroupStorage.defaults.string(forKey: Key.matchFormat)
+                .flatMap(MatchFormat.init(rawValue:)) ?? .match
+        }
+        set { AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.matchFormat) }
     }
 }

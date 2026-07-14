@@ -52,6 +52,15 @@ final class MatchDetailModel: ObservableObject {
     var matchEnd: Date { record?.endDate ?? workout?.endDate ?? matchStart }
     var events: [MatchEvent] { record?.events ?? [] }
 
+    /// The match's format; a record written before formats existed (or none at all) is `.match`.
+    var matchFormat: MatchTrackerKit.MatchFormat { record?.format ?? .match }
+
+    /// The already-fetched heart-rate series mapped into the Kit's format-agnostic samples so the
+    /// analyzer can score effort from heart rate (the only signal indoor sessions can trust).
+    private var heartRateSamples: [HeartRateSample] {
+        heartRateSeries.map { HeartRateSample(date: $0.date, bpm: $0.bpm) }
+    }
+
     /// Stable identifier for persisting edits, whether backed by a workout or a record.
     var matchIdentifier: UUID { workout?.uuid ?? record?.id ?? UUID() }
 
@@ -119,27 +128,66 @@ final class MatchDetailModel: ObservableObject {
         }
     }
 
-    /// Recompute after an events edit (playing intervals / position may change).
+    /// Recompute after an events edit (playing intervals / position may change). Indoor sessions
+    /// have no track but still recompute so a substitution edit reshapes the HR-based workrate.
     func updateRecord(_ record: MatchRecord) {
         self.record = record
-        if !track.isEmpty {
+        if !track.isEmpty || matchFormat == .indoor {
             analytics = computeAnalytics(track: track)
         }
     }
 
     // MARK: - Analytics pipeline
 
+    /// A degenerate field used only to satisfy `MatchAnalytics`'s projector-dependent fields for an
+    /// indoor session that has no route. Those pieces (heatmap/runs/position) are never rendered for
+    /// an indoor match — its detail view reduces to Workrate / Events / Video.
+    private static let indoorPlaceholderRectangle = OrientedRectangle(
+        center: Coordinate2D(latitude: 0, longitude: 0),
+        lengthMeters: 40, widthMeters: 20, headingDegrees: 0, corners: []
+    )
+
     private func computeAnalytics(track: [TrackPoint]) -> MatchAnalytics? {
-        guard let resolved = resolveField(track: track) else { return nil }
-        let projector = FieldProjector(rectangle: resolved.rectangle)
         let intervals = SubstitutionTracker.playingIntervals(
             events: events, matchStart: matchStart, matchEnd: matchEnd
         )
+
+        // No route to place onto. An indoor session still scores from heart rate alone, so its
+        // analytics (and thus the workrate/events views) exist even with an empty track; the
+        // projector-dependent pieces stay empty. Any other format with no field is un-analyzable.
+        guard let resolved = resolveField(track: track) else {
+            guard matchFormat == .indoor else { return nil }
+            let context = MatchContext(format: .indoor)
+            var workrate = WorkrateAnalyzer.analyze(
+                track: track, runs: [], playingIntervals: intervals,
+                heartRate: heartRateSamples, context: context
+            )
+            if let heartRate { workrate.averageHeartRate = heartRate.average }
+            return MatchAnalytics(
+                rectangle: Self.indoorPlaceholderRectangle,
+                projector: FieldProjector(rectangle: Self.indoorPlaceholderRectangle),
+                fieldName: nil,
+                fieldSource: nil,
+                playingIntervals: intervals,
+                heatmap: HeatmapGrid(columns: 30, rows: 20, cells: []),
+                runs: [],
+                workrate: workrate,
+                position: PositionEstimate(role: .midfielder, side: .center, confidence: 0,
+                                           meanPoint: CGPoint(x: 0.5, y: 0.5), periodMeanPoints: [])
+            )
+        }
+
+        let projector = FieldProjector(rectangle: resolved.rectangle)
+        let context = MatchContext(format: matchFormat,
+                                   fieldLengthMeters: resolved.rectangle.lengthMeters)
         let heatmap = HeatmapGrid.compute(
             points: track, projector: projector, columns: 30, rows: 20, playingIntervals: intervals
         )
-        let runs = RunDetector.detectRuns(in: track, configuration: RunDetectorConfiguration())
-        var workrate = WorkrateAnalyzer.analyze(track: track, runs: runs, playingIntervals: intervals)
+        let runs = RunDetector.detectRuns(in: track, configuration: .scaled(for: context))
+        var workrate = WorkrateAnalyzer.analyze(
+            track: track, runs: runs, playingIntervals: intervals,
+            heartRate: heartRateSamples, context: context
+        )
         if let heartRate { workrate.averageHeartRate = heartRate.average }
         let position = PositionAnalyzer.estimate(
             points: track, projector: projector, events: events, playingIntervals: intervals

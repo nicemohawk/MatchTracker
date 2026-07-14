@@ -3,13 +3,21 @@
 //
 // Single source of truth for the app's visual identity: an athlete-tracker look that is
 // performance-first and dark-first — near-black backgrounds, elevated cards with big radii
-// and thin luminous strokes, electric neon accents, and glassy overlays. Colors resolve per
-// trait so both color schemes stay legible (dark is the identity; light deepens saturation
-// rather than washing out to pastels).
+// and thin hairline strokes, Apple-system-anchored accents on tinted-translucent chips, and
+// glassy overlays. Glow is rare (reserved for the hero workrate ring and the live pulse dot).
+// Colors resolve per trait so both color schemes stay legible (dark is the identity; light
+// deepens saturation rather than washing out to pastels).
 
 import SwiftUI
 
 enum Theme {
+    // MARK: - Layout
+
+    /// Horizontal content inset that MatchDetailView applies to section content via
+    /// `.padding(.horizontal)` (the SwiftUI system default). `View.fullBleed()` negates exactly
+    /// this so a hero element can span edge-to-edge without the container changing its padding.
+    static let detailContentInset: CGFloat = 16
+
     // MARK: - Palette
 
     /// Builds a dynamic color from dark-scheme and light-scheme components.
@@ -31,40 +39,57 @@ enum Theme {
         })
     }
 
-    /// Near-black canvas in dark, soft off-white in light.
-    static let background = dynamic(dark: (0.043, 0.051, 0.063),
-                                    light: (0.953, 0.961, 0.976))
-    /// Elevated card fill.
-    static let surface = dynamic(dark: (0.078, 0.090, 0.110),
+    /// Tint-on-translucent chip fill: the hue at a low alpha over the surface. The house style for
+    /// every status chip/capsule — never a solid saturated fill. Dark ~22%, light ~14%.
+    static func chipFill(_ color: Color) -> Color {
+        tintWash(color, dark: 0.22, light: 0.14)
+    }
+
+    /// Hairline stroke to match `chipFill` — the same hue, a touch stronger.
+    static func chipStroke(_ color: Color) -> Color {
+        tintWash(color, dark: 0.45, light: 0.30)
+    }
+
+    /// Near-black canvas in dark (#0C0D10), soft off-white in light.
+    static let background = dynamic(dark: (0.047, 0.051, 0.063),
+                                    light: (0.949, 0.957, 0.969))
+    /// Elevated card fill (#16181D dark).
+    static let surface = dynamic(dark: (0.086, 0.094, 0.114),
                                  light: (1.0, 1.0, 1.0))
-    /// Slightly higher elevation (nested tiles on top of a surface).
-    static let surfaceElevated = dynamic(dark: (0.110, 0.125, 0.149),
+    /// Slightly higher elevation (nested tiles on top of a surface, #1D2026 dark).
+    static let surfaceElevated = dynamic(dark: (0.114, 0.125, 0.149),
                                          light: (0.965, 0.973, 0.984))
     /// Hairline stroke around cards.
     static let surfaceStroke = Color.white.opacity(0.08)
 
-    // Semantic accents — used consistently app-wide.
-    /// Electric green — the app's primary tint / turf energy.
-    static let turf = dynamic(dark: (0.204, 0.961, 0.631),
-                              light: (0.043, 0.643, 0.396))
-    /// Cyan signal.
-    static let signal = dynamic(dark: (0.243, 0.859, 1.0),
-                                light: (0.0, 0.541, 0.702))
-    /// Neon coral — heart rate.
-    static let heart = dynamic(dark: (1.0, 0.361, 0.478),
-                               light: (0.898, 0.157, 0.310))
-    /// Electric blue — distance / pace.
-    static let pace = dynamic(dark: (0.302, 0.486, 1.0),
-                              light: (0.169, 0.353, 0.918))
-    /// Magenta-orange — sprints.
-    static let sprint = dynamic(dark: (1.0, 0.478, 0.239),
-                                light: (0.878, 0.325, 0.078))
-    /// Lime — goals / positive.
-    static let goal = dynamic(dark: (0.784, 1.0, 0.302),
-                              light: (0.435, 0.612, 0.043))
-    /// Amber — bench / caution.
-    static let bench = dynamic(dark: (1.0, 0.741, 0.239),
-                               light: (0.831, 0.549, 0.043))
+    // Semantic accents — anchored to Apple system hues so the palette reads premium, not arcade.
+    /// Emerald (#30D158) — the app's primary tint / turf energy.
+    static let turf = dynamic(dark: (0.188, 0.820, 0.345),
+                              light: (0.024, 0.588, 0.239))
+    /// Quiet teal-mint (#66D4CF) signal.
+    static let signal = dynamic(dark: (0.400, 0.831, 0.812),
+                                light: (0.0, 0.478, 0.463))
+    /// Rose (#FF375F) — heart rate.
+    static let heart = dynamic(dark: (1.0, 0.216, 0.373),
+                               light: (0.835, 0.075, 0.243))
+    /// Blue (#409CFF) — distance / pace.
+    static let pace = dynamic(dark: (0.251, 0.612, 1.0),
+                              light: (0.078, 0.412, 0.882))
+    /// Amber-orange (#FF9F0A) — sprints.
+    static let sprint = dynamic(dark: (1.0, 0.624, 0.039),
+                                light: (0.812, 0.451, 0.0))
+    /// Goals / positive. Aliased to `turf` — wins are green — but kept as a named symbol for
+    /// API stability so call sites reading `Theme.goal` need not change.
+    static let goal = turf
+    /// Neutral gray (#98989D) — bench / draws read neutral, not amber.
+    static let bench = dynamic(dark: (0.596, 0.596, 0.616),
+                               light: (0.400, 0.400, 0.420))
+    /// Red (#FF453A) — a loss, distinct from `heart`'s rose so score chips don't collide.
+    static let loss = dynamic(dark: (1.0, 0.271, 0.227),
+                              light: (0.812, 0.126, 0.086))
+    /// Card yellow (#FFD60A) — reserved for yellow cards, where amber must read as a caution.
+    static let cardYellow = dynamic(dark: (1.0, 0.839, 0.039),
+                                    light: (0.694, 0.541, 0.0))
 
     // MARK: - Signature gradients
 
@@ -182,6 +207,15 @@ extension Text {
 // MARK: - View modifiers
 
 extension View {
+    /// Opt a section element OUT of the match-detail scroll container's horizontal content
+    /// padding so it draws edge-to-edge (full bleed). MatchDetailView keeps applying
+    /// `.padding(.horizontal)` (system default, 16pt) to section content; this cancels exactly
+    /// that inset for a single hero element while supporting content stays padded. Additive,
+    /// non-destructive — the container's padding is untouched.
+    func fullBleed() -> some View {
+        padding(.horizontal, -Theme.detailContentInset)
+    }
+
     /// Elevated card: surface fill, 22pt radius, hairline stroke, soft shadow.
     func themedCard(cornerRadius: CGFloat = 22) -> some View {
         modifier(ThemedCard(cornerRadius: cornerRadius))
@@ -197,7 +231,8 @@ extension View {
         modifier(MetricTile(tint: tint, cornerRadius: cornerRadius))
     }
 
-    /// Neon glow shadow in the given color.
+    /// Colored glow shadow. Use sparingly — reserved for the hero workrate ring and the live
+    /// pulse dot; status chips, badges, and pitch marks take a plain faint shadow instead.
     func glow(_ color: Color, radius: CGFloat = 8) -> some View {
         shadow(color: color.opacity(0.5), radius: radius)
     }

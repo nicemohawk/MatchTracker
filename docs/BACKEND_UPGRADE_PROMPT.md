@@ -223,6 +223,8 @@ Add these optional keys to each object in the existing `sessions` array (legacy 
 }
 ```
 
+Also optional: top-level `format` (string, nullable, `NULL` ≡ `"match"`; values `match|small_sided|indoor`) and `stats.effort_source` (string, nullable; `gps+hr|gps|hr` — which signals produced `workrate_score`). Store both as opaque pass-through.
+
 Server behavior on receipt:
 - Upsert the `matches` row by `uuid` (idempotent re-upload — client may retry).
 - If `team_code` present and no `teams` row exists, create one with `name = null`.

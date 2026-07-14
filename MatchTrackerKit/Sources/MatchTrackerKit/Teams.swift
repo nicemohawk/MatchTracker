@@ -50,6 +50,70 @@ public struct MatchComment: Codable, Identifiable, Sendable {
     }
 }
 
+/// One event from any teammate's match, as delivered by the unified team timeline
+/// (`GET /teams/{code}/events`, V2 §11). The coach view coalesces every player's tagged events
+/// into a single chronological feed and can attach a `coachLabel` to unlabeled ones.
+///
+/// `kind` is decoded tolerantly: the raw wire string is preserved in `kindRawValue` (so an
+/// event kind this client build doesn't know still renders), and `kind` is the parsed
+/// `MatchEventKind` when recognized, else nil. `coachLabel` is the coach's annotation and is
+/// kept separate from the player's own `note` — the two render side by side, never overwriting.
+public struct TeamEvent: Codable, Identifiable, Sendable {
+    /// The event's own uuid (stable across the player's upload and the live relay).
+    public var id: UUID
+    public var playerName: String
+    public var matchUUID: UUID
+    /// Raw wire `kind` string, preserved verbatim so unknown kinds still display.
+    public var kindRawValue: String
+    public var date: Date
+    /// The player's own note on the event (never overwritten by a coach label).
+    public var note: String?
+    /// The coach's annotation (`coach_label`), stored separately from `note`.
+    public var coachLabel: String?
+    /// `manual` / `automatic` when known; decoded tolerantly (unknown strings ⇒ nil).
+    public var source: MatchEventSource?
+
+    /// The parsed event kind, or nil when this build doesn't recognize `kindRawValue`.
+    public var kind: MatchEventKind? { MatchEventKind(rawValue: kindRawValue) }
+
+    public init(id: UUID = UUID(), playerName: String, matchUUID: UUID, kindRawValue: String,
+                date: Date, note: String? = nil, coachLabel: String? = nil,
+                source: MatchEventSource? = nil) {
+        self.id = id
+        self.playerName = playerName
+        self.matchUUID = matchUUID
+        self.kindRawValue = kindRawValue
+        self.date = date
+        self.note = note
+        self.coachLabel = coachLabel
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case playerName = "player_name"
+        case matchUUID = "match_uuid"
+        case kindRawValue = "kind"
+        case date
+        case note
+        case coachLabel = "coach_label"
+        case source
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        playerName = try container.decode(String.self, forKey: .playerName)
+        matchUUID = try container.decode(UUID.self, forKey: .matchUUID)
+        kindRawValue = try container.decode(String.self, forKey: .kindRawValue)
+        date = try container.decode(Date.self, forKey: .date)
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+        coachLabel = try container.decodeIfPresent(String.self, forKey: .coachLabel)
+        // Tolerant: an unknown/garbage source string decodes to nil rather than throwing.
+        source = (try? container.decodeIfPresent(MatchEventSource.self, forKey: .source)) ?? nil
+    }
+}
+
 /// Backend-computed team formation (via `GET /teams/{code}/formation`, V2 §3).
 public struct TeamFormation: Codable, Sendable {
     public var name: String        // e.g. "4-4-2"

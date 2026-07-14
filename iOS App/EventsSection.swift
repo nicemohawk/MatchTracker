@@ -57,6 +57,8 @@ struct EventsSection: View {
         }
     }
 
+    /// Big edge-to-edge score banner: the hero of the section. Bleeds full width on a goal-tinted
+    /// gradient wash that fades into the page, hero numerals centered, no card box.
     private var scoreRecap: some View {
         let us = events.filter { $0.kind == .goalForUs || $0.kind == .goalMine }.count
         let them = events.filter { $0.kind == .goalAgainstUs }.count
@@ -68,18 +70,16 @@ struct EventsSection: View {
             }
             Spacer()
         }
-        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
         .background(
-            ZStack {
-                Theme.surface
-                Theme.headerGradient(Theme.goal)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            LinearGradient(
+                colors: [Theme.tintWash(Theme.goal, dark: 0.26, light: 0.12), Color.clear],
+                startPoint: .top, endPoint: .bottom
+            )
+            .background(Theme.background)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
+        .fullBleed()
     }
 
     // MARK: - Mutations
@@ -131,10 +131,11 @@ struct EventRow: View {
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 14) {
             Image(systemName: event.kind.systemImage)
+                .font(.title3)
                 .foregroundStyle(event.kind.tint)
-                .frame(width: 26)
+                .frame(width: 32)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(event.kind.title).font(.subheadline.weight(.semibold))

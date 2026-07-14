@@ -35,6 +35,16 @@ struct SummaryView: View {
                     summaryRow("Red Cards", value: "\(count(of: .redCard))", tint: .red)
                     summaryRow("Fouls", value: "\(count(of: .foul))", tint: .orange)
                     summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
+                } else if isIndoor {
+                    // Indoor: GPS-derived distance/runs/sprints are unavailable; effort is HR-driven.
+                    summaryRow("Time on Pitch", value: timeOnPitchString, tint: .orange)
+                    summaryRow("Avg Heart Rate", value: averageHeartRateString, tint: .red)
+                    summaryRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .orange)
+                    summaryRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                    summaryRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .purple)
+                    Label("Indoor session — effort from heart rate", systemImage: "house")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 } else {
                     summaryRow("Time on Pitch", value: timeOnPitchString, tint: .orange)
                     summaryRow("Distance", value: distanceString, tint: .blue)
@@ -81,6 +91,11 @@ struct SummaryView: View {
 
     // MARK: Derived stats
 
+    /// Indoor sessions hide the GPS-derived athletic rows in favor of an HR-effort summary.
+    private var isIndoor: Bool {
+        (workoutManager.finishedRecord?.format ?? workoutManager.matchFormat) == .indoor
+    }
+
     private var interval: DateInterval? {
         guard let record = workoutManager.finishedRecord, let end = record.endDate else { return nil }
         return DateInterval(start: record.startDate, end: end)
@@ -94,7 +109,8 @@ struct SummaryView: View {
     }
 
     private var runCounts: (runs: Int, sprints: Int) {
-        let runs = RunDetector.detectRuns(in: workoutManager.track, configuration: RunDetectorConfiguration())
+        let runs = RunDetector.detectRuns(in: workoutManager.track,
+                                          configuration: .scaled(for: workoutManager.matchContext))
         return (runs.filter { $0.intensity == .run }.count,
                 runs.filter { $0.intensity == .sprint }.count)
     }

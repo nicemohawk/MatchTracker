@@ -145,6 +145,19 @@ public struct RunDetectorConfiguration: Sendable {
         self.minimumDuration = 2.0
         self.mergeGap = 1.5
     }
+
+    /// Speed thresholds scaled for the match context: on a shorter field the same effort tops out
+    /// at a lower speed, so each threshold multiplies by `context.pitchScale`. Sensible floors keep
+    /// a scaled sprint from collapsing into a brisk jog (jog ≥ 1.6, run ≥ 2.8, sprint ≥ 4.0 m/s),
+    /// so a hard burst on a small turf field still registers as a sprint even below 5.5 m/s.
+    public static func scaled(for context: MatchContext) -> RunDetectorConfiguration {
+        var configuration = RunDetectorConfiguration()
+        let scale = context.pitchScale
+        configuration.jogThreshold = max(configuration.jogThreshold * scale, 1.6)
+        configuration.runThreshold = max(configuration.runThreshold * scale, 2.8)
+        configuration.sprintThreshold = max(configuration.sprintThreshold * scale, 4.0)
+        return configuration
+    }
 }
 
 public enum RunDetector {
@@ -248,6 +261,24 @@ public struct SpeedZones: Codable, Sendable {   // seconds in each zone
     }
 }
 
+/// The 0–100 sub-scores that fed `workrateScore`, one per calibration curve. Each is populated
+/// only when its signal contributed to the blend (GPS components stay `nil` on the HR-only indoor
+/// path, `heartRate` stays `nil` on the GPS-only path), so a reader can render exactly the bars
+/// that drove the score. Additive/optional for wire compatibility.
+public struct WorkrateComponents: Codable, Sendable {
+    public var distanceRate: Double?    // distance-rate curve score
+    public var highIntensity: Double?   // high-intensity-share curve score
+    public var sprints: Double?         // sprint-rate curve score
+    public var heartRate: Double?       // %HRR effort curve score
+
+    public init(distanceRate: Double? = nil, highIntensity: Double? = nil, sprints: Double? = nil, heartRate: Double? = nil) {
+        self.distanceRate = distanceRate
+        self.highIntensity = highIntensity
+        self.sprints = sprints
+        self.heartRate = heartRate
+    }
+}
+
 public struct WorkrateReport: Codable, Sendable {
     public var totalDistanceMeters: Double
     public var distancePerMinute: [Double]      // meters covered in each minute-on-pitch
@@ -256,10 +287,19 @@ public struct WorkrateReport: Codable, Sendable {
     public var runCount: Int
     public var averageHeartRate: Double?        // filled by app layer when HR available
     public var timeOnPitch: TimeInterval
-    /// 0–100 composite: distance rate, sprint frequency, high-intensity share.
+    /// 0–100 composite: distance rate, sprint frequency, high-intensity share, and — when heart
+    /// rate is available — %HRR-based effort. Calibrated to stay comparable across match formats.
     public var workrateScore: Double
+    /// Which signals fed `workrateScore`: `"gps+hr"`, `"gps"` (legacy GPS-only), or `"hr"`
+    /// (indoor / no usable GPS). Additive/optional for wire compatibility.
+    public var effortSource: String?
+    /// The per-curve 0–100 sub-scores behind `workrateScore`. Additive/optional.
+    public var components: WorkrateComponents?
+    /// `true` when the score rests on a thin sample — under 10 min on pitch, or (HR-only) fewer
+    /// than 15 on-pitch heart-rate readings. Additive/optional.
+    public var isLowConfidence: Bool?
 
-    public init(totalDistanceMeters: Double = 0, distancePerMinute: [Double] = [], speedZones: SpeedZones = SpeedZones(), sprintCount: Int = 0, runCount: Int = 0, averageHeartRate: Double? = nil, timeOnPitch: TimeInterval = 0, workrateScore: Double = 0) {
+    public init(totalDistanceMeters: Double = 0, distancePerMinute: [Double] = [], speedZones: SpeedZones = SpeedZones(), sprintCount: Int = 0, runCount: Int = 0, averageHeartRate: Double? = nil, timeOnPitch: TimeInterval = 0, workrateScore: Double = 0, effortSource: String? = nil, components: WorkrateComponents? = nil, isLowConfidence: Bool? = nil) {
         self.totalDistanceMeters = totalDistanceMeters
         self.distancePerMinute = distancePerMinute
         self.speedZones = speedZones
@@ -268,17 +308,113 @@ public struct WorkrateReport: Codable, Sendable {
         self.averageHeartRate = averageHeartRate
         self.timeOnPitch = timeOnPitch
         self.workrateScore = workrateScore
+        self.effortSource = effortSource
+        self.components = components
+        self.isLowConfidence = isLowConfidence
+    }
+}
+
+/// Monotone piecewise-linear calibration curves that turn raw workrate inputs into 0–100
+/// component sub-scores. These replace the old linear "ratio against an elite reference" scaling,
+/// which pinned a solid amateur match into the low 50s because it measured everything as a
+/// fraction of a professional's output. Each anchor is documented against the product's intuition
+/// bands: casual kickabout 25–45, average amateur 50–65, strong amateur 65–80, pro-like 80–95.
+enum WorkrateCalibration {
+    typealias Anchor = (x: Double, score: Double)
+
+    /// distanceRate — meters covered per on-pitch minute → 0–100. Full-pitch reference.
+    ///   30 →  5  (barely moving: mostly stood still — clamps here, no gifted floor)
+    ///   50 → 20  (casual: lots of standing, the occasional stroll)
+    ///   70 → 45  (average amateur floor)
+    ///   90 → 65  (strong amateur, covers real ground)
+    ///  110 → 80  (pro-like full-pitch distance rate)
+    ///  130 → 92  (elite ceiling; saturates above)
+    static let distanceRate: [Anchor] = [(30, 5), (50, 20), (70, 45), (90, 65), (110, 80), (130, 92)]
+
+    /// sprintRate — sprints per 10 on-pitch minutes → 0–100.
+    ///  0.0 →  3  (no bursts at all — clamps here)
+    ///  0.5 → 30  (casual: an odd chase)
+    ///  1.5 → 55  (average amateur)
+    ///  3.0 → 75  (strong amateur, repeated bursts)
+    ///  5.0 → 90  (pro-like sprint density; saturates above)
+    static let sprintRate: [Anchor] = [(0, 3), (0.5, 30), (1.5, 55), (3, 75), (5, 90)]
+
+    /// highIntensityShare — fraction of on-pitch time in running+sprinting zones → 0–100.
+    ///  0.00 →  3  (never got out of a walk — clamps here)
+    ///  0.05 → 30  (casual)
+    ///  0.10 → 55  (average amateur)
+    ///  0.18 → 75  (strong amateur)
+    ///  0.28 → 90  (pro-like; saturates above)
+    static let highIntensityShare: [Anchor] = [(0, 3), (0.05, 30), (0.10, 55), (0.18, 75), (0.28, 90)]
+
+    /// hrEffort — time-weighted mean %HRR on pitch → 0–100. Physiological, so it is NOT format-scaled.
+    ///  0.35 →  8  (near-resting: coasting, not exerting — clamps here)
+    ///  0.45 → 35  (casual: aerobic cruising)
+    ///  0.55 → 55  (average amateur)
+    ///  0.65 → 72  (strong amateur, sustained tempo)
+    ///  0.75 → 85  (pro-like)
+    ///  0.85 → 95  (near-max sustained; saturates above)
+    static let hrEffort: [Anchor] = [(0.35, 8), (0.45, 35), (0.55, 55), (0.65, 72), (0.75, 85), (0.85, 95)]
+
+    /// Piecewise-linear lookup with clamped (saturated) ends: below the first anchor returns the
+    /// first score, above the last returns the last score.
+    static func score(_ value: Double, curve: [Anchor]) -> Double {
+        guard let first = curve.first, let last = curve.last else { return 0 }
+        if value <= first.x { return first.score }
+        if value >= last.x { return last.score }
+        for index in 1..<curve.count {
+            let lower = curve[index - 1], upper = curve[index]
+            if value <= upper.x {
+                let t = (value - lower.x) / (upper.x - lower.x)
+                return lower.score + t * (upper.score - lower.score)
+            }
+        }
+        return last.score
+    }
+
+    /// Format scaling lives on the INPUT side: the anchor x-positions shift by `factor` while the
+    /// scores stay put, so a short-field player reaches the same band for less raw distance/sprints.
+    static func scaled(_ curve: [Anchor], by factor: Double) -> [Anchor] {
+        curve.map { (x: $0.x * factor, score: $0.score) }
     }
 }
 
 public enum WorkrateAnalyzer {
-    /// Reference distance rate (m/min) that saturates the distance component of the score.
-    private static let distanceRateReference = 110.0
-    /// Reference sprint frequency (sprints/min) that saturates the sprint component.
-    private static let sprintFrequencyReference = 0.5
+    /// Reference distance rate (m/min) anchoring the full-pitch distance curve (its 110→80 anchor).
+    private static let matchDistanceRateReference = 110.0
+    /// Reference distance rate (m/min) for a small-sided pitch, before pitch-scale adjustment. The
+    /// ratio `smallSided·pitchScale / match` scales the distance curve's x-anchors on short fields.
+    private static let smallSidedDistanceRateReference = 95.0
+    /// Default resting / max heart rates used to normalize %HRR when the context carries none.
+    private static let defaultRestingHeartRate = 60.0
+    private static let defaultMaxHeartRate = 190.0
+    /// Longest gap (seconds) a single heart-rate sample is time-weighted across (sparse indoor HR).
+    private static let maxHeartRateSampleWeight = 30.0
+    /// On-pitch time (seconds) below which any score is flagged low-confidence.
+    private static let lowConfidenceMinimumSeconds = 600.0
+    /// On-pitch HR readings below which an HR-only score is flagged low-confidence.
+    private static let lowConfidenceMinimumHeartRateSamples = 15
 
+    /// Legacy GPS-only signature. Delegates to the format-aware overload with a full-size match
+    /// context and no heart rate, preserving the historical 40/30/30 GPS-only weighting.
     public static func analyze(track: [TrackPoint], runs: [RunSegment],
                                playingIntervals: [DateInterval]) -> WorkrateReport {
+        analyze(track: track, runs: runs, playingIntervals: playingIntervals,
+                heartRate: [], context: MatchContext(format: .match))
+    }
+
+    /// Format-transcendent workrate. Distance/sprint references scale with the pitch, and the
+    /// effort components re-weight by which signals are actually available so a hard shift reads
+    /// the same whether it was measured on a full pitch by GPS, on a small turf field by GPS+HR,
+    /// or indoors by heart rate alone:
+    ///   - GPS+HR: distanceRate 30 / highIntensity 25 / sprintFrequency 20 / hrEffort 25
+    ///   - GPS-only (legacy): distanceRate 40 / highIntensity 30 / sprintFrequency 30
+    ///   - HR-only (indoor, or no usable GPS): hrEffort 100
+    /// Indoor always scores from heart rate even when sparse GPS exists.
+    public static func analyze(track: [TrackPoint], runs: [RunSegment],
+                               playingIntervals: [DateInterval],
+                               heartRate: [HeartRateSample],
+                               context: MatchContext) -> WorkrateReport {
         let ordered = track.sorted { $0.timestamp < $1.timestamp }
         let speeds = rawPointSpeeds(ordered)
 
@@ -317,17 +453,68 @@ public enum WorkrateAnalyzer {
         let sprintCount = runs.filter { $0.intensity == .sprint }.count
         let runCount = runs.filter { $0.intensity == .run || $0.intensity == .sprint }.count
 
+        let scale = context.pitchScale
         let minutes = timeOnPitch / 60
-        let distanceRate = minutes > 0 ? totalDistance / minutes : 0
-        let distanceComponent = min(distanceRate / distanceRateReference, 1)
 
+        // Each component is a 0–100 calibration-curve score (see `WorkrateCalibration`). Format
+        // scaling shifts the curves' x-anchors so a short-field player reaches the same band for
+        // less raw output, rather than curving the final blend.
+
+        // Distance: the distance curve's m/min anchors scale by the format's reference ratio.
+        let distanceFactor: Double
+        switch context.format {
+        case .match: distanceFactor = 1.0
+        case .smallSided: distanceFactor = (smallSidedDistanceRateReference * scale) / matchDistanceRateReference
+        case .indoor: distanceFactor = 1.0   // unused (HR-only)
+        }
+        let distanceRate = minutes > 0 ? totalDistance / minutes : 0
+        let distanceComponent = WorkrateCalibration.score(
+            distanceRate, curve: WorkrateCalibration.scaled(WorkrateCalibration.distanceRate, by: distanceFactor))
+
+        // High-intensity share: a physical fraction of on-pitch time, so its curve is not scaled.
         let activeTime = zones.standing + zones.walking + zones.jogging + zones.running + zones.sprinting
         let highIntensityShare = activeTime > 0 ? (zones.running + zones.sprinting) / activeTime : 0
+        let highIntensityComponent = WorkrateCalibration.score(
+            highIntensityShare, curve: WorkrateCalibration.highIntensityShare)
 
-        let sprintFrequency = minutes > 0 ? Double(sprintCount) / minutes : 0
-        let sprintComponent = min(sprintFrequency / sprintFrequencyReference, 1)
+        // Sprints: the sprint curve's per-10-min anchors scale by pitchScale (shorter, more
+        // frequent bursts are the norm on a small field), matching the legacy sprint reference.
+        let sprintRatePerTenMinutes = minutes > 0 ? Double(sprintCount) / minutes * 10 : 0
+        let sprintComponent = WorkrateCalibration.score(
+            sprintRatePerTenMinutes, curve: WorkrateCalibration.scaled(WorkrateCalibration.sprintRate, by: scale))
 
-        let rawScore = 100 * (0.4 * distanceComponent + 0.3 * min(highIntensityShare, 1) + 0.3 * sprintComponent)
+        // Heart rate: mean %HRR on pitch mapped through the (unscaled) effort curve.
+        let heartRateReserve = meanHeartRateReserve(samples: heartRate, playingIntervals: playingIntervals)
+        let heartRateComponent = heartRateReserve.mean.map {
+            WorkrateCalibration.score($0, curve: WorkrateCalibration.hrEffort)
+        } ?? 0
+
+        // Blend by signal availability with the existing weights. Sub-scores are already 0–100 and
+        // the weights sum to 1, so the weighted mean is the score — no further curving. Indoor is
+        // HR-only regardless of any sparse GPS. `components` carries only the signals that fed it.
+        let hasHeartRate = !heartRate.isEmpty
+        let effortSource: String
+        let rawScore: Double
+        let components: WorkrateComponents
+        let shortStint = timeOnPitch < lowConfidenceMinimumSeconds
+        var isLowConfidence = shortStint
+        if context.format == .indoor {
+            effortSource = "hr"
+            rawScore = heartRateComponent
+            components = WorkrateComponents(heartRate: heartRateComponent)
+            isLowConfidence = shortStint || heartRateReserve.onPitchSampleCount < lowConfidenceMinimumHeartRateSamples
+        } else if hasHeartRate {
+            effortSource = "gps+hr"
+            rawScore = 0.30 * distanceComponent + 0.25 * highIntensityComponent
+                     + 0.20 * sprintComponent + 0.25 * heartRateComponent
+            components = WorkrateComponents(distanceRate: distanceComponent, highIntensity: highIntensityComponent,
+                                            sprints: sprintComponent, heartRate: heartRateComponent)
+        } else {
+            effortSource = "gps"
+            rawScore = 0.40 * distanceComponent + 0.30 * highIntensityComponent + 0.30 * sprintComponent
+            components = WorkrateComponents(distanceRate: distanceComponent, highIntensity: highIntensityComponent,
+                                            sprints: sprintComponent)
+        }
         let workrateScore = min(max(rawScore, 0), 100)
 
         return WorkrateReport(
@@ -338,8 +525,39 @@ public enum WorkrateAnalyzer {
             runCount: runCount,
             averageHeartRate: nil,
             timeOnPitch: timeOnPitch,
-            workrateScore: workrateScore
+            workrateScore: workrateScore,
+            effortSource: effortSource,
+            components: components,
+            isLowConfidence: isLowConfidence
         )
+    }
+
+    /// Time-weighted mean heart-rate reserve (%HRR) over on-pitch samples, plus the on-pitch sample
+    /// count (used for low-confidence flagging). Each sample is weighted by the gap to the next
+    /// (capped), so uneven sampling doesn't skew the mean. `mean` is nil when nothing lands on pitch.
+    private static func meanHeartRateReserve(samples: [HeartRateSample], playingIntervals: [DateInterval]) -> (mean: Double?, onPitchSampleCount: Int) {
+        guard !samples.isEmpty else { return (nil, 0) }
+        let reserve = defaultMaxHeartRate - defaultRestingHeartRate
+        guard reserve > 0 else { return (nil, 0) }
+
+        let ordered = samples.sorted { $0.date < $1.date }
+        var weightedReserveSum = 0.0
+        var totalWeight = 0.0
+        var onPitchSampleCount = 0
+        for index in ordered.indices {
+            let sample = ordered[index]
+            guard isWithin(sample.date, intervals: playingIntervals) else { continue }
+            onPitchSampleCount += 1
+            guard index < ordered.count - 1 else { continue }
+            let gap = ordered[index + 1].date.timeIntervalSince(sample.date)
+            let weight = min(max(0, gap), maxHeartRateSampleWeight)
+            guard weight > 0 else { continue }
+            let hrr = min(max((sample.bpm - defaultRestingHeartRate) / reserve, 0), 1)
+            weightedReserveSum += hrr * weight
+            totalWeight += weight
+        }
+        guard totalWeight > 0 else { return (nil, onPitchSampleCount) }
+        return (weightedReserveSum / totalWeight, onPitchSampleCount)
     }
 }
 

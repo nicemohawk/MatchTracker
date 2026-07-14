@@ -14,9 +14,11 @@ struct WorkrateSection: View {
     private var report: WorkrateReport { analytics.workrate }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 30) {
             workrateSummary
             trainingLoadContext
+            componentBreakdown
+            effortSourceCaption
             fatigueBuckets
             distancePerMinuteChart
             speedZoneDonut
@@ -59,6 +61,71 @@ struct WorkrateSection: View {
         }
     }
 
+    /// Quiet breakdown of the 0–100 sub-scores behind the hero ring — one subtle horizontal bar
+    /// per contributing signal, in the component's semantic tint. Renders only the signals that
+    /// actually fed the score (GPS-only omits heart rate; indoor shows heart rate alone).
+    @ViewBuilder
+    private var componentBreakdown: some View {
+        let rows = componentRows
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(rows, id: \.name) { row in
+                    HStack(spacing: 10) {
+                        Text(row.name).captionLabel()
+                            .frame(width: 84, alignment: .leading)
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(row.tint.opacity(0.15))
+                                Capsule().fill(row.tint.opacity(0.85))
+                                    .frame(width: max(2, geometry.size.width * min(1, row.value / 100)))
+                            }
+                        }
+                        .frame(height: 6)
+                        Text("\(Int(row.value.rounded()))")
+                            .font(.caption2).monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, alignment: .trailing)
+                    }
+                }
+                if report.isLowConfidence == true {
+                    Text("Low confidence — short stint")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private struct ComponentRow { let name: String; let value: Double; let tint: Color }
+
+    private var componentRows: [ComponentRow] {
+        guard let components = report.components else { return [] }
+        var rows: [ComponentRow] = []
+        if let value = components.distanceRate { rows.append(ComponentRow(name: "Distance", value: value, tint: Theme.pace)) }
+        if let value = components.highIntensity { rows.append(ComponentRow(name: "Intensity", value: value, tint: Theme.turf)) }
+        if let value = components.sprints { rows.append(ComponentRow(name: "Sprints", value: value, tint: Theme.sprint)) }
+        if let value = components.heartRate { rows.append(ComponentRow(name: "Heart Rate", value: value, tint: Theme.heart)) }
+        return rows
+    }
+
+    /// Which signals fed the workrate score, as a quiet caption under the training-load context.
+    @ViewBuilder
+    private var effortSourceCaption: some View {
+        if let text = effortSourceText {
+            Label(text, systemImage: "waveform.path.ecg")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var effortSourceText: String? {
+        switch report.effortSource {
+        case "gps+hr": return "Effort from GPS + heart rate"
+        case "gps": return "Effort from GPS"
+        case "hr": return "Effort from heart rate"
+        default: return nil
+        }
+    }
+
     // MARK: Fatigue buckets
 
     /// Workrate output per 15-minute block, surfacing second-half drop-off. Uses the
@@ -67,8 +134,8 @@ struct WorkrateSection: View {
     private var fatigueBuckets: some View {
         let buckets = fifteenMinuteBuckets
         if buckets.count >= 2 {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Output by 15-Minute Block").font(.headline)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Output by 15-Minute Block").sectionHeading()
                 Chart(Array(buckets.enumerated()), id: \.offset) { index, metersPerMinute in
                     BarMark(
                         x: .value("Block", blockLabel(index)),
@@ -86,7 +153,8 @@ struct WorkrateSection: View {
                     }
                 }
                 .chartYAxisLabel("m/min")
-                .frame(height: 140)
+                .frame(height: 150)
+                .fullBleed()
                 Text("Change vs first block — a steady drop suggests fatigue.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -132,8 +200,8 @@ struct WorkrateSection: View {
     // MARK: Distance per minute
 
     private var distancePerMinuteChart: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Distance per Minute").font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Distance per Minute").sectionHeading()
             Chart(Array(report.distancePerMinute.enumerated()), id: \.offset) { index, meters in
                 BarMark(
                     x: .value("Minute", index),
@@ -144,7 +212,8 @@ struct WorkrateSection: View {
             }
             .chartXAxisLabel("Minute on pitch")
             .chartYAxisLabel("m")
-            .frame(height: 160)
+            .frame(height: 170)
+            .fullBleed()
             .overlay {
                 if report.distancePerMinute.isEmpty {
                     Text("No per-minute data").font(.footnote).foregroundStyle(.secondary)
@@ -166,8 +235,8 @@ struct WorkrateSection: View {
 
     private var speedZoneDonut: some View {
         let zones = speedZoneData
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("Speed Zones").font(.headline)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Speed Zones").sectionHeading()
             HStack(alignment: .center, spacing: 16) {
                 Chart(zones, id: \.name) { zone in
                     SectorMark(
@@ -211,8 +280,8 @@ struct WorkrateSection: View {
     // MARK: Heart rate line
 
     private var heartRateChart: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Heart Rate").font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Heart Rate").sectionHeading()
             Chart(Array(detail.heartRateSeries.enumerated()), id: \.offset) { _, sample in
                 AreaMark(
                     x: .value("Time", sample.date),
@@ -229,7 +298,16 @@ struct WorkrateSection: View {
                 .interpolationMethod(.catmullRom)
             }
             .chartYAxisLabel("bpm")
-            .frame(height: 140)
+            .frame(height: 150)
+            .fullBleed()
         }
+    }
+}
+
+private extension Text {
+    /// Larger rounded-bold module heading used across the workrate charts — the "expansive"
+    /// heading weight the full-bleed hero charts sit under.
+    func sectionHeading() -> Text {
+        font(.system(.title3, design: .rounded).weight(.bold))
     }
 }

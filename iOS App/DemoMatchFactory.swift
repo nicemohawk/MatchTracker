@@ -105,6 +105,24 @@ final class DemoMatchFactory {
         }
     }
 
+    /// Generate one ~60-minute INDOOR session `daysAgo` back, returning the HKWorkout UUID. Indoor
+    /// play synthesizes heart-rate + energy only — no GPS route, no field — so the app's HR-only
+    /// workrate path and the reduced indoor detail UI are testable without a watch.
+    @discardableResult
+    func generateIndoorSession(daysAgo: Int) async throws -> UUID {
+        var rng = SplitMix64(seed: seed(forDaysAgo: daysAgo) ^ 0x1D00_1D00_1D00_1D00)
+        let start = sessionStart(daysAgo: daysAgo)
+        let session = synthesizeIndoorSession(start: start, rng: &rng)
+
+        let workout = try await saveWorkout(session: session, indoor: true)
+        let record = makeIndoorRecord(workoutID: workout.uuid, session: session)
+        try writeRecord(record)
+
+        MatchLog.info("Generated indoor session \(workout.uuid.uuidString.prefix(8)) (\(session.heartRate.count) HR samples)",
+                      category: "demo")
+        return workout.uuid
+    }
+
     // MARK: - Generation core
 
     private func seed(forDaysAgo daysAgo: Int) -> UInt64 {
@@ -355,6 +373,65 @@ final class DemoMatchFactory {
         )
     }
 
+    /// Synthesize a ~60-minute indoor session as heart rate + energy only (no locations). Interval
+    /// structure: a 5-min warm-up ramp, then repeating 6-min blocks of 4-min work / 2-min recovery,
+    /// with heart rate lagging the target and energy tracking intensity. Deterministic in `rng`.
+    private func synthesizeIndoorSession(start: Date, rng: inout SplitMix64) -> Session {
+        let totalSeconds = 3600
+        let warmupSeconds = 300
+        let blockSeconds = 360      // 6-min block
+        let workSeconds = 240       // 4-min work within each block
+
+        var heartRate = 115.0
+        var heartRateSeries: [(date: Date, bpm: Double)] = []
+        var perSecondEnergyRaw: [Double] = []
+        perSecondEnergyRaw.reserveCapacity(totalSeconds)
+
+        for t in 0..<totalSeconds {
+            let hrTarget: Double
+            if t < warmupSeconds {
+                hrTarget = 110 + Double(t) / Double(warmupSeconds) * 45     // ramp 110 → 155
+            } else {
+                let working = (t - warmupSeconds) % blockSeconds < workSeconds
+                hrTarget = (working ? 174.0 : 133.0) + nextGaussian(&rng) * 4
+            }
+            heartRate += (hrTarget - heartRate) * 0.04
+            heartRate = clamp(heartRate, 95, 195)
+
+            let timestamp = start.addingTimeInterval(TimeInterval(t))
+            if t % 10 == 0 { heartRateSeries.append((timestamp, heartRate.rounded())) }
+            // Energy tracks %heart-rate-reserve intensity (rest 60, reserve 130).
+            let intensity = max(0, (heartRate - 60) / 130)
+            perSecondEnergyRaw.append(0.05 + intensity * 0.30)
+        }
+
+        // Aggregate per-minute energy (scaled to ~650 kcal). Distance stays zero (no route) but is
+        // sized to match so `quantitySamples` can index both arrays; zero-meter minutes emit nothing.
+        let minutes = (totalSeconds + 59) / 60
+        var energyPerMinute = [Double](repeating: 0, count: minutes)
+        for t in 0..<totalSeconds { energyPerMinute[t / 60] += perSecondEnergyRaw[t] }
+        let rawTotal = energyPerMinute.reduce(0, +)
+        let energyScale = rawTotal > 0 ? 650.0 / rawTotal : 0
+        energyPerMinute = energyPerMinute.map { $0 * energyScale }
+        let distancePerMinute = [Double](repeating: 0, count: minutes)
+
+        // On-pitch play window: whole session minus a short warm-up/cool-down margin.
+        let playWindows = [DateInterval(start: start.addingTimeInterval(TimeInterval(warmupSeconds)),
+                                        end: start.addingTimeInterval(TimeInterval(totalSeconds - 30)))]
+
+        return Session(
+            start: start,
+            end: start.addingTimeInterval(TimeInterval(totalSeconds)),
+            locations: [],
+            heartRate: heartRateSeries,
+            energyPerMinute: energyPerMinute,
+            distancePerMinute: distancePerMinute,
+            totalDistanceMeters: 0,
+            sprintIntervals: [],
+            playWindows: playWindows
+        )
+    }
+
     /// Non-overlapping sprint start windows within `range`, each 5–7 s long, avoiding `avoid` bands.
     private func scheduleSprints(count: Int, range: ClosedRange<Int>,
                                  avoid: [ClosedRange<Int>], rng: inout SplitMix64) -> [ClosedRange<Int>] {
@@ -387,12 +464,12 @@ final class DemoMatchFactory {
 
     // MARK: - HealthKit save
 
-    private func saveWorkout(session: Session) async throws -> HKWorkout {
+    private func saveWorkout(session: Session, indoor: Bool = false) async throws -> HKWorkout {
         try await requestWriteAuthorization()
 
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .soccer
-        configuration.locationType = .outdoor
+        configuration.locationType = indoor ? .indoor : .outdoor
 
         let builder = HKWorkoutBuilder(healthStore: healthKit.healthStore,
                                        configuration: configuration, device: .local())
@@ -404,7 +481,9 @@ final class DemoMatchFactory {
             throw DemoError.workoutFinishFailed
         }
 
-        // Attach the GPS route (chunked so a large fix count stays under insert limits).
+        // Attach the GPS route (chunked so a large fix count stays under insert limits). Indoor
+        // sessions have no fixes, so there's no route to build.
+        guard !session.locations.isEmpty else { return workout }
         let routeBuilder = HKWorkoutRouteBuilder(healthStore: healthKit.healthStore, device: .local())
         for chunk in stride(from: 0, to: session.locations.count, by: 250) {
             let slice = Array(session.locations[chunk..<min(chunk + 250, session.locations.count)])
@@ -521,7 +600,27 @@ final class DemoMatchFactory {
             fieldID: Self.demoFieldID,
             events: events,
             teamCode: teamCode,
-            sportID: "soccer"
+            sportID: "soccer",
+            format: .match          // full-size pitch
+        )
+    }
+
+    /// Build the indoor record: matchStart/End only, `format: .indoor`, and no field — the app scores
+    /// it from heart rate and renders the reduced indoor detail UI.
+    private func makeIndoorRecord(workoutID: UUID, session: Session) -> MatchRecord {
+        let events: [MatchEvent] = [
+            MatchEvent(kind: .matchStart, date: session.start, source: .manual),
+            MatchEvent(kind: .matchEnd, date: session.end, source: .manual)
+        ]
+        return MatchRecord(
+            id: workoutID,
+            startDate: session.start,
+            endDate: session.end,
+            fieldID: nil,
+            events: events,
+            teamCode: teamCode,
+            sportID: "soccer",
+            format: .indoor
         )
     }
 

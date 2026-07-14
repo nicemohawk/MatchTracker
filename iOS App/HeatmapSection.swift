@@ -11,6 +11,16 @@ struct HeatmapSection: View {
     @EnvironmentObject private var store: MatchStore
     @State private var showSatellite = false
     @State private var compareWithSeason = false
+    @State private var comparisonMode: ComparisonMode = .compare
+    @State private var isHoldingCompare = false
+    @AppStorage("heatmapCompareHintDismissed") private var compareHintDismissed = false
+
+    /// The two ways to read a match against its season average.
+    private enum ComparisonMode: String, CaseIterable, Identifiable {
+        case compare = "Compare"
+        case difference = "Difference"
+        var id: String { rawValue }
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -27,25 +37,141 @@ struct HeatmapSection: View {
 
             if showSatellite {
                 SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap)
-                    .frame(height: 320)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                PitchHeatmapCanvas(heatmap: analytics.heatmap,
-                                   comparison: compareWithSeason ? seasonAverage : nil)
-                    .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-                    .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
-            }
-
-            if compareWithSeason && !showSatellite {
-                if seasonAverage == nil {
+                    .frame(height: 360)
+                    .fullBleed()
+                HeatmapLegend()
+            } else if compareWithSeason {
+                if let seasonAverage {
+                    comparisonContent(seasonAverage: seasonAverage)
+                } else {
+                    singleMatchPitch
                     Text("Play more matches to compare — no other analyzed matches yet.")
                         .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    comparisonLegend
+                    HeatmapLegend()
                 }
+            } else {
+                singleMatchPitch
+                HeatmapLegend()
             }
+        }
+        .onChange(of: showSatellite) { _, _ in isHoldingCompare = false }
+        .onChange(of: comparisonMode) { _, _ in
+            isHoldingCompare = false
+            Haptics.selection()
+        }
+    }
 
+    private var singleMatchPitch: some View {
+        PitchHeatmapCanvas(render: .heat(analytics.heatmap))
+            .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
+            .background(Theme.pitchTurfBottom)
+            .fullBleed()
+    }
+
+    // MARK: - Comparison UX
+
+    @ViewBuilder
+    private func comparisonContent(seasonAverage: HeatmapGrid) -> some View {
+        modeControl
+
+        switch comparisonMode {
+        case .compare:
+            comparePitch(seasonAverage: seasonAverage)
+            if !compareHintDismissed {
+                Label("Hold the pitch to compare", systemImage: "hand.tap.fill")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .transition(.opacity)
+            }
             HeatmapLegend()
+        case .difference:
+            if let diff = analytics.heatmap.difference(from: seasonAverage) {
+                PitchHeatmapCanvas(render: .difference(diff))
+                    .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
+                    .background(Theme.pitchTurfBottom)
+                    .fullBleed()
+            }
+            DivergingHeatmapLegend()
+        }
+    }
+
+    /// Two theme chips selecting how the comparison reads.
+    private var modeControl: some View {
+        HStack(spacing: 8) {
+            ForEach(ComparisonMode.allCases) { mode in
+                modeChip(mode)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func modeChip(_ mode: ComparisonMode) -> some View {
+        let isSelected = comparisonMode == mode
+        return Button {
+            guard comparisonMode != mode else { return }
+            withAnimation(.easeInOut(duration: 0.2)) { comparisonMode = mode }
+        } label: {
+            Text(mode.rawValue)
+                .font(.system(.footnote, design: .rounded).weight(.semibold))
+                .foregroundStyle(isSelected ? Color.black : Color.primary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 34)
+                .background(Capsule().fill(isSelected ? Theme.sprint : Theme.surfaceElevated))
+                .overlay(Capsule().strokeBorder(isSelected ? .clear : Theme.surfaceStroke, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Before/after style: the pitch shows THIS MATCH; press-and-hold crossfades to the SEASON
+    /// AVERAGE while held. Both renders use the identical warm ramp so the eye can diff them.
+    private func comparePitch(seasonAverage: HeatmapGrid) -> some View {
+        ZStack {
+            PitchHeatmapCanvas(render: .heat(analytics.heatmap))
+            PitchHeatmapCanvas(render: .heat(seasonAverage))
+                .opacity(isHoldingCompare ? 1 : 0)
+
+            captionCapsule
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(10)
+        }
+        .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
+        .background(Theme.pitchTurfBottom)
+        .fullBleed()
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in setHolding(true) }
+                .onEnded { _ in setHolding(false) }
+        )
+        .accessibilityElement()
+        .accessibilityLabel("Heatmap comparison")
+        .accessibilityValue(isHoldingCompare ? "Showing season average" : "Showing this match")
+        .accessibilityHint("Touch and hold to show the season average")
+    }
+
+    /// Flipping label on the pitch — tinted differently for each state.
+    private var captionCapsule: some View {
+        let label = isHoldingCompare ? "SEASON AVERAGE" : "THIS MATCH"
+        let tint = isHoldingCompare ? Theme.signal : Theme.sprint
+        return Text(label)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .textCase(.uppercase)
+            .tracking(1.2)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(tint.opacity(0.5), lineWidth: 1))
+            .id(isHoldingCompare)
+            .transition(.opacity)
+    }
+
+    private func setHolding(_ holding: Bool) {
+        guard holding != isHoldingCompare else { return }
+        Haptics.selection()
+        withAnimation(.easeInOut(duration: 0.15)) { isHoldingCompare = holding }
+        if holding && !compareHintDismissed {
+            withAnimation(.easeInOut(duration: 0.2)) { compareHintDismissed = true }
         }
     }
 
@@ -65,70 +191,71 @@ struct HeatmapSection: View {
         }
         return averaged
     }
-
-    private var comparisonLegend: some View {
-        HStack(spacing: 14) {
-            Label("This match", systemImage: "square.fill")
-                .foregroundStyle(Theme.sprint)
-            Label("Season average", systemImage: "square.fill")
-                .foregroundStyle(Theme.signal)
-        }
-        .font(.caption2)
-    }
 }
 
-/// Green pitch + alpha/color-ramped heatmap cells + white markings, aspect-correct.
-/// An optional `comparison` grid (e.g. season average) renders beneath in cool blue.
+/// How a `PitchHeatmapCanvas` paints its cells: a single warm heatmap, or a diverging
+/// difference render. The turf and markings are identical either way.
+enum PitchHeatmapRender {
+    case heat(HeatmapGrid)
+    case difference(HeatmapDifference)
+}
+
+/// Green pitch + ramped heatmap cells + white markings, aspect-correct. Parameterized by a
+/// `PitchHeatmapRender` so the same canvas backs single-match, before/after, and diff views.
 struct PitchHeatmapCanvas: View {
-    let heatmap: HeatmapGrid
-    var comparison: HeatmapGrid?
+    let render: PitchHeatmapRender
 
     var body: some View {
         Canvas { context, size in
             let rect = SoccerPitch.fittedRect(in: size, padding: 6)
-
-            // Turf.
             SoccerPitch.fillTurf(&context, rect: rect)
 
-            // Comparison underlay (season average): cool cyan so the warm ramp reads on top.
-            if let comparison, comparison.columns > 0, comparison.rows > 0 {
-                let cellWidth = rect.width / CGFloat(comparison.columns)
-                let cellHeight = rect.height / CGFloat(comparison.rows)
-                for row in 0..<comparison.rows {
-                    for column in 0..<comparison.columns {
-                        let value = comparison[column, row]
-                        guard value > 0.05 else { continue }
-                        let cellRect = CGRect(
-                            x: rect.minX + CGFloat(column) * cellWidth,
-                            y: rect.minY + CGFloat(row) * cellHeight,
-                            width: cellWidth + 0.5, height: cellHeight + 0.5
-                        )
-                        context.fill(Path(cellRect),
-                                     with: .color(Theme.signal.opacity(0.15 + 0.5 * min(1, value))))
-                    }
-                }
-            }
-
-            // Heatmap cells.
-            if heatmap.columns > 0 && heatmap.rows > 0 {
-                let cellWidth = rect.width / CGFloat(heatmap.columns)
-                let cellHeight = rect.height / CGFloat(heatmap.rows)
-                for row in 0..<heatmap.rows {
-                    for column in 0..<heatmap.columns {
-                        let value = heatmap[column, row]
-                        guard value > 0.01 else { continue }
-                        let cellRect = CGRect(
-                            x: rect.minX + CGFloat(column) * cellWidth,
-                            y: rect.minY + CGFloat(row) * cellHeight,
-                            width: cellWidth + 0.5, height: cellHeight + 0.5
-                        )
-                        context.fill(Path(cellRect), with: .color(HeatColor.color(for: value)))
-                    }
-                }
+            switch render {
+            case .heat(let heatmap):
+                Self.drawHeat(heatmap, into: &context, rect: rect)
+            case .difference(let difference):
+                Self.drawDifference(difference, into: &context, rect: rect)
             }
 
             var markingsContext = context
             SoccerPitch.draw(in: &markingsContext, rect: rect)
+        }
+    }
+
+    private static func drawHeat(_ heatmap: HeatmapGrid, into context: inout GraphicsContext, rect: CGRect) {
+        guard heatmap.columns > 0, heatmap.rows > 0 else { return }
+        let cellWidth = rect.width / CGFloat(heatmap.columns)
+        let cellHeight = rect.height / CGFloat(heatmap.rows)
+        for row in 0..<heatmap.rows {
+            for column in 0..<heatmap.columns {
+                let value = heatmap[column, row]
+                guard value > 0.01 else { continue }
+                let cellRect = CGRect(
+                    x: rect.minX + CGFloat(column) * cellWidth,
+                    y: rect.minY + CGFloat(row) * cellHeight,
+                    width: cellWidth + 0.5, height: cellHeight + 0.5
+                )
+                context.fill(Path(cellRect), with: .color(HeatColor.color(for: value)))
+            }
+        }
+    }
+
+    private static func drawDifference(_ difference: HeatmapDifference, into context: inout GraphicsContext, rect: CGRect) {
+        guard difference.columns > 0, difference.rows > 0 else { return }
+        let cellWidth = rect.width / CGFloat(difference.columns)
+        let cellHeight = rect.height / CGFloat(difference.rows)
+        for row in 0..<difference.rows {
+            for column in 0..<difference.columns {
+                let value = difference[column, row]
+                guard abs(value) >= DiffColor.deadband else { continue }
+                let color = DiffColor.color(for: value, maximumMagnitude: difference.maximumMagnitude)
+                let cellRect = CGRect(
+                    x: rect.minX + CGFloat(column) * cellWidth,
+                    y: rect.minY + CGFloat(row) * cellHeight,
+                    width: cellWidth + 0.5, height: cellHeight + 0.5
+                )
+                context.fill(Path(cellRect), with: .color(color))
+            }
         }
     }
 }
@@ -210,24 +337,66 @@ struct HeatmapLegend: View {
     }
 }
 
-/// Deep transparent → lime → hot coral ramp for heatmap intensity, tuned for dark turf with a
-/// slight glow (higher alpha at the hot end). Matches the Theme accent set (goal → sprint → heart).
+/// Diverging legend for Difference mode: cool (less than usual) → clear → warm (more than usual).
+/// The words carry the meaning so color is never the sole encoding.
+struct DivergingHeatmapLegend: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            LinearGradient(
+                colors: [Theme.pace, Theme.signal, .clear, Theme.sprint, Theme.heart],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(height: 8)
+            .clipShape(Capsule())
+            HStack {
+                Text("Less than usual").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text("More than usual").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Deep transparent → emerald → amber → hot rose ramp for heatmap intensity, tuned for dark turf
+/// (higher alpha at the hot end). Anchored to the Theme accent set (turf → sprint → heart), with a
+/// hot core of #FF375F.
 enum HeatColor {
     static func color(for value: Double) -> Color {
         let clamped = min(1, max(0, value))
         let alpha = 0.18 + 0.78 * clamped
         if clamped < 0.5 {
             let t = clamped / 0.5
-            // goal (lime) → sprint (magenta-orange)
-            return Color(red: 0.78 + 0.22 * t,
-                         green: 1.0 - 0.52 * t,
-                         blue: 0.30 - 0.06 * t).opacity(alpha)
+            // turf (emerald #30D158) → sprint (amber-orange #FF9F0A)
+            return Color(red: 0.188 + 0.812 * t,
+                         green: 0.820 - 0.196 * t,
+                         blue: 0.345 - 0.306 * t).opacity(alpha)
         } else {
             let t = (clamped - 0.5) / 0.5
-            // sprint → heart (coral)
+            // sprint (#FF9F0A) → heart (rose #FF375F)
             return Color(red: 1.0,
-                         green: 0.48 - 0.12 * t,
-                         blue: 0.24 + 0.24 * t).opacity(alpha)
+                         green: 0.624 - 0.408 * t,
+                         blue: 0.039 + 0.334 * t).opacity(alpha)
+        }
+    }
+}
+
+/// Diverging ramp for the Difference render. Positive (more time here than usual) reads warm
+/// (sprint → heart), negative (less than usual) reads cool (signal → pace). Cells within the
+/// dead-band are fully transparent; opacity scales with |value| / maximumMagnitude. Theme colors
+/// are trait-adaptive so both schemes stay legible.
+enum DiffColor {
+    /// |value| below this is treated as "same as usual" and not drawn.
+    static let deadband = 0.04
+
+    static func color(for value: Double, maximumMagnitude: Double) -> Color {
+        let magnitude = abs(value)
+        guard magnitude >= deadband else { return .clear }
+        let intensity = min(1, magnitude / max(maximumMagnitude, HeatmapDifference.magnitudeEpsilon))
+        let alpha = 0.15 + 0.75 * intensity
+        if value > 0 {
+            return (intensity < 0.6 ? Theme.sprint : Theme.heart).opacity(alpha)
+        } else {
+            return (intensity < 0.6 ? Theme.signal : Theme.pace).opacity(alpha)
         }
     }
 }

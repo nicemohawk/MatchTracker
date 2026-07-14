@@ -3,8 +3,14 @@
 
 import SwiftUI
 import MapKit
+import CoreLocation
 import MatchTrackerKit
 
+/// The Fields tab, modeled on AllTrails' award-winning map UI: a full-bleed hybrid map is the
+/// hero, a single floating right-edge control column handles zoom + style, and every piece of
+/// content and action lives in a persistent snapping bottom drawer (`FieldsDrawer`). All of the
+/// original functionality — color-coded polygons, tap-to-detail, Add Field, Scan for Fields,
+/// nearby seeding, and satellite proposals — is preserved and reachable from the drawer.
 struct FieldsView: View {
     @EnvironmentObject private var fields: FieldsModel
     @EnvironmentObject private var settings: SettingsStore
@@ -17,6 +23,10 @@ struct FieldsView: View {
     @State private var pendingProposal: IdentifiedRectangle?
     @State private var showingAddField = false
     @State private var isScanning = false
+    @State private var useHybridStyle = true
+    /// Owned locally so the built-in `MapUserLocationButton` has an authorization to work with;
+    /// mirrors the seeder's when-in-use pattern without reaching into it.
+    @State private var locationManager = CLLocationManager()
 
     /// Auto seed passes are throttled to avoid re-tiling on every tab switch (the scanned-region
     /// log already skips tiles scanned within 30 days).
@@ -28,34 +38,27 @@ struct FieldsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                map
-                controls
-            }
-            .navigationTitle("Fields")
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: selectedFieldBinding) { field in
-                FieldDetailSheet(field: field)
-            }
-            .sheet(item: $pendingProposal) { proposal in
-                AcceptProposalSheet(rectangle: proposal.rectangle)
-            }
-            .fullScreenCover(isPresented: $showingAddField) {
-                AddFieldView()
-            }
-            .onAppear {
-                frameFields()
-                autoSeedIfNeeded()
-            }
+            map
+                .navigationTitle("Fields")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .sheet(isPresented: .constant(true)) { drawer }
+                .onAppear {
+                    frameFields()
+                    requestLocationIfNeeded()
+                    autoSeedIfNeeded()
+                }
         }
     }
+
+    // MARK: - Map
 
     private var map: some View {
         Map(position: $cameraPosition, selection: $selectedFieldID) {
             ForEach(fields.fields) { field in
                 MapPolygon(coordinates: field.rectangle.coordinateRing)
                     .foregroundStyle(field.source.color.opacity(0.25))
-                    .stroke(field.source.color, lineWidth: 2)
+                    .stroke(field.source.color, style: strokeStyle(for: field))
                 Marker(field.name, coordinate: field.rectangle.center.clCoordinate)
                     .tint(field.source.color)
                     .tag(field.id)
@@ -66,84 +69,113 @@ struct FieldsView: View {
                     .stroke(FieldSource.satellite.color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
             }
         }
-        .mapStyle(.hybrid(elevation: .flat))
+        .mapStyle(useHybridStyle ? .hybrid(elevation: .flat) : .standard(elevation: .flat))
+        .mapControls {
+            MapUserLocationButton()
+            MapCompass()
+            MapScaleView()
+        }
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
         }
-        .ignoresSafeArea(edges: .bottom)
+        .overlay(alignment: .trailing) { controlColumn }
+        .ignoresSafeArea(edges: [.top, .bottom])
     }
 
-    private var controls: some View {
-        VStack(spacing: 10) {
-            if !proposals.isEmpty {
-                proposalBanner
-            }
-            HStack {
-                Button {
-                    showingAddField = true
-                } label: {
-                    Label("Add Field", systemImage: "plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button {
-                    Task { await scan() }
-                } label: {
-                    Label(isScanning ? "Scanning…" : "Scan for Fields",
-                          systemImage: "sparkle.magnifyingglass")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isScanning)
-            }
-            .padding(.horizontal)
-
-            Button {
-                Task { await seeder.seedAroundCurrentLocation() }
-            } label: {
-                HStack(spacing: 6) {
-                    if seeder.isScanning {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Seeding nearby… \(seeder.scannedTiles)/\(seeder.totalTiles)")
-                    } else {
-                        Label("Seed Nearby Fields", systemImage: "dot.radiowaves.left.and.right")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(seeder.isScanning)
-            .padding(.horizontal)
-        }
-        .padding(.bottom, 8)
+    /// Low-confidence geometry (few observations) reads as a dashed outline; confirmed fields are
+    /// drawn solid. Matches the "low-confidence geometry" language in the detail sheet.
+    private func strokeStyle(for field: FieldModel) -> StrokeStyle {
+        field.observationCount < 3
+            ? StrokeStyle(lineWidth: 2, dash: [6, 4])
+            : StrokeStyle(lineWidth: 2)
     }
 
-    private var proposalBanner: some View {
-        VStack(spacing: 6) {
-            Text("\(proposals.count) possible field\(proposals.count == 1 ? "" : "s") detected")
-                .font(.system(.caption, design: .rounded).weight(.semibold))
-                .foregroundStyle(Theme.turf)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(Array(proposals.enumerated()), id: \.offset) { _, proposal in
-                        Button {
-                            pendingProposal = IdentifiedRectangle(rectangle: proposal)
-                        } label: {
-                            Text("Accept \(Int(proposal.lengthMeters))×\(Int(proposal.widthMeters)) m")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    Button("Dismiss") { scanProposals = [] }
-                        .font(.caption)
-                }
+    // MARK: - Right-edge control column
+
+    private var controlColumn: some View {
+        VStack(spacing: 12) {
+            mapControlButton("plus.magnifyingglass", label: "Zoom in") { zoom(by: 0.5) }
+            mapControlButton("minus.magnifyingglass", label: "Zoom out") { zoom(by: 2) }
+            mapControlButton(useHybridStyle ? "map" : "globe.americas.fill",
+                             label: useHybridStyle ? "Switch to standard map" : "Switch to satellite map") {
+                withAnimation(.easeInOut(duration: 0.2)) { useHybridStyle.toggle() }
+                Haptics.selection()
             }
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
+        .padding(.trailing, 14)
+        // Sit above the drawer's peek so the column never collides with it.
+        .padding(.bottom, 132)
+    }
+
+    private func mapControlButton(_ systemImage: String,
+                                  label: String,
+                                  action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 44, height: 44)
+        }
+        .modifier(MapControlGlass())
+        .accessibilityLabel(label)
+    }
+
+    // MARK: - Drawer
+
+    private var drawer: some View {
+        FieldsDrawer(
+            fields: fields.fields,
+            proposals: proposals,
+            isScanning: isScanning,
+            mapCenter: visibleRegion?.center,
+            selectedFieldID: $selectedFieldID,
+            pendingProposal: $pendingProposal,
+            showingAddField: $showingAddField,
+            onScan: { Task { await scan() } },
+            onSeed: { Task { await seeder.seedAroundCurrentLocation() } },
+            onSelectField: { field in focus(on: field) },
+            onDismissProposals: { scanProposals = [] }
+        )
+        .environmentObject(fields)
+        .environment(seeder)
+        .presentationDetents([.height(96), .medium])
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .presentationBackground(Theme.background)
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(true)
+    }
+
+    // MARK: - Camera
+
+    private func zoom(by factor: Double) {
+        let region = visibleRegion ?? regionFallback()
+        let minSpan = 0.0009
+        let maxSpan = 1.2
+        let latitudeDelta = min(max(region.span.latitudeDelta * factor, minSpan), maxSpan)
+        let longitudeDelta = min(max(region.span.longitudeDelta * factor, minSpan), maxSpan)
+        let zoomed = MKCoordinateRegion(
+            center: region.center,
+            span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)
+        )
+        withAnimation(.easeInOut(duration: 0.3)) {
+            cameraPosition = .region(zoomed)
+        }
+        visibleRegion = zoomed
+    }
+
+    private func focus(on field: FieldModel) {
+        let region = field.rectangle.mapRegion
+        withAnimation(.easeInOut(duration: 0.4)) {
+            cameraPosition = .region(region)
+        }
+        visibleRegion = region
+        selectedFieldID = field.id
+    }
+
+    private func regionFallback() -> MKCoordinateRegion {
+        if let first = fields.fields.first { return first.rectangle.mapRegion }
+        return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                                  span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
     }
 
     // MARK: - Actions
@@ -154,6 +186,14 @@ struct FieldsView: View {
         defer { isScanning = false }
         let detected = await SatelliteFieldDetector().detectFields(in: region)
         scanProposals = detected.prefix(4).map { $0 }
+    }
+
+    /// Request when-in-use access the first time the tab appears so the built-in user-location
+    /// button has something to work with (the plist usage strings already exist).
+    private func requestLocationIfNeeded() {
+        if locationManager.authorizationStatus == .notDetermined {
+            locationManager.requestWhenInUseAuthorization()
+        }
     }
 
     /// Kick off an automatic seed pass when the tab appears, gated on the opt-in toggle and existing
@@ -170,12 +210,19 @@ struct FieldsView: View {
         guard let first = fields.fields.first, visibleRegion == nil else { return }
         cameraPosition = .region(first.rectangle.mapRegion)
     }
+}
 
-    private var selectedFieldBinding: Binding<FieldModel?> {
-        Binding(
-            get: { selectedFieldID.flatMap { id in fields.fields.first(where: { $0.id == id }) } },
-            set: { newValue in selectedFieldID = newValue?.id }
-        )
+/// Liquid Glass circle on iOS 26; material fallback earlier. Replicated locally so the map
+/// control column matches the settings gear without depending on that file's private modifier.
+private struct MapControlGlass: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
+        }
     }
 }
 

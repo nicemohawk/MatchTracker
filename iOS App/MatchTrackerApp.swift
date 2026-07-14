@@ -25,6 +25,7 @@ struct MatchTrackerApp: App {
                 .environment(environment.entitlements)
                 .environment(environment.trainingLoad)
                 .environment(environment.seeder)
+                .environment(environment.backlogImporter)
                 .task { await environment.bootstrap() }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
@@ -71,6 +72,7 @@ final class AppEnvironment: ObservableObject {
     let entitlements = EntitlementStore()
     let trainingLoad = TrainingLoadService()
     let seeder: NearbyFieldSeeder
+    let backlogImporter: BacklogImporter
 
     init() {
         let fields = FieldsModel()
@@ -83,6 +85,7 @@ final class AppEnvironment: ObservableObject {
         self.uploads = uploads
         self.connectivity = connectivity
         self.seeder = NearbyFieldSeeder(fields: fields, uploads: uploads, settings: settings)
+        self.backlogImporter = BacklogImporter(matches: matches, fields: fields)
 
         fields.onFieldsChanged = { [weak connectivity, weak uploads] in
             connectivity?.pushContext()
@@ -128,15 +131,76 @@ final class AppEnvironment: ObservableObject {
 }
 
 struct RootTabView: View {
+    @Environment(LiveMatchStore.self) private var liveMatches
+    @State private var selectedTab = "matches"
+
     var body: some View {
-        TabView {
-            MatchesView()
-                .tabItem { Label("Matches", systemImage: "figure.soccer") }
-            FieldsView()
-                .tabItem { Label("Fields", systemImage: "map") }
-            TeamView()
-                .tabItem { Label("Team", systemImage: "person.3") }
+        // On iOS 26 the tab bar minimizes on scroll, the live match rides in a Liquid Glass
+        // bottom accessory (Apple Music's now-playing pattern), and Settings is the system's
+        // detached circle beside the bar via `role: .search` — visually part of the tab bar,
+        // but its own button. Pre-26 falls back to a plain fourth tab.
+        if #available(iOS 26.0, *) {
+            modernTabView
+                .tabBarMinimizeBehavior(.onScrollDown)
+                .modifier(LiveAccessoryPresenter(isLive: liveMatches.isLive))
+        } else {
+            legacyTabView
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private var modernTabView: some View {
+        TabView(selection: $selectedTab) {
+            Tab("Matches", systemImage: "figure.soccer", value: "matches") {
+                MatchesView()
+            }
+            Tab("Fields", systemImage: "map", value: "fields") {
+                FieldsView()
+            }
+            Tab("Team", systemImage: "person.3", value: "team") {
+                TeamView()
+            }
+            // The search role renders as the separated glass circle at the bar's trailing edge.
+            Tab("Settings", systemImage: "gearshape", value: "settings", role: .search) {
+                SettingsView()
+            }
         }
         .tint(Theme.turf)
+    }
+
+    private var legacyTabView: some View {
+        TabView(selection: $selectedTab) {
+            MatchesView()
+                .tabItem { Label("Matches", systemImage: "figure.soccer") }
+                .tag("matches")
+            FieldsView()
+                .tabItem { Label("Fields", systemImage: "map") }
+                .tag("fields")
+            TeamView()
+                .tabItem { Label("Team", systemImage: "person.3") }
+                .tag("team")
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag("settings")
+        }
+        .tint(Theme.turf)
+    }
+}
+
+/// Mounts the `tabViewBottomAccessory` (the live "now playing") ONLY while a match is live.
+/// Applying the modifier conditionally — rather than returning empty content inside its builder —
+/// guarantees no empty Liquid Glass pill is ever reserved above the tab bar when idle.
+@available(iOS 26.0, *)
+private struct LiveAccessoryPresenter: ViewModifier {
+    let isLive: Bool
+
+    func body(content: Content) -> some View {
+        if isLive {
+            content.tabViewBottomAccessory {
+                LiveMatchAccessory()
+            }
+        } else {
+            content
+        }
     }
 }

@@ -7,7 +7,9 @@ struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var uploads: UploadService
+    @Environment(BacklogImporter.self) private var backlogImporter
     @Environment(\.dismiss) private var dismiss
+    @State private var showingImport = false
 
     @State private var playerName = ""
     @State private var teamCode = ""
@@ -95,6 +97,24 @@ struct SettingsView: View {
                     if let healthKitMessage {
                         Text(healthKitMessage).font(.caption).foregroundStyle(.secondary)
                     }
+
+                    Button {
+                        showingImport = true
+                    } label: {
+                        HStack {
+                            Label {
+                                Text("Import match history")
+                            } icon: {
+                                Image(systemName: "clock.arrow.circlepath").foregroundStyle(Theme.turf)
+                            }
+                            Spacer()
+                            if backlogImporter.pendingCount > 0 {
+                                Text("\(backlogImporter.pendingCount)")
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
 
                 Section("About") {
@@ -109,10 +129,13 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Settings")
+            .onDisappear { commit() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { commit(); dismiss() }
+                    // As a tab (the bar's detached settings circle), edits commit when the
+                    // user leaves; the button remains for explicit saves.
+                    Button("Save") { commit() }
                 }
             }
             .onAppear {
@@ -121,6 +144,8 @@ struct SettingsView: View {
                 serverOverride = settings.serverURLOverride
                 contributeDetectedFields = settings.contributeDetectedFields
             }
+            .task { await backlogImporter.scanIfNeeded() }
+            .sheet(isPresented: $showingImport) { BacklogImportView() }
         }
     }
 
@@ -219,6 +244,13 @@ struct SettingsView: View {
                 }
             } label: {
                 Label("Generate Sample Season (5)", systemImage: "calendar.badge.plus")
+            }
+            .disabled(isGeneratingDemo)
+
+            Button {
+                runDemo { try await makeDemoFactory().generateIndoorSession(daysAgo: 3) }
+            } label: {
+                Label("Add Indoor Session", systemImage: "house")
             }
             .disabled(isGeneratingDemo)
 

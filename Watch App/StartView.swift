@@ -14,11 +14,17 @@ struct StartView: View {
     @Environment(ConnectivityManager.self) private var connectivity
     @State private var fieldDetector = StartFieldDetector()
 
+    /// The quick-pick match format. Seeded from the last-used choice and auto-suggested to
+    /// Pickup on small fields, but an explicit tap always wins and persists.
+    @State private var selectedFormat = WatchSettings.matchFormat
+    @State private var userDidChooseFormat = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
                     Button {
+                        workoutManager.matchFormat = selectedFormat
                         workoutManager.detectedField = fieldDetector.matchedField
                         workoutManager.phase = .countdown
                     } label: {
@@ -27,6 +33,8 @@ struct StartView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .tint(.green)
+
+                    formatPicker
 
                     fieldStatusLine
 
@@ -64,6 +72,41 @@ struct StartView: View {
         .task(id: connectivity.fieldsRevision) {
             fieldDetector.detect()
         }
+        .onChange(of: fieldDetector.matchedField) { _, field in
+            // Auto-suggest Pickup for small fields, once per detection — unless the user has
+            // already made an explicit choice, which always wins.
+            guard !userDidChooseFormat, let field else { return }
+            if field.rectangle.lengthMeters < 75 {
+                selectedFormat = .smallSided
+            }
+        }
+    }
+
+    /// Compact Match / Pickup / Indoor selector under the Start button.
+    private var formatPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(MatchFormat.allCases, id: \.self) { format in
+                formatChip(format)
+            }
+        }
+    }
+
+    private func formatChip(_ format: MatchFormat) -> some View {
+        let isSelected = selectedFormat == format
+        return Button {
+            selectedFormat = format
+            userDidChooseFormat = true
+            WatchSettings.matchFormat = format
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: format.symbolName)
+                Text(format.shortTitle)
+                    .font(.system(size: 11))
+            }
+            .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.bordered)
+        .tint(isSelected ? .green : .gray)
     }
 
     private var fieldStatusLine: some View {
@@ -123,6 +166,25 @@ final class StartFieldDetector: NSObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
             manager.requestLocation()
+        }
+    }
+}
+
+/// Start-screen presentation for the match-format quick pick.
+private extension MatchFormat {
+    var shortTitle: String {
+        switch self {
+        case .match: return "Match"
+        case .smallSided: return "Pickup"
+        case .indoor: return "Indoor"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .match: return "sportscourt"
+        case .smallSided: return "figure.cooldown"
+        case .indoor: return "house"
         }
     }
 }

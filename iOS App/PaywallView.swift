@@ -23,6 +23,7 @@ struct PaywallView: View {
                         featureRow("bubble.left.and.bubble.right", "Match comment threads", Theme.pace)
                         featureRow("square.grid.3x3.middle.filled", "Formation detection", Theme.sprint)
                         featureRow("person.2.badge.plus", "Multiple teams per player", Theme.goal)
+                        featureRow("clock.arrow.circlepath", "Import your full match history", Theme.signal)
                     }
 
                     purchaseControls
@@ -57,7 +58,6 @@ struct PaywallView: View {
             Image(systemName: "person.3.fill")
                 .font(.system(size: 40))
                 .foregroundStyle(.black)
-                .glow(Theme.turf, radius: 10)
             Text("Team Features")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(.black)
@@ -85,7 +85,6 @@ struct PaywallView: View {
                     .padding(.vertical, 15)
                     .background(Theme.turfFlow, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .opacity(entitlements.purchaseInFlight ? 0.4 : 1)
-                    .glow(Theme.turf, radius: entitlements.purchaseInFlight ? 0 : 8)
             }
             .buttonStyle(.plain)
             .disabled(entitlements.purchaseInFlight)
@@ -108,7 +107,6 @@ struct PaywallView: View {
             Image(systemName: symbol)
                 .font(.title3)
                 .foregroundStyle(tint)
-                .glow(tint, radius: 5)
                 .frame(width: 30)
             Text(text).font(.body)
             Spacer(minLength: 0)

@@ -499,6 +499,51 @@ public struct TeamFormation: Codable, Sendable {               // backend-comput
 // APIClient gains: comments(match:) / postComment(_:) / formation(code:matchWindow:) /
 // liveTeam(code:) async endpoints per V2 prompt; all throw APIError on non-2xx.
 
+// MARK: Match formats (workrate that transcends match types — 2026-07)
+public enum MatchFormat: String, Codable, CaseIterable, Sendable {
+    case match       // formal full-size match (default; wire "match")
+    case smallSided  // pickup / small-sided outdoor ("small_sided")
+    case indoor      // indoor court/dome, GPS unreliable ("indoor")
+}
+
+public struct MatchContext: Codable, Sendable {
+    public var format: MatchFormat
+    public var fieldLengthMeters: Double?   // from the matched field when known
+    public init(format: MatchFormat = .match, fieldLengthMeters: Double? = nil)
+    /// Speed/reference scaling vs a 105 m pitch: sqrt(length/105) clamped 0.6...1.0
+    /// (indoor uses 0.6). Sprint thresholds etc. multiply by this, floored sensibly.
+    public var pitchScale: Double { get }
+}
+
+public struct HeartRateSample: Codable, Sendable {
+    public var date: Date
+    public var bpm: Double
+    public init(date: Date, bpm: Double)
+}
+
+// RunDetectorConfiguration gains `static func scaled(for context: MatchContext) -> Self`
+// (thresholds × pitchScale, sprint floor 4.0 m/s, jog floor 1.6).
+// MatchRecord gains `format: MatchFormat?` (nil ≡ .match; wire "format").
+// PeriodDetectorConfiguration.expectedPeriods == 0 → return ALL qualifying breaks
+// (pickup sessions have variable rest breaks, not two halves).
+// WorkrateAnalyzer gains an overload:
+//   analyze(track:runs:playingIntervals:heartRate:[HeartRateSample],context:MatchContext)
+// Effort components re-weight by availability — GPS+HR: distanceRate 30 / highIntensity 25 /
+// sprints 20 / hrEffort 25; GPS-only: 40/30/30 (unchanged legacy); HR-only (indoor): hrEffort
+// 100. Each component is a 0–100 sub-score from a monotone piecewise-linear CALIBRATION curve
+// (WorkrateCalibration), NOT a linear ratio against an elite reference — the old ratio scoring
+// pinned solid amateur matches into the low 50s. Anchors target intuition bands: casual 25–45,
+// average amateur 50–65, strong 65–80, pro-like 80–95, with true near-zero bottom anchors so
+// coasting/walking score honestly low. hrEffort maps mean %HRR on pitch (maxHR 190 / rest 60
+// defaults) through its curve. Format scaling shifts the curves' x-anchors (inputs), not the
+// blend: distance anchors × (95·pitchScale / 110) for .smallSided, sprint anchors × pitchScale;
+// hrEffort/highIntensity are physiological and unscaled. Sub-scores are 0–100 and weights sum to
+// 1, so the blend is their weighted mean. WorkrateReport gains optional `effortSource: String`
+// ("gps+hr"|"gps"|"hr"), `components: WorkrateComponents?` (per-curve 0–100 sub-scores, only the
+// signals that fed the blend) and `isLowConfidence: Bool?` (< 10 min on pitch, or HR-only with
+// < 15 on-pitch samples) — all additive Codable. Old analyze signature delegates (compat).
+// Wire: sessions payload gains optional "format"; stats blob unchanged plus effort_source.
+
 // MARK: Diagnostics
 public enum MatchLog {   // thin os.Logger facade; NEVER logs coordinates or health values
     public static func info(_ message: String, category: String)

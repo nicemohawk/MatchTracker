@@ -159,6 +159,12 @@ public struct FieldProjector: Sendable {
     /// How far outside the rectangle (meters) a point may lie and still map to a normalized point.
     private static let outsideToleranceMeters = 20.0
 
+    /// Field long-axis length in meters (x ∈ [0,1] spans this). Lets callers convert a normalized
+    /// long-axis displacement back into meters without re-deriving the rectangle.
+    public var lengthMeters: Double { rectangle.lengthMeters }
+    /// Field short-axis width in meters (y ∈ [0,1] spans this).
+    public var widthMeters: Double { rectangle.widthMeters }
+
     public init(rectangle: OrientedRectangle) {
         self.rectangle = rectangle
         self.frame = ENUFrame(reference: rectangle.center)

@@ -34,7 +34,9 @@ public enum PeriodDetector {
                                      configuration: PeriodDetectorConfiguration) -> [MatchEvent] {
         // Never override existing period structure.
         if events.contains(where: { $0.kind == .periodStart || $0.kind == .periodEnd }) { return [] }
-        guard configuration.expectedPeriods >= 2 else { return [] }
+        // 0 = "no fixed period count" (pickup): return every qualifying break. Otherwise need >= 2
+        // periods (a one-period match has no internal break to detect).
+        guard configuration.expectedPeriods == 0 || configuration.expectedPeriods >= 2 else { return [] }
 
         let ordered = track.sorted { $0.timestamp < $1.timestamp }
         guard ordered.count >= 2,
@@ -113,10 +115,15 @@ public enum PeriodDetector {
         return merged.filter { $0.duration >= configuration.minimumBreak && $0.duration <= configuration.maximumBreak }
     }
 
-    /// Pick which candidate breaks become period boundaries. For two periods, take the single
-    /// break nearest the match midpoint; otherwise take the `expectedPeriods - 1` longest breaks.
+    /// Pick which candidate breaks become period boundaries. For a pickup session
+    /// (`expectedPeriods == 0`) every qualifying break is a boundary. For two periods, take the
+    /// single break nearest the match midpoint; otherwise take the `expectedPeriods - 1` longest.
     private static func selectBreaks(_ breaks: [DateInterval], matchStart: Date, matchEnd: Date,
                                      configuration: PeriodDetectorConfiguration) -> [DateInterval] {
+        if configuration.expectedPeriods == 0 {
+            return breaks.sorted { $0.start < $1.start }
+        }
+
         let wanted = configuration.expectedPeriods - 1
         guard wanted >= 1 else { return [] }
 

@@ -45,6 +45,9 @@ final class WorkoutManager: NSObject {
     /// Field the start screen matched via a one-shot location lookup (shown before kickoff).
     var detectedField: FieldModel?
 
+    /// Format chosen on the start screen; drives location/indoor behavior and analytics scaling.
+    var matchFormat: MatchFormat = .match
+
     // MARK: Live metrics (updated on the main queue)
 
     var heartRate: Double = 0
@@ -99,8 +102,20 @@ final class WorkoutManager: NSObject {
         let configuration = HKWorkoutConfiguration()
         let sport = WatchSettings.sportProfile
         configuration.activityType = HKWorkoutActivityType(rawValue: UInt(sport.workoutActivityTypeRawValue)) ?? .soccer
-        configuration.locationType = .outdoor
+        configuration.locationType = matchFormat == .indoor ? .indoor : .outdoor
         return configuration
+    }
+
+    /// Whether this session runs without GPS (indoor court/dome): no location, route, field
+    /// detection, auto-sub or heading capture — HR/energy collection is unchanged.
+    private var isIndoor: Bool { matchFormat == .indoor }
+
+    /// Analytics context for scaling run/period detection to the format and field size.
+    var matchContext: MatchContext {
+        let length = fieldID
+            .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id } }?
+            .rectangle.lengthMeters
+        return MatchContext(format: matchFormat, fieldLengthMeters: length)
     }
 
     private override init() {
@@ -189,15 +204,20 @@ final class WorkoutManager: NSObject {
 
             self.session = session
             self.builder = builder
-            self.routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+            // Indoor sessions have no usable GPS: skip the route builder entirely.
+            self.routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
 
             let start = Date()
             matchStartDate = start
             session.startActivity(with: start)
             try await builder.beginCollection(at: start)
 
-            startLocationUpdates()
-            headingRecorder.start()
+            // Indoor: no location updates, route, field detection, auto-sub or heading capture.
+            // HR/energy still collect; the track stays empty and currentSpeed stays 0.
+            if !isIndoor {
+                startLocationUpdates()
+                headingRecorder.start()
+            }
             liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
             log(.matchStart, haptic: false)
             phase = .active
@@ -314,20 +334,23 @@ final class WorkoutManager: NSObject {
             workout = nil
         }
 
-        // Automatic period detection: no-op when the wearer tagged periods manually.
+        // Automatic period detection: no-op when the wearer tagged periods manually. A formal
+        // match expects two halves; pickup/indoor sessions have variable breaks (expectedPeriods 0).
         let projector = fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id } }
             .map { FieldProjector(rectangle: $0.rectangle) }
+        var periodConfiguration = PeriodDetectorConfiguration()
+        periodConfiguration.expectedPeriods = matchFormat == .match ? 2 : 0
         let detectedPeriods = PeriodDetector.detectPeriods(track: track, events: events,
                                                            projector: projector,
-                                                           configuration: PeriodDetectorConfiguration())
+                                                           configuration: periodConfiguration)
         if !detectedPeriods.isEmpty {
             events.append(contentsOf: detectedPeriods)
             events.sort { $0.date < $1.date }
         }
 
         let recordID = workout?.uuid ?? matchID
-        let record = MatchRecord(
+        var record = MatchRecord(
             id: recordID,
             startDate: matchStartDate,
             endDate: end,
@@ -337,6 +360,8 @@ final class WorkoutManager: NSObject {
             sportID: WatchSettings.sportProfile.id,
             headings: headingRecorder.collected
         )
+        // Set explicitly so a formal match records `.match` rather than relying on the nil default.
+        record.format = matchFormat
 
         finishedWorkout = workout
         finishedRecord = record
@@ -345,11 +370,16 @@ final class WorkoutManager: NSObject {
         writeLastMatchSnapshot(record: record, end: end)
 
         // Post-match field learning: refine a known field or propose a newly inferred one.
-        switch AppGroupStorage.fieldStore.recordObservation(track: track) {
-        case .proposed(let field):
-            proposedField = field
-        case .matched, .none:
+        // Skipped indoors — there is no GPS track to learn a field from.
+        if isIndoor {
             proposedField = nil
+        } else {
+            switch AppGroupStorage.fieldStore.recordObservation(track: track) {
+            case .proposed(let field):
+                proposedField = field
+            case .matched, .none:
+                proposedField = nil
+            }
         }
 
         phase = .summary
@@ -358,7 +388,7 @@ final class WorkoutManager: NSObject {
 
     /// Feeds the widget's last-match Smart Stack card.
     private func writeLastMatchSnapshot(record: MatchRecord, end: Date) {
-        let runs = RunDetector.detectRuns(in: track, configuration: RunDetectorConfiguration())
+        let runs = RunDetector.detectRuns(in: track, configuration: .scaled(for: matchContext))
         let fieldName = record.fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id }?.name }
         let snapshot = LastMatchSnapshot(
@@ -409,8 +439,9 @@ final class WorkoutManager: NSObject {
         matchID = UUID()
         fieldID = field?.id
         // A resolved field gives the detector a touchline to reason about; without one, automatic
-        // substitution detection is simply off for this match. Referees are never "subbed".
-        autoSubDetector = WatchSettings.refereeMode ? nil : field.map {
+        // substitution detection is simply off for this match. Referees are never "subbed", and
+        // indoor sessions have no GPS to reason about a touchline.
+        autoSubDetector = (WatchSettings.refereeMode || isIndoor) ? nil : field.map {
             AutoSubDetector(projector: FieldProjector(rectangle: $0.rectangle), initiallyOnPitch: true)
         }
         autoSubBanner = nil
@@ -430,7 +461,7 @@ final class WorkoutManager: NSObject {
     }
 
     private func persistInProgress() {
-        let record = MatchRecord(
+        var record = MatchRecord(
             id: matchID,
             startDate: matchStartDate,
             endDate: nil,
@@ -438,6 +469,7 @@ final class WorkoutManager: NSObject {
             events: events,
             teamCode: AppGroupStorage.teamCode
         )
+        record.format = matchFormat
         AppGroupStorage.persistInProgress(record)
     }
 
@@ -488,7 +520,11 @@ final class WorkoutManager: NSObject {
 
         session = recovered
         self.builder = builder
-        routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+        // Restore the format from the persisted record (falls back to the recovered config's
+        // location type, which distinguishes indoor from outdoor).
+        matchFormat = AppGroupStorage.loadInProgress()?.format
+            ?? (recovered.workoutConfiguration.locationType == .indoor ? .indoor : .match)
+        routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
         sessionState = recovered.state
 
         if let record = AppGroupStorage.loadInProgress() {
@@ -501,14 +537,18 @@ final class WorkoutManager: NSObject {
             let lastSub = events.last { $0.kind == .subIn || $0.kind == .subOut }
             onPitch = lastSub?.kind != .subOut
 
-            // Rebuild the detector from the recovered field so auto-detection resumes mid-match.
-            if let fieldID, let field = AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID }) {
+            // Rebuild the detector from the recovered field so auto-detection resumes mid-match
+            // (never indoors — there is no GPS touchline to reason about).
+            if !isIndoor, let fieldID, let field = AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID }) {
                 autoSubDetector = AutoSubDetector(projector: FieldProjector(rectangle: field.rectangle),
                                                   initiallyOnPitch: onPitch)
             }
         }
 
-        startLocationUpdates()
+        // Indoor sessions never resumed location updates.
+        if !isIndoor {
+            startLocationUpdates()
+        }
         phase = .active
     }
 }

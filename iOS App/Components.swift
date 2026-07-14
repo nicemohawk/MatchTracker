@@ -34,7 +34,7 @@ struct SummaryChip: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            Text(value).statNumeral().foregroundStyle(tint).glow(tint, radius: 6)
+            Text(value).statNumeral().foregroundStyle(tint)
             Text(label).captionLabel()
         }
         .frame(maxWidth: .infinity)
@@ -50,13 +50,19 @@ struct PositionBadge: View {
     var confidence: Double?
 
     var body: some View {
-        Text(Self.abbreviation(role: role, side: side))
-            .font(.system(.caption, design: .rounded).bold())
-            .foregroundStyle(.black)
-            .frame(width: 36, height: 26)
-            .background(role.tint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .glow(role.tint, radius: 5)
-            .opacity(confidenceOpacity)
+        HStack(spacing: 4) {
+            Circle()
+                .fill(role.tint)
+                .frame(width: 6, height: 6)
+            Text(Self.abbreviation(role: role, side: side))
+                .font(.system(.caption, design: .rounded).weight(.bold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(Theme.surfaceElevated, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
+        .opacity(confidenceOpacity)
     }
 
     private var confidenceOpacity: Double {
@@ -169,7 +175,7 @@ extension MatchEventKind {
         case .goalAgainstUs: return Theme.heart
         case .assist: return Theme.signal
         case .flag: return Theme.sprint
-        case .yellowCard: return Theme.bench
+        case .yellowCard: return Theme.cardYellow
         case .redCard: return Theme.heart
         default: return .secondary
         }

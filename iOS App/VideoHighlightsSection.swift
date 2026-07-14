@@ -36,8 +36,9 @@ struct VideoHighlightsSection: View {
         VStack(alignment: .leading, spacing: 14) {
             if let player {
                 VideoPlayer(player: player)
-                    .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .background(Color.black)
+                    .fullBleed()
 
                 driftControl
                 highlightList
