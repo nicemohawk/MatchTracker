@@ -111,7 +111,8 @@ final class AppEnvironment: ObservableObject {
         await matches.refresh()
         await uploads.flushQueue()
         await trainingLoad.refresh()
-        trainingLoad.setAverageWorkrate(matches.recentAverageWorkrate(days: 28))
+        // Workrate average is computed live where it's rendered (WorkrateSection) — the detail
+        // cache is still empty at launch, so a snapshot here would always be a stale nil.
     }
 
     /// Foreground / background-refresh reconciliation: matches vs HealthKit + queued uploads.

@@ -100,10 +100,10 @@ final class MatchStore: ObservableObject {
 
     /// Average workrate score across matches analyzed in the last `days`, for training-load
     /// context. Only already-cached details count — this never triggers HealthKit loads.
-    func recentAverageWorkrate(days: Int) -> Double? {
+    func recentAverageWorkrate(days: Int, excluding excludedID: UUID? = nil) -> Double? {
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
         let scores = matches
-            .filter { $0.startDate >= cutoff }
+            .filter { $0.startDate >= cutoff && $0.id != excludedID }
             .compactMap { detailCache[$0.id]?.analytics?.workrate.workrateScore }
         guard !scores.isEmpty else { return nil }
         return scores.reduce(0, +) / Double(scores.count)

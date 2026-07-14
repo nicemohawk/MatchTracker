@@ -9,6 +9,7 @@ struct WorkrateSection: View {
     @ObservedObject var detail: MatchDetailModel
     let analytics: MatchAnalytics
     @Environment(TrainingLoadService.self) private var trainingLoad
+    @EnvironmentObject private var store: MatchStore
 
     private var report: WorkrateReport { analytics.workrate }
 
@@ -31,8 +32,11 @@ struct WorkrateSection: View {
     @ViewBuilder
     private var trainingLoadContext: some View {
         if let load = trainingLoad.fourWeekLoad {
+            // Compute the workrate average live from the cache at render time — at launch the
+            // detail cache is still empty, so a snapshot taken during bootstrap is always nil.
+            let average = store.recentAverageWorkrate(days: 28, excluding: detail.matchIdentifier)
             VStack(alignment: .leading, spacing: 3) {
-                if let average = load.averageWorkrateScore {
+                if let average {
                     let delta = report.workrateScore - average
                     Label(
                         delta >= 0

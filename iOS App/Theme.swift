@@ -21,6 +21,16 @@ enum Theme {
         })
     }
 
+    /// A tint at a scheme-dependent alpha. Dark keeps the bold identity opacity; light drops far
+    /// lower so tinted washes stay a whisper instead of reading as a pastel/nursery fill.
+    static func tintWash(_ color: Color, dark: Double, light: Double) -> Color {
+        Color(uiColor: UIColor { traits in
+            let resolved = UIColor(color).resolvedColor(with: traits)
+            let alpha = traits.userInterfaceStyle == .light ? light : dark
+            return resolved.withAlphaComponent(alpha)
+        })
+    }
+
     /// Near-black canvas in dark, soft off-white in light.
     static let background = dynamic(dark: (0.043, 0.051, 0.063),
                                     light: (0.953, 0.961, 0.976))
@@ -63,6 +73,14 @@ enum Theme {
         LinearGradient(colors: [turf, signal], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
+    /// Faint turf → signal wash for the detail hero card. Dark keeps the ~10% tinted glow; light
+    /// drops to ~5% over the white surface so the card reads as a neutral panel, not mint.
+    static var heroWash: LinearGradient {
+        LinearGradient(colors: [tintWash(turf, dark: 0.10, light: 0.05),
+                                tintWash(signal, dark: 0.10, light: 0.05)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
     /// Angular sweep for the workrate score ring.
     static var scoreRing: AngularGradient {
         AngularGradient(colors: [turf, signal, pace, turf],
@@ -88,7 +106,7 @@ enum Theme {
     /// Subtle top-anchored wash in a semantic hue — the signature "gradient header" that opens
     /// each detail section, so users learn to read the app by color.
     static func headerGradient(_ tint: Color) -> LinearGradient {
-        LinearGradient(colors: [tint.opacity(0.28), tint.opacity(0.0)],
+        LinearGradient(colors: [tintWash(tint, dark: 0.28, light: 0.07), tint.opacity(0.0)],
                        startPoint: .top, endPoint: .bottom)
     }
 
@@ -218,13 +236,14 @@ struct MetricTile: ViewModifier {
             .background(
                 ZStack {
                     Theme.surfaceElevated
-                    tint.opacity(0.12)
+                    // Light: near-white tile with only a hint of tint; dark keeps the 12% wash.
+                    Theme.tintWash(tint, dark: 0.12, light: 0.06)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+                    .strokeBorder(Theme.tintWash(tint, dark: 0.35, light: 0.20), lineWidth: 1)
             )
     }
 }

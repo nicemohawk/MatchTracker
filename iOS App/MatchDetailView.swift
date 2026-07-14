@@ -34,12 +34,7 @@ struct MatchDetailView: View {
             VStack(spacing: 16) {
                 header
 
-                Picker("Section", selection: $section) {
-                    ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .onChange(of: section) { _, _ in Haptics.selection() }
+                sectionPicker
 
                 content
                     .padding(.horizontal)
@@ -52,6 +47,9 @@ struct MatchDetailView: View {
             }
             .padding(.vertical)
         }
+        // Clear the floating liquid-glass tab bar so the last element of every section
+        // (e.g. the heatmap "Low → High" legend) isn't hidden behind it.
+        .contentMargins(.bottom, 72, for: .scrollContent)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(Text(summary.startDate, format: .dateTime.month().day()))
         .navigationBarTitleDisplayMode(.inline)
@@ -104,6 +102,52 @@ struct MatchDetailView: View {
         }
     }
 
+    /// Horizontally scrollable capsule chips — full section labels, each carrying its own semantic
+    /// tint when selected. Replaces the segmented picker, which truncated ("Heatm…", "Workr…").
+    private var sectionPicker: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Section.allCases) { item in
+                        sectionChip(item).id(item)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 2)
+            }
+            .onChange(of: section) { _, newValue in
+                Haptics.selection()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(newValue, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private func sectionChip(_ item: Section) -> some View {
+        let isSelected = section == item
+        let tint = Theme.sectionTint(item.rawValue)
+        return Button {
+            guard section != item else { return }
+            withAnimation(.easeInOut(duration: 0.2)) { section = item }
+        } label: {
+            Text(item.rawValue)
+                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                .foregroundStyle(isSelected ? Color.black : Color.primary)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .background(
+                    Capsule().fill(isSelected ? tint : Theme.surfaceElevated)
+                )
+                .overlay(
+                    Capsule().strokeBorder(isSelected ? .clear : Theme.surfaceStroke, lineWidth: 1)
+                )
+                .glow(isSelected ? tint : .clear, radius: isSelected ? 8 : 0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
     private var header: some View {
         let detail = model.detail
         let workrate = detail?.analytics?.workrate.workrateScore ?? 0
@@ -144,7 +188,7 @@ struct MatchDetailView: View {
         .background(
             ZStack {
                 Theme.surface
-                Theme.turfFlow.opacity(0.10)
+                Theme.heroWash
             }
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         )
