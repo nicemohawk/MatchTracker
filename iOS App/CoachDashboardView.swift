@@ -166,6 +166,8 @@ struct CoachDashboardView: View {
             Spacer()
         }
         .padding(.vertical)
+        // Keep the pitch + tiles a sensible measure in a wide split detail column, not stretched.
+        .readableWidth()
     }
 
     /// The live pitch, driven by a `TimelineView(.animation)` so on-pitch players emit a soft,
@@ -313,6 +315,8 @@ struct CoachDashboardView: View {
                 }
             }
         }
+        // Keep the header + ticker a readable centered column in a wide split detail pane.
+        .readableWidth()
     }
 
     private var timelineHeader: some View {

@@ -34,6 +34,12 @@ struct FieldsDrawer: View {
 
     @EnvironmentObject private var fieldsModel: FieldsModel
     @Environment(NearbyFieldSeeder.self) private var seeder
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// On iPad / wide split the full-width slab would swallow the map, so the floating card caps to
+    /// a leading-aligned panel (Apple Maps / AllTrails iPad) with the map showing beside it. Compact
+    /// keeps the original full-width card.
+    private static let regularWidth: CGFloat = 420
 
     /// Fields with fewer than this many confirming observations render as "unconfirmed" — a dashed
     /// motif that matches the map's dashed low-confidence polygons and the detail sheet's language.
@@ -86,9 +92,13 @@ struct FieldsDrawer: View {
                 .modifier(DrawerGlass())
                 .padding(.horizontal, 8)
                 .padding(.bottom, Self.tabBarAllowance + Self.bottomGap)
-                // Pin to the bottom of the safe area; empty space above stays non-interactive so
-                // the map behind it keeps receiving touches.
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                // At regular width cap the card to a leading side panel so the map stays visible
+                // beside it; at compact it stays a full-width card.
+                .frame(maxWidth: horizontalSizeClass == .regular ? Self.regularWidth : .infinity)
+                // Pin to the bottom of the safe area (leading edge on iPad); empty space above/beside
+                // stays non-interactive so the map behind it keeps receiving touches.
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: horizontalSizeClass == .regular ? .bottomLeading : .bottom)
                 // When the tab bar minimizes on scroll-down the bottom safe area (and thus the
                 // available height) changes; animate the resize so the drawer glides instead of
                 // jittering. Keyed on the proxy height only, so it never animates the drag itself.

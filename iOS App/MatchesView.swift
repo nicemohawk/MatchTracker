@@ -56,6 +56,9 @@ struct MatchesView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
+                        // iPad / wide split: keep the card column a readable measure, centered,
+                        // instead of full-bleed cards spanning the whole canvas.
+                        .readableWidth()
                     }
                     .scrollIndicators(.hidden)
                 }
@@ -235,6 +238,8 @@ struct MatchesView: View {
 #endif
         }
         .padding()
+        // Center the invite in a readable column on iPad rather than stranding it in a wide canvas.
+        .readableWidth()
     }
 
 #if DEBUG

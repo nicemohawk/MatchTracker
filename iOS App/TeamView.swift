@@ -54,6 +54,8 @@ struct TeamView: View {
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 10)
+                // iPad / wide split: keep the leaderboard + setup cards a readable centered column.
+                .readableWidth()
             }
             .background(Theme.background.ignoresSafeArea())
             .scrollContentBackground(.hidden)

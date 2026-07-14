@@ -30,10 +30,12 @@ extension XCTestCase {
     /// re-prompts, later surfacing as "Not authorized" when the app saves/reads workouts (and, since
     /// the app under test is uninstalled/reinstalled per run, that denial persists across runs until
     /// the next fresh install). So we grant everything before confirming:
-    ///  1. Tap "Turn On All" by coordinate — it turns every scope on at once and, crucially, avoids
-    ///     the per-switch coupled-scope confirmation dialogs. It has no accessible label to target.
-    ///  2. As a fallback/verification, toggle any switch still off, accepting the coupled
-    ///     confirmation dialog ("… will also allow … workouts" → "Enable workouts") it raises.
+    ///  1. Tap a real "Turn On All" control if one is exposed (turns every scope on at once, avoiding
+    ///     the per-switch coupled-scope dialogs). Matched by label — best-effort, often absent.
+    ///  2. Toggle every scope switch still off directly. This is position-independent (works on
+    ///     iPhone AND iPad, where the sheet is a centered form sheet so a hardcoded normalized
+    ///     coordinate misses), accepting the coupled confirmation dialog ("… will also allow …
+    ///     workouts" → "Enable workouts") each raises.
     ///  3. Wait for "Allow" to enable, then tap it.
     /// Granting read as well as write matters: the demo workouts are written and then read back to
     /// populate the Matches list, so read authorization must be on too.
@@ -55,16 +57,20 @@ extension XCTestCase {
             return // No sheet — already authorized on this install.
         }
 
-        // Primary: tap "Turn On All". It has no accessible label (nothing in the tree matches it),
-        // but it sits at a stable position just below the description and turns every scope on
-        // atomically — avoiding the per-switch coupled-scope confirmation dialogs. Position measured
-        // from the live sheet: normalized (0.5, ~0.55).
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)).tap()
-        usleep(600_000)
+        // Primary (best-effort): a real "Turn On All" control if the system exposes one — turns
+        // every scope on atomically, avoiding the per-switch coupled-scope dialogs. Often there is
+        // no such element in the tree, in which case the switch loop below does the work. This is
+        // matched by label (never by a hardcoded coordinate, which misses on the iPad form sheet).
+        let turnOnAll = anyDescendant.matching(
+            NSPredicate(format: "(elementType == 9 OR elementType == 48) AND label CONTAINS[c] 'Turn On All'")).firstMatch
+        if turnOnAll.waitForExistence(timeout: 1) && turnOnAll.isHittable {
+            turnOnAll.tap()
+            usleep(400_000)
+        }
 
-        // Fallback / verification: turn on any scope switch still off. Toggling a write scope can
-        // raise a coupled confirmation ("… will also allow … workouts" → "Enable workouts"), which
-        // we accept before moving on.
+        // Reliable path on every device: turn on any scope switch still off. Position-independent,
+        // so it works on the iPad centered form sheet too. Toggling a write scope can raise a coupled
+        // confirmation ("… will also allow … workouts" → "Enable workouts"), which we accept.
         let switches = anyDescendant.matching(NSPredicate(format: "elementType == 40"))
         let switchCount = switches.count
         for index in 0..<switchCount {
@@ -74,14 +80,23 @@ extension XCTestCase {
             acceptCoupledScopeDialog(in: app)
         }
 
-        // "Allow" enables once the scopes are on; wait for it, then confirm.
-        let deadline = Date().addingTimeInterval(6)
+        // "Allow" enables once the scopes are on; wait for it, then confirm. On the iPad form sheet
+        // the bridged "Allow" button is visible + enabled but often reports `isHittable == false`, so
+        // a plain `.tap()` is skipped and the sheet lingers — blocking every downstream step. Retry
+        // until the sheet is gone, falling back to tapping the element's own frame by coordinate
+        // (which lands regardless of the hittability flag).
+        let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            if allow.exists && allow.isEnabled && allow.isHittable {
-                allow.tap()
-                break
+            if title.exists == false && allow.exists == false { break } // sheet dismissed
+            if allow.exists && allow.isEnabled {
+                if allow.isHittable {
+                    allow.tap()
+                } else {
+                    allow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                }
+                if title.waitForNonExistence(timeout: 2) { break }
             }
-            usleep(200_000)
+            usleep(250_000)
         }
         _ = title.waitForNonExistence(timeout: 5)
     }
@@ -182,17 +197,23 @@ extension XCTestCase {
         return element.exists && element.isHittable
     }
 
-    /// Switches to a tab and waits for its screen. On iOS 26 the tab bar minimizes on scroll (and
-    /// can be visually crowded by a full-screen map), so a plain `.tap()` sometimes doesn't land.
-    /// This retries, expanding a minimized tab bar by tapping it before re-tapping the target.
+    /// Switches to a tab and waits for its screen. Two layouts to satisfy:
+    /// * iPhone (iOS 26): a bottom `tabBar` that minimizes on scroll — a plain `.tap()` sometimes
+    ///   doesn't land, so we re-expand a minimized bar by tapping it before re-tapping the target.
+    /// * iPad (iOS 26): the tabs render as a top-center pill whose buttons are NOT inside a
+    ///   `tabBars` element — so we also query the label app-wide (`app.buttons[name]`).
     /// - Returns: true once `navBarTitle` appears.
     @discardableResult
     func selectTab(_ name: String, expectingNavBar navBarTitle: String, in app: XCUIApplication) -> Bool {
-        let tab = app.tabBars.buttons[name]
-        for _ in 0..<4 {
+        let tabBarButton = app.tabBars.buttons[name]
+        let anyButton = app.buttons[name]
+        for _ in 0..<5 {
             if app.navigationBars[navBarTitle].exists { return true }
-            if tab.exists && tab.isHittable {
-                tab.tap()
+            if tabBarButton.exists && tabBarButton.isHittable {
+                tabBarButton.tap()
+            } else if anyButton.exists && anyButton.isHittable {
+                // iPad top pill (or any labeled tab control outside a tabBars container).
+                anyButton.tap()
             } else if app.tabBars.firstMatch.exists {
                 // Minimized tab bar — tapping the bar re-expands it so the button becomes hittable.
                 app.tabBars.firstMatch.tap()
@@ -200,6 +221,23 @@ extension XCTestCase {
             if app.navigationBars[navBarTitle].waitForExistence(timeout: 4) { return true }
         }
         return app.navigationBars[navBarTitle].exists
+    }
+
+    /// Clears any text already in `field` before typing `text`. A field's `value` falls back to its
+    /// placeholder when empty, so a value equal to `placeholder` is treated as empty. Fixes fields
+    /// that accumulate across the reinstall-per-run tests (notably the team code, which appended).
+    func clearAndType(_ field: XCUIElement, text: String, placeholder: String? = nil) {
+        guard field.exists else { return }
+        field.tap()
+        let current = (field.value as? String) ?? ""
+        if !current.isEmpty, current != placeholder {
+            // Move the caret to the end before backspacing: center-tapping a right-aligned field
+            // (these use `.multilineTextAlignment(.trailing)`) lands the caret BEFORE the text, so
+            // plain backspaces would no-op and the new text would just prepend (e.g. "BenBen").
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+        }
+        field.typeText(text)
     }
 
     /// Dismisses a system location-authorization alert if one appears. It's a Springboard alert with

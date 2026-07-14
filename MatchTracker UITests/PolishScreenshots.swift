@@ -25,23 +25,30 @@ final class PolishScreenshots: XCTestCase {
         if openSettings(app: app) {
             let nameField = app.textFields["Player name"]
             if scrollUntilHittable(nameField, in: app, maxSwipes: 2) {
-                nameField.tap()
-                nameField.typeText("Ben\n")
+                clearAndType(nameField, text: "Ben\n", placeholder: "Player name")
             }
             let teamField = app.textFields["Team code"]
             if teamField.exists && teamField.isHittable {
-                teamField.tap()
-                teamField.typeText("TEST01\n")
+                // Clear first — the team code accumulated across reinstall-per-run invocations.
+                clearAndType(teamField, text: "TEST01\n", placeholder: "Team code")
             }
             // \n dismisses the keyboard so the rows below are hittable again.
             // Generate a season so the list and detail screens have real content.
             let generate = app.buttons["Generate Sample Season (5)"]
             if scrollUntilHittable(generate, in: app) {
                 generate.tap()
+                // Writing the synthetic workouts to HealthKit can raise a second authorization sheet
+                // (on iPad the write scopes prompt separately from the launch read prompt). Handle it
+                // so generation isn't stuck behind it. Best-effort: a no-op where no sheet appears.
+                handleHealthKitPrompt(app: app, timeout: 8)
                 _ = app.staticTexts
                     .matching(NSPredicate(format: "label BEGINSWITH 'Generated sample season'"))
                     .firstMatch.waitForExistence(timeout: 120)
             }
+            // Capture the settings form itself (at regular width it should read as a centered,
+            // readable column, not a full-bleed grouped list).
+            app.swipeDown(velocity: .fast) // scroll the form back to the top for the shot
+            export("38-settings", app: app)
             // Settings is a tab (role: .search) now, not a sheet — leaving it = switching tabs.
         }
 

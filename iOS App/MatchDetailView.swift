@@ -64,6 +64,9 @@ struct MatchDetailView: View {
                     fadeInSection(CommentsSection(matchUUID: summary.id))
                 }
             }
+            // iPad / wide split: keep the analysis a readable centered column. The hero wash is a
+            // ScrollView background (below), so it still spans full width behind this capped content.
+            .readableWidth()
             // Bottom-only: the hero header bleeds up to the very top of the scroll content (and
             // behind the translucent nav bar). Container horizontal padding is unchanged.
             .padding(.bottom)

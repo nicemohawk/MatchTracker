@@ -48,6 +48,8 @@ struct OnboardingView: View {
                 primaryButton
                     .padding(.horizontal, 24)
                     .padding(.bottom, 28)
+                    // iPad: keep the CTA a tappable single-column width, not a stretched banner.
+                    .readableWidth(560)
             }
         }
         .task { await backlogImporter.scanIfNeeded() }
@@ -172,6 +174,7 @@ private struct IdentityPage: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .readableWidth(560)
         .onAppear { if !reduceMotion { pulse = true } }
     }
 
@@ -222,6 +225,7 @@ private struct HowItWorksPage: View {
             Spacer()
         }
         .padding(.horizontal, 28)
+        .readableWidth(560)
     }
 
     private func row(icon: String, tint: Color, title: String, detail: String) -> some View {
@@ -301,6 +305,7 @@ private struct SetupPage: View {
             Spacer()
         }
         .padding(.horizontal, 28)
+        .readableWidth(560)
     }
 
     private func field<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {

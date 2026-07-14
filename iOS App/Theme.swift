@@ -18,6 +18,11 @@ enum Theme {
     /// this so a hero element can span edge-to-edge without the container changing its padding.
     static let detailContentInset: CGFloat = 16
 
+    /// The comfortable reading measure content is capped to at regular width (iPad, wide split
+    /// views). Around this width a single column of cards / body copy stays legible instead of
+    /// stretching edge-to-edge across ~1000+pt. See `View.readableWidth(_:)`.
+    static let readableContentWidth: CGFloat = 700
+
     // MARK: - Palette
 
     /// Builds a dynamic color from dark-scheme and light-scheme components.
@@ -216,6 +221,23 @@ extension View {
         padding(.horizontal, -Theme.detailContentInset)
     }
 
+    /// Constrain content to a comfortable reading measure and center it in the wider canvas — the
+    /// Apple Fitness / Strava iPad discipline of a readable column rather than a stretched phone
+    /// layout. Applies ONLY at the regular horizontal size class (iPad, wide split views); a no-op
+    /// at compact width, where content already fills the screen. Attach a full-width background
+    /// AFTER this modifier if the surface behind should still span edge-to-edge.
+    func readableWidth(_ maxWidth: CGFloat = Theme.readableContentWidth) -> some View {
+        modifier(ReadableContentWidth(maxWidth: maxWidth))
+    }
+
+    /// Readable-width treatment for a `Form` / `List`, which — unlike a VStack — ignore a `maxWidth`
+    /// frame and always fill their container. Instead we inset the form with symmetric horizontal
+    /// padding derived from the live container width, so its rows center in a `maxWidth` column at
+    /// regular width. A no-op at compact width. Attach any full-width background AFTER this modifier.
+    func readableFormWidth(_ maxWidth: CGFloat = Theme.readableContentWidth) -> some View {
+        modifier(ReadableFormWidth(maxWidth: maxWidth))
+    }
+
     /// Elevated card: surface fill, 22pt radius, hairline stroke, soft shadow.
     func themedCard(cornerRadius: CGFloat = 22) -> some View {
         modifier(ThemedCard(cornerRadius: cornerRadius))
@@ -235,6 +257,49 @@ extension View {
     /// pulse dot; status chips, badges, and pitch marks take a plain faint shadow instead.
     func glow(_ color: Color, radius: CGFloat = 8) -> some View {
         shadow(color: color.opacity(0.5), radius: radius)
+    }
+}
+
+/// Caps content to a readable measure and centers it, but only at the regular horizontal size
+/// class. The outer `.frame(maxWidth: .infinity)` re-expands the layout so the capped content
+/// centers in the wider canvas rather than hugging the leading edge. See `View.readableWidth(_:)`.
+struct ReadableContentWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var maxWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        if horizontalSizeClass == .regular {
+            content
+                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity)
+        } else {
+            content
+        }
+    }
+}
+
+/// Insets a `Form` / `List` with symmetric horizontal padding so its rows center in a `maxWidth`
+/// column at regular width — a padding-based alternative to a `maxWidth` frame, which List ignores.
+/// The `.frame(maxWidth: .infinity)` keeps the padded form spanning the full container so the
+/// background reader measures the true available width (not the already-inset content). See
+/// `View.readableFormWidth(_:)`.
+struct ReadableFormWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var maxWidth: CGFloat
+    @State private var containerWidth: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        let inset = horizontalSizeClass == .regular ? max(0, (containerWidth - maxWidth) / 2) : 0
+        content
+            .padding(.horizontal, inset)
+            .frame(maxWidth: .infinity)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { containerWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { _, newValue in containerWidth = newValue }
+                }
+            )
     }
 }
 

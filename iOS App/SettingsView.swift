@@ -133,6 +133,9 @@ struct SettingsView: View {
 #endif
             }
             .scrollContentBackground(.hidden)
+            // iPad / wide split: inset the form to a readable measure, centered. The background is
+            // attached AFTER so the canvas still fills edge-to-edge behind the narrower form.
+            .readableFormWidth()
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Settings")
             .onDisappear { commit() }
