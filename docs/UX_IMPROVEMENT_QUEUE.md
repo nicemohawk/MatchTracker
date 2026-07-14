@@ -51,3 +51,10 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
 - Heatmap toggles band (Overlay on satellite / Compare) reads muddy olive — restyle as chips or quieter rows.
 - Settings Player fields lose their labels once filled (bare values in Form) — use explicit labels.
 - Comments composer shows even when comments are unavailable — consider hiding or inline-disabling with hint.
+
+## Wave 3 notes (in-game watch walk, first capture)
+
+- In-game metrics page verified: Workout-app quality, semantic tints. Units were MI/MPH — fixed to km/km-h to match iOS.
+- The in-game page walk (testWalkInGamePages) lands on the metrics page and horizontal swipes did not switch to events/controls pages — refine navigation (crown/vertical?) next round; events page + goal flash + controls + summary still uncaptured.
+- Drawer half-expanded state not yet visually verified (field rows, proposal cards).
+- Export/share flow (ExportMenu) unreviewed. iPad width pass unreviewed.

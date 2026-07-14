@@ -47,7 +47,7 @@ struct MetricsView: View {
     }
 
     private var distanceRow: some View {
-        metricRow(value: distanceString, unit: "MI", tint: WatchTheme.pace) {
+        metricRow(value: distanceString, unit: "KM", tint: WatchTheme.pace) {
             Image(systemName: "figure.run").foregroundStyle(dim(WatchTheme.pace))
         }
     }
@@ -59,7 +59,7 @@ struct MetricsView: View {
     }
 
     private var speedRow: some View {
-        metricRow(value: speedString, unit: "MPH", tint: WatchTheme.turf) {
+        metricRow(value: speedString, unit: "KM/H", tint: WatchTheme.turf) {
             Image(systemName: "speedometer").foregroundStyle(dim(WatchTheme.turf))
         }
     }
@@ -101,14 +101,13 @@ struct MetricsView: View {
                          : String(format: "%d:%02d", minutes, seconds)
     }
 
+    // Metric to match the iOS app (MatchFormat.distance renders km everywhere).
     private var distanceString: String {
-        let miles = workoutManager.distanceMeters / 1609.344
-        return String(format: "%.2f", miles)
+        String(format: "%.2f", workoutManager.distanceMeters / 1000)
     }
 
     private var speedString: String {
-        let milesPerHour = workoutManager.currentSpeed * 2.2369363
-        return String(format: "%.1f", max(0, milesPerHour))
+        String(format: "%.1f", max(0, workoutManager.currentSpeed * 3.6))
     }
 }
 

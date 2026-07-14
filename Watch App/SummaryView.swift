@@ -171,8 +171,9 @@ struct SummaryView: View {
         return MatchTrackerFormat.hoursMinutesSeconds(onPitch)
     }
 
+    // Metric to match the iOS app (MatchFormat.distance renders km everywhere).
     private var distanceString: String {
-        String(format: "%.2f MI", workoutManager.distanceMeters / 1609.344)
+        String(format: "%.2f km", workoutManager.distanceMeters / 1000)
     }
 
     private var averageHeartRateString: String {
