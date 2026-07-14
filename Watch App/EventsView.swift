@@ -30,7 +30,6 @@ struct EventsView: View {
                 scoreHeader
                 if refereeMode {
                     refereeButtons
-                    flagButton
                 } else if sport.id == SportProfile.soccer.id {
                     soccerButtons
                 } else {
@@ -131,17 +130,24 @@ struct EventsView: View {
         }
     }
 
+    /// Referee layout, brought to the wave-4 bar: cards are the hero actions — big prominent tiles
+    /// (Yellow=cardYellow, Red=loss) leading the page, exactly like goals lead for players. Fouls,
+    /// the scoreline and Flag are equal secondary tiles beneath.
     private var refereeButtons: some View {
         VStack(spacing: 8) {
+            // Cards lead as the prominent top row — the referee's most frequent, most decisive call.
             HStack(spacing: 8) {
-                eventButton("Yellow", systemImage: "rectangle.portrait.fill", kind: .yellowCard)
-                eventButton("Red", systemImage: "rectangle.portrait.fill", kind: .redCard)
+                eventButton("Yellow", systemImage: "rectangle.portrait.fill", kind: .yellowCard, prominent: true)
+                eventButton("Red", systemImage: "rectangle.portrait.fill", kind: .redCard, prominent: true)
             }
+            // Secondary: a foul and the demoted Flag, equal fat-finger tiles.
             HStack(spacing: 8) {
                 eventButton("Foul", systemImage: "exclamationmark.triangle", kind: .foul)
-                goalUsButton()
+                flagButton
             }
+            // Secondary: the scoreline, so the referee can still keep goals.
             HStack(spacing: 8) {
+                goalUsButton()
                 eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs)
             }
         }

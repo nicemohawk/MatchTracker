@@ -212,3 +212,107 @@ extension XCTestCase {
         return false
     }
 }
+
+// MARK: - Watch Settings toggles
+
+extension XCTestCase {
+
+    /// Drives the "Referee mode" toggle in watch Settings to `on` and VERIFIES it engaged.
+    ///
+    /// Verification is end-to-end, keyed on visible UI rather than switch-value plumbing: the start
+    /// screen renders a "Referee mode" banner label if — and only if — `WatchSettings.refereeMode`
+    /// is true. So the recipe is: read the banner to learn the current state; if it already matches,
+    /// done. Otherwise open Settings (scrolling to the link), tap the Referee-mode toggle (its
+    /// `switch` element when queryable, else the labelled row), then RELAUNCH the app — the setting
+    /// persists in app-group defaults, and relaunching both lands us on a deterministic start screen
+    /// and re-reads the setting — and confirm the banner now matches the target.
+    ///
+    /// Assumes the start screen is on top when called. On success the app is freshly launched and
+    /// parked on the start screen. Returns false if the toggle could not be verified in the target
+    /// state — callers should fail loudly rather than proceed and capture the wrong mode.
+    @discardableResult
+    func setRefereeMode(_ on: Bool, app: XCUIApplication) -> Bool {
+        let startButton = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+
+        // The banner exists in the element tree even when scrolled below the fold, so `exists`
+        // (not `isHittable`) is the right read.
+        func bannerVisible() -> Bool {
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] 'Referee mode'")).firstMatch.exists
+        }
+
+        guard startButton.waitForExistence(timeout: 20) else { return false }
+        if bannerVisible() == on { return true }
+
+        // Open Settings — its NavigationLink sits below Start/format/field-status/Train-Field.
+        let settingsLink = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Settings'")).firstMatch
+        var reached = settingsLink.waitForExistence(timeout: 5) && settingsLink.isHittable
+        var swipes = 0
+        while !reached && swipes < 5 {
+            app.swipeUp()
+            swipes += 1
+            reached = settingsLink.exists && settingsLink.isHittable
+        }
+        guard reached else { return false }
+        settingsLink.tap()
+
+        // Tap the Referee-mode toggle. Prefer the switch element; fall back to any labelled element
+        // (the row), whose center tap also flips the toggle.
+        let refereeSwitch = app.switches.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Referee'")).firstMatch
+        let refereeRow = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] 'Referee mode'")).firstMatch
+        let target: XCUIElement = refereeSwitch.waitForExistence(timeout: 12) ? refereeSwitch : refereeRow
+        guard target.waitForExistence(timeout: 8) else { return false }
+        var toggleSwipes = 0
+        while !target.isHittable && toggleSwipes < 4 {
+            app.swipeUp()
+            toggleSwipes += 1
+        }
+        guard target.isHittable else { return false }
+
+        // The switch's `value` is an NSNumber-ish 0/1 (occasionally a string); normalize both.
+        func switchIsOn() -> Bool {
+            if let text = target.value as? String { return text == "1" }
+            if let number = target.value as? NSNumber { return number.boolValue }
+            return false
+        }
+
+        // A plain element .tap() computes a hit point that can land on the row's LABEL region,
+        // which on watchOS does not flip the toggle (observed live: value stays 0). Escalate
+        // through hit strategies until the value actually flips: the switch glyph sits at the
+        // row's right edge, so coordinate taps there are the reliable fallback.
+        var attempts = 0
+        while switchIsOn() != on && attempts < 4 {
+            switch attempts {
+            case 0:
+                target.tap()
+            case 1:
+                target.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.5)).tap()
+            case 2:
+                let nested = target.switches.firstMatch
+                if nested.exists {
+                    nested.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                } else {
+                    target.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).tap()
+                }
+            default:
+                target.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            }
+            attempts += 1
+            usleep(900_000)
+        }
+
+        // Relaunch onto a fresh start screen and confirm the banner reflects the target state.
+        // HealthKit/location are already granted on this install, so the prompts no-op.
+        app.terminate()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 10)
+        handleWatchLocationPrompt(timeout: 8)
+        guard startButton.waitForExistence(timeout: 30) else { return false }
+        usleep(500_000)
+        return bannerVisible() == on
+    }
+}

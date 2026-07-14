@@ -311,34 +311,90 @@ struct SettingsView: View {
 #endif
 }
 
-/// Small sheet capturing a parent/guardian acknowledgment for youth-team players.
+/// Small sheet capturing a parent/guardian acknowledgment for youth-team players. Reskinned to the
+/// app's dark design language: a turf shield mark, the acknowledgment copy as a single paragraph, a
+/// themed name field, and a turf "Acknowledge & Submit" capsule (disabled until a name is entered).
 private struct GuardianConsentSheet: View {
     let onSubmit: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var guardianName = ""
 
+    private var isNameEmpty: Bool { guardianName.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("Parent/guardian name", text: $guardianName)
-                        .textInputAutocapitalization(.words)
-                } footer: {
-                    Text("By submitting, the guardian acknowledges this player's match data may be shared with their team.")
+            ScrollView {
+                VStack(spacing: 22) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 32, weight: .semibold))
+                        .foregroundStyle(Theme.turf)
+                        .frame(width: 66, height: 66)
+                        .background(Theme.chipFill(Theme.turf), in: Circle())
+                        .overlay(Circle().strokeBorder(Theme.chipStroke(Theme.turf), lineWidth: 1))
+
+                    VStack(spacing: 8) {
+                        Text("Guardian Consent")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                        Text("By submitting, the guardian acknowledges this player's match data may be shared with their team.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Parent / Guardian Name").captionLabel().foregroundStyle(Theme.turf)
+                        TextField("Parent/guardian name", text: $guardianName)
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .textInputAutocapitalization(.words)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 14)
+                            .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+                            )
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .themedCard()
                 }
-                Button("Acknowledge & Submit") {
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 20)
+                .readableWidth()
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Theme.background.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    Haptics.impact(.medium)
                     onSubmit(guardianName)
                     dismiss()
+                } label: {
+                    Text("Acknowledge & Submit")
+                        .font(.headline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 50)
                 }
-                .disabled(guardianName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.turf)
+                .clipShape(Capsule())
+                .disabled(isNameEmpty)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+                .background(.ultraThinMaterial)
             }
-            .navigationTitle("Guardian Consent")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
     }
 }

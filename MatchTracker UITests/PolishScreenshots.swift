@@ -99,6 +99,37 @@ final class PolishScreenshots: XCTestCase {
                 .press(forDuration: 0.2, thenDragTo: raisedTarget)
             sleep(1)
             export("36-fields-drawer-expanded", app: app)
+
+            // Field detail sheet: with the drawer expanded, tap the demo "Demo Park" field row to
+            // present FieldDetailSheet (the reskinned hero / mini-stats / action-row surface). The
+            // row is a Button whose accessibility label concatenates the field name + badges; match
+            // on the name. `isHittable` can THROW for a row near the drawer's scroll edge, so probe
+            // visibility via frame containment (the video-chip pattern below) and tap by coordinate.
+            let fieldRow = app.buttons
+                .matching(NSPredicate(format: "label CONTAINS[c] 'Demo Park'")).firstMatch
+            let fieldsWindow = app.windows.firstMatch
+            func fieldRowVisible() -> Bool {
+                guard fieldRow.exists else { return false }
+                let frame = fieldRow.frame
+                guard !frame.isEmpty else { return false }
+                return fieldsWindow.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+            }
+            if fieldRow.waitForExistence(timeout: 4) && fieldRowVisible() {
+                fieldRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                sleep(2)
+                export("36b-field-detail", app: app)
+                // Dismiss the sheet: its top-leading Cancel button, else swipe the sheet down.
+                let cancel = app.buttons["Cancel"].firstMatch
+                if cancel.waitForExistence(timeout: 3) && cancel.isHittable {
+                    cancel.tap()
+                } else {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+                        .press(forDuration: 0.1,
+                               thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+                }
+                sleep(1)
+            }
+
             // Drag the header (now near mid-screen) back down to collapse to the peek snap.
             drawerHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 .press(forDuration: 0.2,

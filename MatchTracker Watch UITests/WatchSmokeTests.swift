@@ -203,4 +203,158 @@ final class WatchSmokeTests: XCTestCase {
         screenshot("66-watch-summary")
         if done.exists && done.isHittable { done.tap() }
     }
+
+    /// Opens the touchline-training flow from the start screen, captures its themed idle screen
+    /// (`67-watch-train-field`), then backs out. It deliberately never taps "Start Walking", so no
+    /// GPS recording is ever started or left running.
+    func testTrainFieldCapture() {
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 15)
+        handleWatchLocationPrompt(timeout: 8)
+
+        // Reach the start screen; the Train Field link sits below Start/format/field-status.
+        let startButton = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        guard startButton.waitForExistence(timeout: 45) else {
+            XCTFail("Start screen did not become reachable for the Train Field capture")
+            return
+        }
+
+        let trainLink = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Train Field'")).firstMatch
+        var reached = trainLink.waitForExistence(timeout: 5) && trainLink.isHittable
+        var swipes = 0
+        while !reached && swipes < 5 {
+            app.swipeUp()
+            swipes += 1
+            reached = trainLink.exists && trainLink.isHittable
+        }
+        guard reached else {
+            XCTFail("Train Field link not reachable from the start screen")
+            return
+        }
+
+        trainLink.tap()
+        // The pushed view's nav title is "Train Field"; wait for the "Start Walking" button so we
+        // know the idle content (instructions + steps) has rendered before we shoot.
+        let startWalking = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Start Walking'")).firstMatch
+        _ = startWalking.waitForExistence(timeout: 15)
+        sleep(1)
+        screenshot("67-watch-train-field")
+
+        // Back out without starting a walk. A left-edge swipe pops the NavigationStack; confirm we
+        // land back on the start screen so nothing is left mid-flow.
+        app.swipeRight()
+        _ = startButton.waitForExistence(timeout: 10)
+    }
+
+    /// Enables referee mode via watch Settings, starts a match, captures the referee events page
+    /// (`68-watch-referee-events`), logs a yellow card and captures the confirmation flash
+    /// (`68b-watch-referee-flash`), ends the (auto-discarded) short session, then turns referee
+    /// mode back OFF so the rest of the suite runs in the standard player layout.
+    func testRefereeEventsCapture() {
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 15)
+        handleWatchLocationPrompt(timeout: 8)
+
+        let startButton = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        guard startButton.waitForExistence(timeout: 45) else {
+            XCTFail("Start screen did not become reachable for the referee capture")
+            return
+        }
+
+        // Turn referee mode ON in Settings and VERIFY it engaged — the helper relaunches the app
+        // and confirms the start screen's "Referee mode" banner. EventsView reads
+        // WatchSettings.refereeMode at render, so this must be verified ON before Start Match.
+        guard setRefereeMode(true, app: app) else {
+            XCTFail("Referee-mode toggle could not be verified ON — aborting rather than capturing the wrong mode")
+            screenshot("68x-referee-toggle-failed")
+            _ = setRefereeMode(false, app: app)
+            return
+        }
+        guard startButton.waitForExistence(timeout: 30) else {
+            XCTFail("Start screen did not return after enabling referee mode")
+            _ = setRefereeMode(false, app: app)
+            return
+        }
+
+        // ---- Start the match and page Metrics → Events (same recipe as testWalkInGamePages). ----
+        startButton.tap()
+        let metricsMarker = app.staticTexts.matching(
+            NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        _ = metricsMarker.waitForExistence(timeout: 30)
+        sleep(2)
+
+        app.swipeUp()
+        // Referee events page marker: the hero "Yellow" card tile. This MUST exist — if it doesn't,
+        // the page is showing the wrong (player) layout and capturing it would be misleading.
+        let yellow = app.buttons.matching(NSPredicate(format: "label ==[c] 'Yellow'")).firstMatch
+        guard yellow.waitForExistence(timeout: 12) else {
+            XCTFail("Referee events page did not render the Yellow card tile — wrong layout on screen")
+            screenshot("68x-referee-layout-missing")
+            _ = setRefereeMode(false, app: app)
+            return
+        }
+        sleep(1)
+        screenshot("68-watch-referee-events")
+
+        // ---- 68b: yellow-card confirmation flash. The cards sit at the top of Events, so the tile
+        // is on screen; tap it and shoot immediately — the ConfirmationFlash eases out after ~1s. ----
+        yellow.tap()
+        usleep(300_000)              // early inside the ~1s flash window
+        screenshot("68b-watch-referee-flash")
+
+        // ---- Return to Metrics, then page down to Controls and end the match. Sub-60s sessions
+        // auto-discard, which is fine — we only need the surfaces captured. ----
+        var hops = 0
+        while !metricsMarker.exists && hops < 5 {
+            app.swipeDown()
+            usleep(700_000)
+            hops += 1
+        }
+        _ = metricsMarker.waitForExistence(timeout: 12)
+        sleep(1)
+
+        app.swipeDown()
+        let endCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        _ = endCaption.waitForExistence(timeout: 12)
+        let endButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'End'")).firstMatch
+        if endButton.exists && endButton.isHittable {
+            endButton.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
+        }
+
+        // Clear any post-match sheet, then finish the summary back to the start screen.
+        let notNow = app.buttons.matching(NSPredicate(format: "label ==[c] 'Not Now'")).firstMatch
+        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
+        _ = done.waitForExistence(timeout: 30)
+        if notNow.exists && notNow.isHittable {
+            notNow.tap()
+            _ = done.waitForExistence(timeout: 10)
+        }
+        if done.exists && done.isHittable { done.tap() }
+
+        // ---- Cleanup: turn referee mode back OFF so later tests see the standard player layout.
+        // Relaunch first so cleanup starts from a known-good start screen even if the summary
+        // left us somewhere unexpected. ----
+        app.terminate()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 10)
+        handleWatchLocationPrompt(timeout: 8)
+        _ = startButton.waitForExistence(timeout: 30)
+        setRefereeMode(false, app: app)
+
+        // Verify the cleanup stuck: back on the start screen, the "Referee mode" banner must be gone.
+        app.terminate()
+        app.launch()
+        _ = startButton.waitForExistence(timeout: 30)
+        let refereeBanner = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Referee mode'")).firstMatch
+        XCTAssertFalse(refereeBanner.exists, "Referee mode should be OFF after cleanup")
+    }
 }

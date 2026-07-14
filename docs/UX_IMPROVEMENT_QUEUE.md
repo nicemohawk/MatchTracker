@@ -88,3 +88,16 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
 - Remaining: video capture phase 2 (in-app AVCapture w/ wall-clock start, montage export,
   data overlays); ball-skill metrics strategic decision (benchmark §4.5); iPad landscape
   visual review (needs manually rotated sim); backend implementation of §12.
+
+## Wave 9 shipped: long-tail traversal complete
+
+- iOS sheets: FieldDetailSheet (hero + badges + mini-stats + action rows w/ delete confirm),
+  AcceptProposalSheet (dashed satellite motif, truthful what-happens copy), GuardianConsentSheet
+  (compact dark .medium sheet). Captured (36b) and verified.
+- Watch: FieldTrainingView reskin (touchline-walk steps, live walk stats, success state);
+  referee events variant to the wave-4 bar (Yellow/Red hero cards). Captured (67/68/68b),
+  referee mode verified ON in-capture and left OFF after.
+- Test infra: watch Form toggles need right-edge coordinate taps (switch.tap() hits the label);
+  hard assertions prevent wrong-mode captures.
+- Every screen/sheet/mode on both platforms has now had a design pass + live capture review.
+  Accepted-manual leftovers: widget gallery visuals, iPad landscape (headless rotation blocked).
