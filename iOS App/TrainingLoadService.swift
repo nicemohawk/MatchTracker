@@ -83,4 +83,32 @@ final class TrainingLoadService {
         guard fourWeekLoad != nil else { return }
         fourWeekLoad?.averageWorkrateScore = average
     }
+
+    // MARK: - Acute:chronic workload
+
+    /// The sports-science acute:chronic workload ratio (ACWR) — the last 7 days of output measured
+    /// against the rolling 28-day norm — the standard flag for under-load and injury-risky spikes.
+    /// HealthKit exposes no per-sport ACWR, so we derive it from our own stored workrate history
+    /// (the least-invasive correct source): a 7-day acute average over a 28-day chronic average.
+    struct AcuteChronicLoad {
+        enum Status: String { case balanced, ramping, high }
+        var ratio: Double
+        var status: Status
+    }
+
+    /// Classify a 7-day acute average against a 28-day chronic average. Returns nil when either
+    /// window is empty (no cached analytics yet) so callers can show a "building" placeholder
+    /// instead of a fabricated ratio. The sweet spot (~0.8–1.3) reads as balanced; a moderate
+    /// spike (1.3–1.5) as ramping; anything higher as an elevated-risk high.
+    static func acuteChronic(acute: Double?, chronic: Double?) -> AcuteChronicLoad? {
+        guard let acute, let chronic, chronic > 0 else { return nil }
+        let ratio = acute / chronic
+        let status: AcuteChronicLoad.Status
+        switch ratio {
+        case ..<1.3: status = .balanced
+        case ..<1.5: status = .ramping
+        default: status = .high
+        }
+        return AcuteChronicLoad(ratio: ratio, status: status)
+    }
 }

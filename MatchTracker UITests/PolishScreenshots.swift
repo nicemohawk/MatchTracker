@@ -134,6 +134,17 @@ final class PolishScreenshots: XCTestCase {
                 sleep(1)
             }
 
+            // Workrate section: tap its chip and scroll to the new "Match Load" grid (sprint
+            // distance, HSR, accel/decel, dist/min, top speed) + acute:chronic load line.
+            let workrateChip = app.buttons["Workrate"]
+            if workrateChip.waitForExistence(timeout: 4) && workrateChip.isHittable {
+                workrateChip.tap()
+                sleep(1)
+                app.swipeUp(velocity: .slow)
+                sleep(1)
+                export("32b-workrate-load", app: app)
+            }
+
             for _ in 0..<8 { app.swipeUp(velocity: .fast) }
             sleep(1)
             export("33-match-detail-comments", app: app)

@@ -10,6 +10,11 @@ struct WorkrateSection: View {
     let analytics: MatchAnalytics
     @Environment(TrainingLoadService.self) private var trainingLoad
     @EnvironmentObject private var store: MatchStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// One-time entrance flag for the Match Load tiles — flips true on first appear so the
+    /// values roll up from zero (or snap under Reduce Motion), matching the hero ring's count-up.
+    @State private var loadRevealed = false
 
     private var report: WorkrateReport { analytics.workrate }
 
@@ -19,6 +24,7 @@ struct WorkrateSection: View {
             trainingLoadContext
             componentBreakdown
             effortSourceCaption
+            matchLoadGrid
             fatigueBuckets
             distancePerMinuteChart
             speedZoneDonut
@@ -57,8 +63,44 @@ struct WorkrateSection: View {
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                acuteChronicContext
             }
         }
+    }
+
+    /// Acute:chronic workload ratio — the last 7 days of workrate against the rolling 28-day norm,
+    /// the standard flag for spotting under-load or an injury-risky spike. Derived from our own
+    /// stored workrate history (HealthKit has no per-sport ACWR). Below four analyzed matches the
+    /// windows are too thin to trust, so we show a quiet placeholder rather than a fabricated ratio.
+    @ViewBuilder
+    private var acuteChronicContext: some View {
+        let recentMatchCount = store.matches.filter { $0.startDate >= chronicCutoff }.count
+        if recentMatchCount < 4 {
+            Label("Load balance builds after a few more matches", systemImage: "chart.line.uptrend.xyaxis")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else if let acwr = TrainingLoadService.acuteChronic(
+            acute: store.recentAverageWorkrate(days: 7, excluding: detail.matchIdentifier),
+            chronic: store.recentAverageWorkrate(days: 28, excluding: detail.matchIdentifier)
+        ) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("7d : 28d load")
+                        .captionLabel()
+                    Text(String(format: "%.2f", acwr.ratio))
+                        .font(.caption).monospacedDigit().foregroundStyle(.primary)
+                    Text(acwr.status.word)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(acwr.status.tint)
+                }
+                Text("Acute:chronic ratio — 0.8–1.3 is balanced; higher climbs into elevated-load territory.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var chronicCutoff: Date {
+        Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
     }
 
     /// Quiet breakdown of the 0–100 sub-scores behind the hero ring — one subtle horizontal bar
@@ -123,6 +165,88 @@ struct WorkrateSection: View {
         case "gps": return "Effort from GPS"
         case "hr": return "Effort from heart rate"
         default: return nil
+        }
+    }
+
+    // MARK: Match Load
+
+    /// Industry-standard soccer load metrics (sprint distance, HSR, accel/decel counts,
+    /// distance-per-minute, top speed) in a six-tile grid so our numbers speak the same language
+    /// coaches read on STATSports/Catapult. GPS-only — nil for indoor / HR-only sessions.
+    @ViewBuilder
+    private var matchLoadGrid: some View {
+        if let load = analytics.loadMetrics {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Match Load").sectionHeading()
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
+                    spacing: 10
+                ) {
+                    LoadTile(label: "Sprint Dist", target: load.sprintDistanceMeters / 1000,
+                             unit: "km", decimals: 2, tint: Theme.sprint,
+                             revealed: loadRevealed, animation: countUpAnimation)
+                    LoadTile(label: "High-Speed Run", target: load.highSpeedRunningMeters / 1000,
+                             unit: "km", decimals: 2, tint: Theme.sprint,
+                             revealed: loadRevealed, animation: countUpAnimation)
+                    LoadTile(label: "Accels", target: Double(load.accelerationCount),
+                             unit: "count", decimals: 0, tint: Theme.sprint,
+                             revealed: loadRevealed, animation: countUpAnimation)
+                    LoadTile(label: "Decels", target: Double(load.decelerationCount),
+                             unit: "count", decimals: 0, tint: Theme.sprint,
+                             revealed: loadRevealed, animation: countUpAnimation)
+                    LoadTile(label: "Dist/Min", target: load.distancePerMinuteMeters,
+                             unit: "m/min", decimals: 0, tint: Theme.pace,
+                             revealed: loadRevealed, animation: countUpAnimation)
+                    LoadTile(label: "Top Speed", target: load.topSpeedMetersPerSecond * 3.6,
+                             unit: "km/h", decimals: 1, tint: Theme.turf,
+                             revealed: loadRevealed, animation: countUpAnimation)
+                }
+                Text("Industry-standard bands: HSR 19.8–25.2 km/h · sprint >25.2 km/h")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .onAppear {
+                guard !loadRevealed else { return }
+                if let countUpAnimation {
+                    withAnimation(countUpAnimation) { loadRevealed = true }
+                } else {
+                    loadRevealed = true
+                }
+            }
+        }
+    }
+
+    /// Count-up ease for the load tiles — nil under Reduce Motion so values snap to final.
+    private var countUpAnimation: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.9)
+    }
+
+    /// One load metric on a tinted metric tile: a monospaced-digit numeral that rolls up from zero
+    /// via `numericText`, a unit line, and an uppercase label — the app's mini-stat idiom.
+    private struct LoadTile: View {
+        let label: String
+        let target: Double
+        let unit: String
+        let decimals: Int
+        let tint: Color
+        let revealed: Bool
+        let animation: Animation?
+
+        private var shownValue: Double { revealed ? target : 0 }
+
+        var body: some View {
+            VStack(spacing: 4) {
+                Text(shownValue, format: .number.precision(.fractionLength(decimals)))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(tint)
+                    .contentTransition(.numericText(value: shownValue))
+                    .animation(animation, value: revealed)
+                Text(unit).font(.caption2).foregroundStyle(.secondary)
+                Text(label).captionLabel()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .metricTile(tint: tint)
         }
     }
 
@@ -309,5 +433,25 @@ private extension Text {
     /// heading weight the full-bleed hero charts sit under.
     func sectionHeading() -> Text {
         font(.system(.title3, design: .rounded).weight(.bold))
+    }
+}
+
+private extension TrainingLoadService.AcuteChronicLoad.Status {
+    /// The one-word coach-facing label for the ratio's zone.
+    var word: String {
+        switch self {
+        case .balanced: return "balanced"
+        case .ramping: return "ramping"
+        case .high: return "high"
+        }
+    }
+
+    /// Semantic tint: turf when balanced, sprint amber while ramping, loss red when high.
+    var tint: Color {
+        switch self {
+        case .balanced: return Theme.turf
+        case .ramping: return Theme.sprint
+        case .high: return Theme.loss
+        }
     }
 }

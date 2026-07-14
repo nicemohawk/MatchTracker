@@ -69,3 +69,12 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
 - iPad ships the iPhone single-column layout: needs readable max-width / split layouts (Matches, detail sections grid, Fields side panel, coach dashboard already regular-width aware).
 - UI-test helpers are iPhone-calibrated: selectTab must handle the iPad top pill; HK sheet "Turn On All" coordinate misses on iPad.
 - Walk brittleness: team-code field accumulates across runs (append vs replace) — clear before typing.
+
+## Wave 5 (in flight): benchmark gap #1/#3 — metric credibility + load context
+
+- Kit: SoccerLoadMetrics (FIFA-convention bands: HSR 19.8–25.2 km/h, sprint >25.2 km/h,
+  accel/decel efforts ±3.0 m/s² debounced, distance-per-minute, top speed) + tests.
+- iOS: "Match Load" grid in WorkrateSection + acute:chronic (7v28) load context line.
+- Later gaps (benchmark §4): video capture/highlight MVP, community flywheel
+  (peer-cohort benchmarking), ball-skill metrics decision. Landscape iPad review
+  requires a manually rotated sim (headless rotation documented as blocked).

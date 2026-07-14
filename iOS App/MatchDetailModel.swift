@@ -17,6 +17,9 @@ struct MatchAnalytics {
     var runs: [RunSegment]
     var workrate: WorkrateReport
     var position: PositionEstimate
+    /// Industry-standard soccer load metrics (sprint distance, HSR, accel/decel counts, etc.),
+    /// computed only for GPS matches. Nil for indoor / HR-only sessions, which have no route.
+    var loadMetrics: SoccerLoadMetrics?
 }
 
 /// Loads a match's GPS track + heart rate and derives cached analytics via MatchTrackerKit.
@@ -173,7 +176,8 @@ final class MatchDetailModel: ObservableObject {
                 runs: [],
                 workrate: workrate,
                 position: PositionEstimate(role: .midfielder, side: .center, confidence: 0,
-                                           meanPoint: CGPoint(x: 0.5, y: 0.5), periodMeanPoints: [])
+                                           meanPoint: CGPoint(x: 0.5, y: 0.5), periodMeanPoints: []),
+                loadMetrics: nil   // indoor / HR-only: no route to derive GPS load metrics from
             )
         }
 
@@ -192,6 +196,9 @@ final class MatchDetailModel: ObservableObject {
         let position = PositionAnalyzer.estimate(
             points: track, projector: projector, events: events, playingIntervals: intervals
         )
+        // Industry-standard load metrics from the GPS route + on-pitch intervals — surfaced next
+        // to the workrate so our numbers speak the same language as STATSports/Catapult.
+        let loadMetrics = SoccerLoadMetrics.compute(track: track, playingIntervals: intervals)
         return MatchAnalytics(
             rectangle: resolved.rectangle,
             projector: projector,
@@ -201,7 +208,8 @@ final class MatchDetailModel: ObservableObject {
             heatmap: heatmap,
             runs: runs,
             workrate: workrate,
-            position: position
+            position: position,
+            loadMetrics: loadMetrics
         )
     }
 

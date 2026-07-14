@@ -578,3 +578,60 @@ xcodebuild -project MatchTracker.xcodeproj -scheme "MatchTracker" \
 xcodebuild -project MatchTracker.xcodeproj -scheme "MatchTracker Watch App" \
   -destination 'generic/platform=watchOS Simulator' build
 ```
+
+## Amendment: industry-standard soccer load metrics (`SoccerLoadMetrics`)
+
+Closes the top item in `docs/COMPETITIVE_BENCHMARK.md` §4 — the "physical-metric credibility gap
+vs. dedicated GPS." Coaches anchor on numbers they already trust from STATSports Apex / Catapult
+One (Sprint Distance, High-Speed Running, accel/decel counts, distance-per-minute, top speed). This
+type reports exactly those, under the same validated definitions, so a MatchTracker readout is
+directly comparable to a vest-pod readout. It is a *named-metric credibility layer* that sits
+alongside — and does not replace — the calibrated, format-aware `WorkrateReport` score.
+
+```swift
+// MatchTrackerKit/Sources/MatchTrackerKit/SoccerLoadMetrics.swift
+public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
+    public let sprintDistanceMeters: Double      // distance at speed > 7.0 m/s (25.2 km/h)
+    public let highSpeedRunningMeters: Double    // distance in the 5.5...7.0 m/s band (19.8–25.2 km/h)
+    public let accelerationCount: Int            // discrete efforts exceeding +3.0 m/s² for ≥ 0.5 s
+    public let decelerationCount: Int            // discrete efforts below −3.0 m/s² for ≥ 0.5 s
+    public let distancePerMinuteMeters: Double   // total on-pitch distance / on-pitch minutes (0 if none)
+    public let topSpeedMetersPerSecond: Double   // peak instantaneous speed, outliers rejected
+
+    public static let zero: SoccerLoadMetrics
+
+    // Absolute FIFA/GPS-industry thresholds — see "not pitch-scaled" note below.
+    public static let sprintSpeedMetersPerSecond = 7.0
+    public static let highSpeedRunningLowerMetersPerSecond = 5.5
+    public static let accelerationThresholdMetersPerSecondSquared = 3.0
+    public static let minimumEffortSeconds = 0.5
+    public static let effortDebounceSeconds = 2.0
+    public static let outlierSpeedCapMetersPerSecond = 12.0
+
+    /// Restricts distance/speed accumulation to `playingIntervals` (bench time excluded).
+    /// An empty `playingIntervals` means "no substitution data" → whole track treated as on-pitch.
+    public static func compute(track: [TrackPoint],
+                               playingIntervals: [DateInterval]) -> SoccerLoadMetrics
+}
+```
+
+**Thresholds are absolute, deliberately NOT scaled by `MatchContext.pitchScale`.** `RunDetector`
+and `WorkrateAnalyzer` scale their speed thresholds by `pitchScale` so a hard burst on a short pitch
+still reads as a "sprint" relative to that pitch. `SoccerLoadMetrics` does the opposite on purpose:
+the entire value of *named* metrics is cross-context comparison — "240 m of sprint distance" must
+mean the same thing on a full pitch, a 5-a-side cage, or against last season's STATSports number. A
+pitch-relative sprint would quietly break that promise; sprint distance on a small pitch simply, and
+correctly, comes out lower.
+
+**Signal processing.** Per-point speed is derived exactly as `RunDetector`/`WorkrateAnalyzer` do
+it (`rawPointSpeeds`: reported speed when valid, else GPS point-to-point), then a ~1 s time-windowed
+moving average is applied *before* differentiating so GPS jitter can't manufacture phantom accel
+spikes. Accel/decel efforts are debounced: an effort ends when the signal drops back below
+threshold, and two efforts of the same sign within `effortDebounceSeconds` collapse to one, so a
+single burst is never double-counted. Robustness guards: empty/single-point tracks return `.zero`;
+teleport outliers are rejected both by `horizontalAccuracy` filtering and a per-step speed sanity
+cap (`outlierSpeedCapMetersPerSecond`, ~12 m/s, above elite human top speed).
+
+Tests: `MatchTrackerKit/Tests/MatchTrackerKitTests/SoccerLoadMetricsTests.swift` — synthetic tracks
+with analytic ground truth (band-distance accumulation, one-burst = 1 accel + 1 decel, debounce
+collapse, bench exclusion, noise-only → zero load, outlier capping).
