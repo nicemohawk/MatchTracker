@@ -7,6 +7,9 @@ import MatchTrackerKit
 struct MatchesView: View {
     /// True while no detail is pushed; drives the settings circle's root-only visibility.
     @Binding var isAtRoot: Bool
+    /// Mirrors the tab bar's `.onScrollDown` minimize state: true after a downward scroll, false
+    /// on any upward scroll or near the top. The settings circle hides alongside the minimized bar.
+    @Binding var isScrolledDown: Bool
     @EnvironmentObject private var matches: MatchStore
     @EnvironmentObject private var fields: FieldsModel
     @Environment(LiveMatchStore.self) private var liveMatches
@@ -16,8 +19,10 @@ struct MatchesView: View {
     @State private var showingImport = false
     @State private var navigationPath: [UUID] = []
 
-    init(isAtRoot: Binding<Bool> = .constant(true)) {
+    init(isAtRoot: Binding<Bool> = .constant(true),
+         isScrolledDown: Binding<Bool> = .constant(false)) {
         _isAtRoot = isAtRoot
+        _isScrolledDown = isScrolledDown
     }
 #if DEBUG
     @State private var isGeneratingDemo = false
@@ -61,6 +66,7 @@ struct MatchesView: View {
                         .readableWidth()
                     }
                     .scrollIndicators(.automatic)
+                    .modifier(ScrollDownTracker(isScrolledDown: $isScrolledDown))
                 }
             }
             .background(Theme.background.ignoresSafeArea())
@@ -259,6 +265,29 @@ struct MatchesView: View {
         }
     }
 #endif
+}
+
+/// Tracks whether the user has scrolled down (the gesture that minimizes the iOS 26 tab bar) so
+/// the settings circle can hide alongside the shrinking bar. No-op before iOS 18 — the minimize
+/// behavior it mirrors only exists on iOS 26.
+private struct ScrollDownTracker: ViewModifier {
+    @Binding var isScrolledDown: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { old, new in
+                // Match the bar's own behavior: minimize past a bit of downward travel,
+                // restore on any upward scroll or at the top.
+                if new > old + 1, new > 60 {
+                    if !isScrolledDown { isScrolledDown = true }
+                } else if new < old - 1 || new <= 10 {
+                    if isScrolledDown { isScrolledDown = false }
+                }
+            }
+        } else {
+            content
+        }
+    }
 }
 
 /// Card press feedback: a quick settle-down scale, mirroring what a UICollectionView highlight

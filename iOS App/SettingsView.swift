@@ -138,15 +138,14 @@ struct SettingsView: View {
             .readableFormWidth()
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Settings")
-            .onDisappear { commit() }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    // As a tab (the bar's detached settings circle), edits commit when the
-                    // user leaves; the button remains for explicit saves.
-                    Button("Save") { commit() }
-                }
-            }
+            // Settings is a tab, not a modal — there's no "Save" moment. Edits commit as they're
+            // made (plus a belt-and-braces commit when navigating away).
+            .onChange(of: playerName) { commit() }
+            .onChange(of: teamCode) { commit() }
+            .onChange(of: serverOverride) { commit() }
+            .onChange(of: contributeDetectedFields) { commit() }
+            .onDisappear { commit() }
             .onAppear {
                 playerName = settings.playerName
                 teamCode = settings.teamCode

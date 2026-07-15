@@ -93,20 +93,20 @@ enum SoccerPitch {
         let spotCenter = CGPoint(x: goalLineX + direction * penaltyDistance, y: rect.midY)
         context.fill(spot(at: spotCenter), with: shading)
 
-        // Penalty arc (only the segment beyond the box front).
+        // Penalty arc — only the "D" beyond the box front. Angle-based addArc is fragile here
+        // (SwiftUI's flipped coordinates invert `clockwise`, which silently turns the minor arc
+        // into a near-full circle), so stroke the whole circle clipped to outside the box instead.
         let arcRadius = px(9.15)
-        let boxFrontDX = penaltyDepth - penaltyDistance
-        let cosAngle = min(1, max(-1, boxFrontDX / arcRadius))
-        let theta = acos(cosAngle)
-        var arc = Path()
-        if leftSide {
-            arc.addArc(center: spotCenter, radius: arcRadius,
-                       startAngle: .radians(-theta), endAngle: .radians(theta), clockwise: false)
-        } else {
-            arc.addArc(center: spotCenter, radius: arcRadius,
-                       startAngle: .radians(.pi - theta), endAngle: .radians(.pi + theta), clockwise: true)
+        let circle = Path(ellipseIn: CGRect(x: spotCenter.x - arcRadius, y: spotCenter.y - arcRadius,
+                                            width: arcRadius * 2, height: arcRadius * 2))
+        let boxFrontX = goalLineX + direction * penaltyDepth
+        let beyondBox = leftSide
+            ? CGRect(x: boxFrontX, y: rect.minY, width: rect.maxX - boxFrontX, height: rect.height)
+            : CGRect(x: rect.minX, y: rect.minY, width: boxFrontX - rect.minX, height: rect.height)
+        context.drawLayer { layer in
+            layer.clip(to: Path(beyondBox))
+            layer.stroke(circle, with: shading, style: stroke)
         }
-        context.stroke(arc, with: shading, style: stroke)
     }
 
     private static func drawCornerArcs(_ context: inout GraphicsContext, rect: CGRect,

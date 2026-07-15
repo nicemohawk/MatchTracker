@@ -136,6 +136,9 @@ struct RootTabView: View {
     /// Whether the Matches tab is showing its root list (no detail pushed). The settings circle
     /// is a root-screen affordance: it hides on other tabs and on pushed detail screens.
     @State private var matchesAtRoot = true
+    /// Mirrors the tab bar's minimize-on-scroll state: when the bar shrinks to the single icon,
+    /// the settings circle goes with it.
+    @State private var matchesScrolledDown = false
     // First-run onboarding gate. Written once the cover finishes; existing installs (and the UI
     // tests that walk them) skip the cover entirely.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
@@ -167,7 +170,7 @@ struct RootTabView: View {
     private var modernTabView: some View {
         TabView(selection: $selectedTab) {
             Tab("Matches", systemImage: "figure.soccer", value: "matches") {
-                MatchesView(isAtRoot: $matchesAtRoot)
+                MatchesView(isAtRoot: $matchesAtRoot, isScrolledDown: $matchesScrolledDown)
             }
             Tab("Fields", systemImage: "map", value: "fields") {
                 FieldsView()
@@ -176,9 +179,11 @@ struct RootTabView: View {
                 TeamView()
             }
             // The search role renders as the separated glass circle at the bar's trailing edge.
-            // Root-screen only: it shows on the Matches root — not on other tabs or pushed
-            // detail screens — and stays put while Settings itself is open.
-            if (selectedTab == "matches" && matchesAtRoot) || selectedTab == "settings" {
+            // Root-screen only: it shows on the Matches root — not on other tabs, not on pushed
+            // detail screens, and not while the bar is minimized after a scroll-down — and stays
+            // put while Settings itself is open.
+            if (selectedTab == "matches" && matchesAtRoot && !matchesScrolledDown)
+                || selectedTab == "settings" {
                 Tab("Settings", systemImage: "gearshape", value: "settings", role: .search) {
                     SettingsView()
                 }
