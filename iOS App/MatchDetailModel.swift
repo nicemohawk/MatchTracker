@@ -23,7 +23,7 @@ struct MatchAnalytics {
 }
 
 /// Loads a match's GPS track + heart rate and derives cached analytics via MatchTrackerKit.
-/// Field projector resolution order: record.fieldID → bestMatch(track) → inferFieldRectangle.
+/// Field projector resolution order: record.fieldID → bestMatch(track) → FieldFitter dense-core fit.
 @MainActor
 final class MatchDetailModel: ObservableObject {
     let workout: HKWorkout?
@@ -214,8 +214,16 @@ final class MatchDetailModel: ObservableObject {
         lengthMeters: 40, widthMeters: 20, headingDegrees: 0, corners: []
     )
 
+    /// On/off-field slop (meters) for clipping analysis to the pitch: track points, runs, and the
+    /// geometry-derived playing intervals all treat a coordinate this far outside the touchline as
+    /// still "on field". ~6 m absorbs GPS jitter and players who overrun the line without admitting
+    /// warm-up laps, the bench, or the walk to the car.
+    private static let onFieldMarginMeters = 6.0
+
     private func computeAnalytics(track: [TrackPoint]) -> MatchAnalytics? {
-        let intervals = SubstitutionTracker.playingIntervals(
+        // Manual sub events still drive the Events timeline, and stand in as the playing-interval
+        // source for route-less sessions (below) where there's no geometry to derive them from.
+        let recordedIntervals = SubstitutionTracker.playingIntervals(
             events: events, matchStart: matchStart, matchEnd: matchEnd
         )
 
@@ -232,7 +240,7 @@ final class MatchDetailModel: ObservableObject {
             // "hr". This is the exact call the indoor branch makes — reused for any route-less match.
             let context = MatchContext(format: .indoor)
             var workrate = WorkrateAnalyzer.analyze(
-                track: track, runs: [], playingIntervals: intervals,
+                track: track, runs: [], playingIntervals: recordedIntervals,
                 heartRate: heartRateSamples, context: context
             )
             if let heartRate { workrate.averageHeartRate = heartRate.average }
@@ -241,7 +249,7 @@ final class MatchDetailModel: ObservableObject {
                 projector: FieldProjector(rectangle: Self.indoorPlaceholderRectangle),
                 fieldName: nil,
                 fieldSource: nil,
-                playingIntervals: intervals,
+                playingIntervals: recordedIntervals,
                 heatmap: HeatmapGrid(columns: 30, rows: 20, cells: []),
                 runs: [],
                 workrate: workrate,
@@ -254,17 +262,42 @@ final class MatchDetailModel: ObservableObject {
         let projector = FieldProjector(rectangle: resolved.rectangle)
         let context = MatchContext(format: matchFormat,
                                    fieldLengthMeters: resolved.rectangle.lengthMeters)
-        let heatmap = HeatmapGrid.compute(
-            points: track, projector: projector, columns: 30, rows: 20, playingIntervals: intervals
+
+        // Everything below is projected through THIS field, so re-running it after a corner edit
+        // reprojects AND reclips the whole match against the new geometry.
+
+        // Time on pitch is derived from the GEOMETRY for GPS matches: where the player actually was
+        // relative to the (possibly just-edited) touchline, not from manual sub events. Those events
+        // still show in the Events timeline; they simply don't define workrate/time-on-pitch here.
+        // Fall back to the recorded-event intervals only if the deriver yields nothing.
+        let derived = PlayIntervalDeriver.playingIntervals(
+            track: track, field: resolved.rectangle,
+            matchStart: matchStart, matchEnd: matchEnd, marginMeters: Self.onFieldMarginMeters
         )
-        let runs = RunDetector.detectRuns(in: track, configuration: .scaled(for: context))
+        let intervals = derived.isEmpty ? recordedIntervals : derived
+
+        // Reclip: heatmap and position are placed only from ON-FIELD points, so off-field warm-up
+        // laps, the bench, and the walk-off never smear onto the pitch or bias the position dot.
+        let onFieldTrack = track.filter {
+            projector.isOnField($0.coordinate, marginMeters: Self.onFieldMarginMeters)
+        }
+
+        let heatmap = HeatmapGrid.compute(
+            points: onFieldTrack, projector: projector, columns: 30, rows: 20, playingIntervals: intervals
+        )
+
+        // Runs are detected over the full track (a run can briefly clip the line), then clipped:
+        // any run whose majority of points fall off-field is an off-pitch excursion, not play.
+        let detectedRuns = RunDetector.detectRuns(in: track, configuration: .scaled(for: context))
+        let runs = detectedRuns.filter { isOnFieldRun($0, track: track, projector: projector) }
+
         var workrate = WorkrateAnalyzer.analyze(
             track: track, runs: runs, playingIntervals: intervals,
             heartRate: heartRateSamples, context: context
         )
         if let heartRate { workrate.averageHeartRate = heartRate.average }
         let position = PositionAnalyzer.estimate(
-            points: track, projector: projector, events: events, playingIntervals: intervals
+            points: onFieldTrack, projector: projector, events: events, playingIntervals: intervals
         )
         // Industry-standard load metrics from the GPS route + on-pitch intervals — surfaced next
         // to the workrate so our numbers speak the same language as STATSports/Catapult.
@@ -283,6 +316,19 @@ final class MatchDetailModel: ObservableObject {
         )
     }
 
+    /// Whether the majority of a run's track points lie on the field — the clip test that keeps
+    /// off-pitch excursions (warm-up jog, walk to the bench) out of the runs set.
+    private func isOnFieldRun(_ run: RunSegment, track: [TrackPoint], projector: FieldProjector) -> Bool {
+        let lower = max(0, run.pointRange.lowerBound)
+        let upper = min(track.count, run.pointRange.upperBound)
+        guard lower < upper else { return false }
+        let points = track[lower..<upper]
+        let onField = points.reduce(0) {
+            $0 + (projector.isOnField($1.coordinate, marginMeters: Self.onFieldMarginMeters) ? 1 : 0)
+        }
+        return onField * 2 >= points.count
+    }
+
     private struct ResolvedField {
         var rectangle: OrientedRectangle
         var name: String?
@@ -299,9 +345,10 @@ final class MatchDetailModel: ObservableObject {
         if let matched = fields.store.bestMatch(for: coordinates) {
             return ResolvedField(rectangle: matched.rectangle, name: matched.name, source: matched.source)
         }
-        // 3. Infer a rectangle from the track itself.
-        if let inferred = FieldGeometry.inferFieldRectangle(from: track) {
-            return ResolvedField(rectangle: inferred, name: nil, source: .inferred)
+        // 3. Fit a rectangle from the track itself — the robust dense-core fit (rejects warm-up
+        //    walks / bench stints), NOT a bounding box, so an inferred field lands on the pitch.
+        if let fitted = FieldFitter.fitFieldRectangle(track: track) {
+            return ResolvedField(rectangle: fitted, name: nil, source: .inferred)
         }
         // 4. Last resort: naive bounding rectangle so the views still render.
         if let naive = FieldGeometry.fitOrientedRectangle(to: coordinates) {

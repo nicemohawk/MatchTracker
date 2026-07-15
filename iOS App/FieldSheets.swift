@@ -334,115 +334,15 @@ struct AcceptProposalSheet: View {
     }
 }
 
-/// Drag the four corner pins on satellite imagery to correct a field's geometry. Saving refits
-/// the rectangle and records the correction as a high-weight trained observation.
+/// Thin compatibility wrapper over the unified `FieldBoundsEditor` (the good draggable-handle
+/// editor lifted from Add Field's adjust phase). Kept so existing call sites — the field detail
+/// sheet's "Adjust Corners" push — don't need to change; all behavior lives in `FieldBoundsEditor`.
 struct CornerEditorView: View {
     let field: FieldModel
     var onSaved: () -> Void
-    @EnvironmentObject private var fields: FieldsModel
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var corners: [Coordinate2D] = []
-    @State private var draggingIndex: Int?
 
     var body: some View {
-        MapReader { proxy in
-            Map(initialPosition: .region(field.rectangle.mapRegion)) {
-                if corners.count == 4 {
-                    MapPolygon(coordinates: corners.map(\.clCoordinate))
-                        .foregroundStyle(Theme.turf.opacity(0.15))
-                        .stroke(Theme.turf, lineWidth: 2)
-                    ForEach(corners.indices, id: \.self) { index in
-                        Annotation("", coordinate: corners[index].clCoordinate) {
-                            cornerHandle(index: index, proxy: proxy)
-                        }
-                    }
-                }
-            }
-            .mapStyle(.imagery)
-            // Metal-backed: never let layout resolve the map to zero height mid-transition.
-            .frame(minHeight: 160)
-        }
-        .overlay(alignment: .bottom) { guidanceBar }
-        .navigationTitle("Adjust Corners")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if corners.isEmpty { corners = field.rectangle.corners }
-        }
-    }
-
-    /// A dark guidance bar over the imagery: what to do, plus a turf Save capsule. Dragging a
-    /// handle nudges low-confidence geometry into a trained observation.
-    private var guidanceBar: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "hand.draw.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.turf)
-                Text(draggingIndex == nil
-                     ? "Drag any of the four corners to match the pitch."
-                     : "Corner \((draggingIndex ?? 0) + 1) of 4")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-            }
-            Button { save() } label: {
-                Text("Save Corrections")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.turf)
-            .clipShape(Capsule())
-            .disabled(corners.count != 4)
-        }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
-    }
-
-    private func cornerHandle(index: Int, proxy: MapProxy) -> some View {
-        let isDragging = draggingIndex == index
-        return Circle()
-            .fill(isDragging ? Theme.signal : Theme.turf)
-            .frame(width: isDragging ? 34 : 30, height: isDragging ? 34 : 30)
-            .overlay(Circle().stroke(.white, lineWidth: 2.5))
-            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-            // Enlarge the touch target well beyond the visible dot.
-            .padding(12)
-            .contentShape(Circle())
-            .animation(.easeOut(duration: 0.15), value: isDragging)
-            .gesture(
-                DragGesture(coordinateSpace: .global)
-                    .onChanged { value in
-                        if draggingIndex != index {
-                            draggingIndex = index
-                            Haptics.selection()
-                        }
-                        if let coordinate = proxy.convert(value.location, from: .global) {
-                            corners[index] = Coordinate2D(latitude: coordinate.latitude,
-                                                          longitude: coordinate.longitude)
-                        }
-                    }
-                    .onEnded { _ in draggingIndex = nil }
-            )
-    }
-
-    private func save() {
-        guard let rectangle = FieldGeometry.fitOrientedRectangle(to: corners) else { return }
-        var updated = field
-        updated.rectangle = rectangle
-        updated.outline = corners
-        updated.source = .trained
-        updated.observationCount += 1
-        fields.save(updated)
-        dismiss()
-        onSaved()
+        FieldBoundsEditor(field: field, onSaved: onSaved)
     }
 }
 

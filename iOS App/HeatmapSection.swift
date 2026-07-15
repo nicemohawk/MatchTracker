@@ -11,6 +11,9 @@ struct HeatmapSection: View {
     @EnvironmentObject private var store: MatchStore
     @EnvironmentObject private var fields: FieldsModel
     @State private var showSatellite = false
+    /// Satellite-only field-fit diagnostic: draw the raw GPS polyline over the imagery so a
+    /// mis-aligned field boundary is obvious against the actual route.
+    @State private var showRoute = false
     @State private var compareWithSeason = false
     @State private var comparisonMode: ComparisonMode = .compare
     @State private var isHoldingCompare = false
@@ -43,7 +46,8 @@ struct HeatmapSection: View {
             if isReprojecting { reprojectingBanner }
 
             if showSatellite {
-                SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap)
+                SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap,
+                                        route: showRoute ? detail.track.map(\.coordinate) : [])
                     .frame(height: 360)
                     .fullBleed()
                 HeatmapLegend()
@@ -61,15 +65,22 @@ struct HeatmapSection: View {
                 HeatmapLegend()
             }
         }
-        .onChange(of: showSatellite) { _, _ in isHoldingCompare = false }
+        .onChange(of: showSatellite) { _, isOn in
+            isHoldingCompare = false
+            if !isOn { showRoute = false }   // the Route diagnostic only exists in satellite mode
+        }
         .onChange(of: comparisonMode) { _, _ in
             isHoldingCompare = false
             Haptics.selection()
         }
-        .fullScreenCover(isPresented: $showFieldEditor) {
+        // A large SHEET (not a fullScreenCover): a Metal-backed imagery Map mounted in a
+        // fullScreenCover rendered blank until an app-switch (the white-screen report). Presented
+        // as a sheet, and with the editor's own first-non-zero-geometry mount gate, it renders on
+        // first present.
+        .sheet(isPresented: $showFieldEditor) {
             if let adjustment = pendingAdjustment {
                 NavigationStack {
-                    CornerEditorView(field: adjustment.field) {
+                    FieldBoundsEditor(field: adjustment.field) {
                         handleFieldSaved(adjustment)
                     }
                     .toolbar {
@@ -78,8 +89,9 @@ struct HeatmapSection: View {
                         }
                     }
                 }
-                // Covers inherit the environment on modern SwiftUI, but pass the fields model
-                // explicitly so the reused CornerEditorView always resolves its @EnvironmentObject.
+                .presentationDetents([.large])
+                // Sheets inherit the environment on modern SwiftUI, but pass the fields model
+                // explicitly so the reused editor always resolves its @EnvironmentObject.
                 .environmentObject(fields)
             }
         }
@@ -141,6 +153,14 @@ struct HeatmapSection: View {
     /// read as a muddy olive block. Same bindings/behavior: "Satellite" mirrors `showSatellite`,
     /// "Compare" mirrors `compareWithSeason` and is disabled while satellite is on.
     private var displayChips: some View {
+        // Horizontally scrolling: with Route + Adjust Field joining in satellite mode, four chips
+        // exceed compact width and would wrap their labels onto two lines otherwise.
+        ScrollView(.horizontal, showsIndicators: false) {
+            displayChipRow
+        }
+    }
+
+    private var displayChipRow: some View {
         HStack(spacing: 8) {
             displayChip(title: "Satellite", systemImage: "globe.americas.fill", isOn: showSatellite) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showSatellite.toggle() }
@@ -148,6 +168,14 @@ struct HeatmapSection: View {
             displayChip(title: "Compare", systemImage: "square.2.layers.3d",
                         isOn: compareWithSeason, disabled: showSatellite) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { compareWithSeason.toggle() }
+            }
+            // Satellite-only: overlay the raw GPS route (the field-fit diagnostic) so a misaligned
+            // boundary is obvious against the actual track. Hidden when there's no route to draw.
+            if showSatellite && !detail.track.isEmpty {
+                displayChip(title: "Route", systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                            isOn: showRoute) {
+                    withAnimation(.easeInOut(duration: 0.2)) { showRoute.toggle() }
+                }
             }
             // Correct a mis-resolved field boundary from here — quietly, and only in satellite mode
             // where the misalignment against the imagery is obvious (hidden when no field resolved).
@@ -170,6 +198,8 @@ struct HeatmapSection: View {
         } label: {
             Label(title, systemImage: systemImage)
                 .font(.system(.footnote, design: .rounded).weight(.semibold))
+                .lineLimit(1)
+                .fixedSize()
                 .foregroundStyle(isOn ? accent : Color.primary)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 34)
@@ -413,6 +443,8 @@ struct PitchHeatmapCanvas: View {
 struct SatelliteHeatmapOverlay: View {
     let rectangle: OrientedRectangle
     let heatmap: HeatmapGrid
+    /// Raw GPS coordinates for the field-fit diagnostic overlay; empty unless the "Route" chip is on.
+    var route: [Coordinate2D] = []
 
     var body: some View {
         Map(initialPosition: cameraPosition, interactionModes: []) {
@@ -427,6 +459,12 @@ struct SatelliteHeatmapOverlay: View {
             ForEach(Array(outlinePolylines.enumerated()), id: \.offset) { _, line in
                 MapPolyline(coordinates: line)
                     .stroke(Theme.pitchLines, lineWidth: 2)
+            }
+            // Raw route: a thin, faint signal-tinted polyline of the actual GPS track, so any
+            // drift between the fitted field and where the player really moved is visible.
+            if route.count > 1 {
+                MapPolyline(coordinates: route.map(\.clCoordinate))
+                    .stroke(Theme.signal.opacity(0.6), lineWidth: 1.5)
             }
         }
         .mapStyle(.imagery)

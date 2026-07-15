@@ -101,54 +101,58 @@ struct MatchesView: View {
     /// around the existing row, it doesn't redesign it.
     private var matchList: some View {
         let sections = listData.sections(filter: filter, query: searchText)
-        return VStack(spacing: 0) {
-            MatchFilterBar(data: listData, selection: $filter)
-                .padding(.vertical, 8)
+        // ScrollView + LazyVStack (not List) so cards get scroll transitions and a pressed-state
+        // scale — List swallows both. Headers are NOT pinned: they float as inline text (see
+        // MatchSectionHeader) instead of the old full-width opaque "year bars".
+        return ScrollView {
+            LazyVStack(spacing: 12) {
+                if showBacklogTeaser {
+                    backlogTeaser
+                }
+                // On iOS 26+ the live match rides in the tab bar's bottom accessory (see
+                // RootTabView), so this in-list card would be a duplicate affordance.
+                if #unavailable(iOS 26.0), liveMatches.isLive {
+                    liveCard
+                }
 
-            // ScrollView + LazyVStack (not List) so cards get scroll transitions and a pressed-state
-            // scale — List swallows both.
-            ScrollView {
-                LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
-                    if showBacklogTeaser {
-                        backlogTeaser
-                    }
-                    // On iOS 26+ the live match rides in the tab bar's bottom accessory (see
-                    // RootTabView), so this in-list card would be a duplicate affordance.
-                    if #unavailable(iOS 26.0), liveMatches.isLive {
-                        liveCard
-                    }
-
-                    if sections.isEmpty {
-                        filteredEmptyState
-                    } else {
-                        ForEach(sections) { section in
-                            Section {
-                                ForEach(section.items) { item in
-                                    NavigationLink(value: item.id) {
-                                        MatchRow(summary: item.summary, dateLabel: item.dateLabel)
-                                    }
-                                    .buttonStyle(PressableCardStyle())
-                                    .scrollTransition(.interactive(timingCurve: .easeOut),
-                                                      axis: .vertical) { content, phase in
-                                        content
-                                            .opacity(phase.isIdentity ? 1 : 0.55)
-                                            .scaleEffect(phase.isIdentity ? 1 : 0.965)
-                                    }
+                if sections.isEmpty {
+                    filteredEmptyState
+                } else {
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(section.items) { item in
+                                NavigationLink(value: item.id) {
+                                    MatchRow(summary: item.summary, dateLabel: item.dateLabel)
                                 }
-                            } header: {
-                                MatchSectionHeader(title: section.title, detail: section.detail)
+                                .buttonStyle(PressableCardStyle())
+                                .scrollTransition(.interactive(timingCurve: .easeOut),
+                                                  axis: .vertical) { content, phase in
+                                    content
+                                        .opacity(phase.isIdentity ? 1 : 0.55)
+                                        .scaleEffect(phase.isIdentity ? 1 : 0.965)
+                                }
                             }
+                        } header: {
+                            MatchSectionHeader(title: section.title, detail: section.detail)
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                // iPad / wide split: keep the card column a readable measure, centered, instead of
-                // full-bleed cards spanning the whole canvas.
-                .readableWidth()
             }
-            .scrollIndicators(.automatic)
-            .modifier(ScrollDownTracker(isScrolledDown: $isScrolledDown))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            // iPad / wide split: keep the card column a readable measure, centered, instead of
+            // full-bleed cards spanning the whole canvas.
+            .readableWidth()
+        }
+        .scrollIndicators(.automatic)
+        .modifier(ScrollDownTracker(isScrolledDown: $isScrolledDown))
+        // Pin the filter chip row as a glass overlay; the scroll content insets below it but scrolls
+        // UNDER it (the material blurs the cards passing behind), so there's no hard clip edge.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            MatchFilterBar(data: listData, selection: $filter)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .modifier(GlassListHeader())
         }
     }
 
@@ -339,6 +343,25 @@ struct MatchesView: View {
         }
     }
 #endif
+}
+
+/// Glass treatment for the pinned filter-chip header: a translucent material so the match cards
+/// remain visible (blurred) as they scroll behind it, with a soft progressive edge below rather
+/// than a hard seam. iOS 26 gets the Liquid Glass bar effect; earlier systems fall back to
+/// `.ultraThinMaterial`, the app's established glass idiom.
+private struct GlassListHeader: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial)
+            .overlay(alignment: .bottom) {
+                // Progressive edge: a short fade below the bar so content dissolves under it.
+                LinearGradient(colors: [Theme.surfaceStroke.opacity(0.55), .clear],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 10)
+                    .offset(y: 10)
+                    .allowsHitTesting(false)
+            }
+    }
 }
 
 /// Tracks whether the user has scrolled down (the gesture that minimizes the iOS 26 tab bar) so

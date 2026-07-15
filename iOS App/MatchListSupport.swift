@@ -299,9 +299,9 @@ struct MatchFilterBar: View {
     }
 }
 
-/// Sticky-feel month header for the LazyVStack (`pinnedViews: [.sectionHeaders]`): the month title
-/// with a compact aggregate on the trailing edge. Opaque background so pinned it cleanly covers
-/// cards scrolling beneath it.
+/// Inline month header: the month title with a compact aggregate on the trailing edge, floating
+/// directly on the list background. NO full-width opaque band (the old "weird year bars") and NOT
+/// pinned — it scrolls with its section like a quiet divider between months.
 struct MatchSectionHeader: View {
     let title: String
     let detail: String
@@ -318,10 +318,9 @@ struct MatchSectionHeader: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.background)
     }
 }
 

@@ -36,6 +36,26 @@ struct RunsSection: View {
             }
         }
         .onAppear(perform: prepare)
+        // Rebuild the curated runs + normalized geometry whenever the analytics change — a field
+        // corner edit reprojects the whole match (new rectangle, reclipped runs, new intervals), so
+        // the cached `data` must not linger from the old geometry. Resets the selection too, since
+        // the reclipped runs carry fresh ids.
+        .onChange(of: inputKey) { _, _ in rebuildData() }
+    }
+
+    /// The analytics inputs `RunsData` is derived from; when any changes, `data` is stale. The
+    /// rectangle is the reprojection trigger (corner edits change it); run / interval / event counts
+    /// catch events edits that leave the field but reshape intervals and direction labels.
+    private struct RunsInputKey: Equatable {
+        let rectangle: OrientedRectangle
+        let runCount: Int
+        let intervalCount: Int
+        let eventCount: Int
+    }
+
+    private var inputKey: RunsInputKey {
+        RunsInputKey(rectangle: analytics.rectangle, runCount: runs.count,
+                     intervalCount: analytics.playingIntervals.count, eventCount: detail.events.count)
     }
 
     // MARK: - Hero pitch
@@ -221,22 +241,34 @@ struct RunsSection: View {
         max(0, Int(segment.interval.start.timeIntervalSince(detail.matchStart) / 60))
     }
 
-    /// Compute the curated key runs + normalized pitch geometry once per appearance, and default
-    /// the selection/carousel to the first key run.
+    /// Compute the curated key runs + normalized pitch geometry once per appearance, defaulting the
+    /// selection/carousel to the first key run. Re-appearing with data already built only re-warms
+    /// the labels (selection is preserved); a reprojection routes through `rebuildData()` instead.
     private func prepare() {
         if data == nil {
-            let prepared = RunsData.build(
-                runs: runs, track: detail.track, projector: analytics.projector,
-                events: detail.events, playingIntervals: analytics.playingIntervals,
-                matchStart: detail.matchStart, matchEnd: detail.matchEnd,
-                baselines: store.runBaselines(excluding: detail.matchIdentifier)
-            )
-            data = prepared
+            rebuildData()
+        } else {
+            if selectedRunID == nil, let first = data?.scoredRuns.first?.id {
+                selectedRunID = first
+                scrolledKeyRunID = first
+            }
+            requestLabels()
         }
-        if selectedRunID == nil, let first = data?.scoredRuns.first?.id {
-            selectedRunID = first
-            scrolledKeyRunID = first
-        }
+    }
+
+    /// Rebuild `data` from the current analytics and reset the selection to the first key run — the
+    /// reclipped runs after a reprojection carry new ids, so the prior selection can't be trusted.
+    private func rebuildData() {
+        let prepared = RunsData.build(
+            runs: runs, track: detail.track, projector: analytics.projector,
+            events: detail.events, playingIntervals: analytics.playingIntervals,
+            matchStart: detail.matchStart, matchEnd: detail.matchEnd,
+            baselines: store.runBaselines(excluding: detail.matchIdentifier)
+        )
+        data = prepared
+        let first = prepared.scoredRuns.first?.id
+        selectedRunID = first
+        scrolledKeyRunID = first
         requestLabels()
     }
 
@@ -326,7 +358,11 @@ struct RunsData {
             let lower = max(0, run.pointRange.lowerBound)
             let upper = min(normalizedTrack.count, run.pointRange.upperBound)
             guard lower < upper else { continue }
-            let points = normalizedTrack[lower..<upper].compactMap { $0 }
+            // Clamp every normalized point into the unit pitch box: the projector tolerates a slop
+            // band outside the touchline (normalized values just past [0,1]), but a rendered trace
+            // must never draw beyond the pitch rect. Clamping here covers the hero ghost traces AND
+            // the bright selected-run highlight, which both read from `normalizedRuns`.
+            let points = normalizedTrack[lower..<upper].compactMap { $0 }.map(clampToPitch)
             if points.count > 1 { normalizedRuns[run.id] = points }
         }
 
@@ -367,6 +403,12 @@ struct RunsData {
             result[run.id] = towardAttack ? "toward attacking goal" : "toward own goal"
         }
         return result
+    }
+
+    /// Clamp a normalized pitch point into the unit box so a rendered polyline never leaves the
+    /// pitch rectangle (the projector allows a metric slop band that pushes points just past [0,1]).
+    private static func clampToPitch(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
     }
 
     /// Normalized [0,1] pitch coordinates for every track point (nil where a point can't project).

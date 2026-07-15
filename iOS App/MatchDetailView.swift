@@ -216,8 +216,9 @@ struct MatchDetailView: View {
 
             // Distance/Sprints/Runs are GPS-derived — meaningless without a route — so they read
             // "—" (not a misleading 0) when the match has no track. Duration, Time on Pitch, and
-            // Avg HR are always real. `.lineLimit(1)` + `.minimumScaleFactor` keep every value on a
-            // single line so no tile wraps taller than its neighbors: the four read as one row.
+            // Avg HR are always real. Each tile splits its value from its unit onto two lines
+            // (`HeroStatTile`) with a uniform fixed height, so the four read as one clean row and
+            // no long value ("7.54 km") clips or shrinks against a short one ("12").
             let hasGPS = !(detail?.track.isEmpty ?? true)
             // Distance is real whenever a total exists: prefer the route-integrated distance, else the
             // HKWorkout total the Matches list row shows. Only genuinely-zero distance reads "—", so a
@@ -227,41 +228,43 @@ struct MatchDetailView: View {
             let distanceMeters = routeDistanceMeters > 0 ? routeDistanceMeters : summary.distanceMeters
             HStack(spacing: 10) {
                 staggeredEntrance(
-                    StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
-                             systemImage: "clock", tint: Theme.signal),
+                    HeroStatTile(title: "Duration",
+                                 measure: Self.splitMeasure(MatchFormat.shortDuration(summary.duration)),
+                                 systemImage: "clock", tint: Theme.signal),
                     index: 0)
                 if isIndoor {
                     // No route to integrate distance from — surface on-pitch time instead.
                     staggeredEntrance(
-                        StatTile(title: "Time on Pitch",
-                                 value: MatchFormat.shortDuration(detail?.analytics?.workrate.timeOnPitch ?? summary.duration),
-                                 systemImage: "stopwatch", tint: Theme.pace),
+                        HeroStatTile(title: "Time on Pitch",
+                                     measure: Self.splitMeasure(MatchFormat.shortDuration(detail?.analytics?.workrate.timeOnPitch ?? summary.duration)),
+                                     systemImage: "stopwatch", tint: Theme.pace),
                         index: 1)
                 } else {
                     staggeredEntrance(
                         gpsStatTile(title: "Distance",
-                                    value: MatchFormat.distance(distanceMeters),
+                                    measure: Self.splitMeasure(MatchFormat.distance(distanceMeters)),
                                     systemImage: "figure.run", tint: Theme.pace, hasGPS: distanceMeters > 0),
                         index: 1)
                 }
                 staggeredEntrance(
-                    gpsStatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
+                    gpsStatTile(title: "Sprints",
+                                measure: HeroStatTile.Measure(value: "\(detail?.analytics?.workrate.sprintCount ?? 0)", unit: nil),
                                 systemImage: "hare", tint: Theme.sprint, hasGPS: hasGPS),
                     index: 2)
                 if let hr = detail?.heartRate {
                     staggeredEntrance(
-                        StatTile(title: "Avg HR", value: "\(Int(hr.average))",
-                                 systemImage: "heart.fill", tint: Theme.heart),
+                        HeroStatTile(title: "Avg HR",
+                                     measure: HeroStatTile.Measure(value: "\(Int(hr.average))", unit: "bpm"),
+                                     systemImage: "heart.fill", tint: Theme.heart),
                         index: 3)
                 } else {
                     staggeredEntrance(
-                        gpsStatTile(title: "Runs", value: "\(detail?.analytics?.workrate.runCount ?? 0)",
+                        gpsStatTile(title: "Runs",
+                                    measure: HeroStatTile.Measure(value: "\(detail?.analytics?.workrate.runCount ?? 0)", unit: nil),
                                     systemImage: "bolt.fill", tint: Theme.turf, hasGPS: hasGPS),
                         index: 3)
                 }
             }
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
         }
         // Interior padding for the ring + numerals + chips; the wash below fills full width.
         .padding(.horizontal, 20)
@@ -298,17 +301,30 @@ struct MatchDetailView: View {
     /// are meaningless, so the tile shows an em dash and announces "not available — no GPS" to
     /// VoiceOver instead of a misleading zero. HR/Duration/Time-on-Pitch tiles never route through
     /// here — they are always real.
-    private func gpsStatTile(title: String, value: String, systemImage: String,
+    private func gpsStatTile(title: String, measure: HeroStatTile.Measure, systemImage: String,
                              tint: Color, hasGPS: Bool) -> some View {
         Group {
             if hasGPS {
-                StatTile(title: title, value: value, systemImage: systemImage, tint: tint)
+                HeroStatTile(title: title, measure: measure, systemImage: systemImage, tint: tint)
             } else {
-                StatTile(title: title, value: "—", systemImage: systemImage, tint: tint)
+                HeroStatTile(title: title, measure: HeroStatTile.Measure(value: "—", unit: nil),
+                             systemImage: systemImage, tint: tint)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(title): not available — no GPS")
             }
         }
+    }
+
+    /// Split a formatted metric string ("7.54 km", "126 min") into its numeric value and trailing
+    /// unit so the hero tile can stack them on two lines at fixed sizes. A string with no space
+    /// (a bare count) becomes value-only.
+    static func splitMeasure(_ formatted: String) -> HeroStatTile.Measure {
+        guard let spaceIndex = formatted.firstIndex(of: " ") else {
+            return HeroStatTile.Measure(value: formatted, unit: nil)
+        }
+        let value = String(formatted[formatted.startIndex..<spaceIndex])
+        let unit = String(formatted[formatted.index(after: spaceIndex)...])
+        return HeroStatTile.Measure(value: value, unit: unit.isEmpty ? nil : unit)
     }
 
     /// Rise-and-fade entrance for the four hero stat tiles: opacity + an 8pt lift with a light
@@ -387,6 +403,52 @@ struct MatchDetailView: View {
         } else {
             ProgressView().frame(maxWidth: .infinity, minHeight: 200)
         }
+    }
+}
+
+/// One of the four hero metric tiles. The value and its unit sit on SEPARATE lines at FIXED sizes
+/// (never scaled below 0.8), so a long value like "7.54 km" no longer clips or shrinks against a
+/// short "12" — every tile is the same fixed height with the value rendered at one identical size
+/// across the whole row. Count tiles (no unit) reserve the unit line so all four align.
+struct HeroStatTile: View {
+    struct Measure {
+        var value: String
+        var unit: String?
+    }
+
+    let title: String
+    let measure: Measure
+    var systemImage: String?
+    var tint: Color = Theme.turf
+
+    /// A single fixed height for every tile so the row reads as one band regardless of content.
+    private static let tileHeight: CGFloat = 96
+
+    var body: some View {
+        VStack(spacing: 3) {
+            if let systemImage {
+                Image(systemName: systemImage).font(.caption).foregroundStyle(tint)
+            }
+            Text(measure.value)
+                .font(.system(size: 25, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                // Never below 0.8 — a whisper of headroom for the longest value, no more.
+                .minimumScaleFactor(0.8)
+            // Unit line always present (a space when absent) so unit and count tiles share a height.
+            Text(measure.unit ?? " ")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(title).captionLabel()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.tileHeight)
+        .padding(.horizontal, 10)
+        .metricTile(tint: tint)
     }
 }
 

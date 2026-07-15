@@ -1,0 +1,219 @@
+// FieldBoundsEditor.swift
+// MatchTracker
+//
+// The single field-boundary editor, unifying what were two implementations. Its draggable-handle
+// approach is lifted from Add Field's adjust phase (the good one): a live satellite Map with the
+// four corners as a SIBLING handle overlay (positions from `proxy.convert`, re-derived each camera
+// frame), so a handle's drag never fights the map's pan. Dragging updates local @State ONLY; the
+// oriented rectangle is refit — and, for a saved field, persisted — on drag END / Save, never per
+// frame. Replaces `CornerEditorView` (now a thin wrapper) everywhere it was used.
+//
+// White-screen fix: the old corner editor mounted a Metal-backed imagery Map inside a
+// fullScreenCover before layout gave it a size ("CAMetalLayer ignoring invalid setDrawableSize
+// 0x0"), so it rendered blank until an app-switch. Here the Map is created only AFTER a first
+// non-zero geometry (see `MapMountGate`), and callers present it as a large sheet, so it renders
+// on first present.
+
+import SwiftUI
+import MapKit
+import CoreLocation
+import MatchTrackerKit
+
+/// Adjust a saved field's four corners on satellite imagery and persist the correction as a
+/// high-weight trained observation. Reusable: `CornerEditorView` wraps this, and the match screen
+/// presents it directly as a sheet.
+struct FieldBoundsEditor: View {
+    let field: FieldModel
+    /// Called after a successful save (the caller dismisses / reprojects).
+    var onSaved: () -> Void
+
+    @EnvironmentObject private var fields: FieldsModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var corners: [CLLocationCoordinate2D] = []
+    @State private var cameraPosition: MapCameraPosition
+    /// Bumped continuously while the camera moves so the handle overlay (positions from
+    /// `proxy.convert`) re-renders in lockstep with the map.
+    @State private var cameraTick = 0
+    @State private var grabbedCorner: Int?
+
+    init(field: FieldModel, onSaved: @escaping () -> Void) {
+        self.field = field
+        self.onSaved = onSaved
+        _cameraPosition = State(initialValue: .region(field.rectangle.mapRegion))
+    }
+
+    private static let mapSpace = "fieldBoundsMap"
+
+    /// Live oriented rectangle refit from the current corners — the dashed correction preview. This
+    /// is the SAME fit Add Field applies (`FieldGeometry.fitOrientedRectangle`), so a nudge here and
+    /// a placement there converge on identical geometry.
+    private var fittedRectangle: OrientedRectangle? {
+        guard corners.count == 4 else { return nil }
+        return FieldGeometry.fitOrientedRectangle(to: corners.map(Coordinate2D.init))
+    }
+
+    var body: some View {
+        MapMountGate {
+            MapReader { proxy in
+                Map(position: $cameraPosition) {
+                    if corners.count >= 3 {
+                        MapPolygon(coordinates: corners)
+                            .foregroundStyle(Theme.turf.opacity(0.15))
+                            .stroke(Theme.turf, lineWidth: 2)
+                    }
+                    if let fittedRectangle {
+                        MapPolygon(coordinates: fittedRectangle.coordinateRing)
+                            .foregroundStyle(Theme.turf.opacity(0.12))
+                            .stroke(Theme.turf, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    }
+                }
+                .mapStyle(.imagery)
+                .mapControls { }
+                .onMapCameraChange(frequency: .continuous) { _ in cameraTick &+= 1 }
+                // Sibling overlay (not annotations) so a handle drag never fights the map pan.
+                .overlay {
+                    FieldCornerHandles(corners: $corners, grabbedCorner: $grabbedCorner,
+                                       proxy: proxy, coordinateSpaceName: Self.mapSpace,
+                                       cameraTick: cameraTick)
+                }
+                .coordinateSpace(name: Self.mapSpace)
+            }
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .overlay(alignment: .bottom) { guidanceBar }
+        .navigationTitle("Adjust Field")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .onAppear { if corners.isEmpty { corners = field.rectangle.corners.map(\.clCoordinate) } }
+    }
+
+    /// A dark guidance bar over the imagery: what to do, plus a turf Save capsule.
+    private var guidanceBar: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "hand.draw.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.turf)
+                Text(grabbedCorner == nil
+                     ? "Drag any of the four corners to match the pitch."
+                     : "Corner \((grabbedCorner ?? 0) + 1) of 4")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+            }
+            Button { save() } label: {
+                Text("Save Corrections")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.turf)
+            .clipShape(Capsule())
+            .disabled(fittedRectangle == nil)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+    }
+
+    /// Refit the rectangle from the corrected corners and persist. Saving records a high-weight
+    /// trained observation (the correction), matching Add Field and the old corner editor.
+    private func save() {
+        guard let rectangle = fittedRectangle else { return }
+        var updated = field
+        updated.rectangle = rectangle
+        updated.outline = corners.map(Coordinate2D.init)
+        updated.source = .trained
+        updated.observationCount += 1
+        fields.save(updated)
+        Haptics.impact(.medium)
+        dismiss()
+        onSaved()
+    }
+}
+
+/// The shared draggable-corner overlay used by BOTH this editor and Add Field's adjust phase. Each
+/// corner is positioned from `proxy.convert` every camera frame (`cameraTick` forces the refresh)
+/// and carries a drag gesture in the map's named coordinate space, so touches on a handle stop at
+/// the handle and everywhere else falls through to the map. Dragging writes ONLY to the local
+/// `corners` binding — no camera move, no store write — which is what keeps it smooth.
+struct FieldCornerHandles: View {
+    @Binding var corners: [CLLocationCoordinate2D]
+    @Binding var grabbedCorner: Int?
+    let proxy: MapProxy
+    let coordinateSpaceName: String
+    /// Read (below) purely to re-evaluate this overlay while the camera moves.
+    let cameraTick: Int
+
+    var body: some View {
+        if corners.count == 4 {
+            ZStack {
+                let _ = cameraTick
+                ForEach(Array(corners.enumerated()), id: \.offset) { index, coordinate in
+                    if let point = proxy.convert(coordinate, to: .local) {
+                        handle(index: index)
+                            .position(point)
+                            .gesture(
+                                DragGesture(minimumDistance: 0,
+                                            coordinateSpace: .named(coordinateSpaceName))
+                                    .onChanged { value in
+                                        if grabbedCorner != index {
+                                            grabbedCorner = index
+                                            Haptics.selection()
+                                        }
+                                        if let moved = proxy.convert(value.location, from: .local) {
+                                            corners[index] = moved
+                                        }
+                                    }
+                                    .onEnded { _ in grabbedCorner = nil }
+                            )
+                    }
+                }
+            }
+            .allowsHitTesting(true)
+        }
+    }
+
+    private func handle(index: Int) -> some View {
+        ZStack {
+            Circle().fill(Theme.turf.opacity(grabbedCorner == index ? 0.45 : 0.28))
+            Circle().strokeBorder(Theme.turf, lineWidth: 2)
+            Text("\(index + 1)")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .shadow(radius: 1)
+        }
+        .frame(width: 34, height: 34)
+        .scaleEffect(grabbedCorner == index ? 1.25 : 1)
+        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+        // A generous grab target beyond the visible circle — corners are fine-motor targets.
+        .contentShape(Circle().inset(by: -12))
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: grabbedCorner)
+        .accessibilityLabel("Corner \(index + 1) — drag to adjust")
+    }
+}
+
+/// Defers building a Metal-backed Map until layout has handed down a first non-zero size, so the
+/// map never initializes against a 0×0 drawable (the blank-until-app-switch bug when presented in
+/// a cover). `GeometryReader` reports the real size on the first layout pass, so the gated content
+/// mounts on first present with a valid surface.
+struct MapMountGate<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            if geometry.size.width > 1, geometry.size.height > 1 {
+                content()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+            } else {
+                Theme.background
+            }
+        }
+    }
+}

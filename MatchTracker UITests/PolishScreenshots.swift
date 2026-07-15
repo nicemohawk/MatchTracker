@@ -274,6 +274,15 @@ final class PolishScreenshots: XCTestCase {
                 satellite.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 sleep(4)   // let the imagery tiles load and the camera settle
                 export("32f-heatmap-satellite", app: app)
+
+                // Field-fit diagnostic: the new Route chip overlays the raw GPS polyline on the
+                // imagery, so any drift between the fitted field and the real track is visible.
+                let routeChip = app.buttons["Route"]
+                if routeChip.waitForExistence(timeout: 3) && routeChip.isHittable {
+                    routeChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    sleep(2)
+                    export("32f2-heatmap-route", app: app)
+                }
             }
 
             // Field-boundary correction (append-only): from satellite mode, open the corner editor for
@@ -281,10 +290,11 @@ final class PolishScreenshots: XCTestCase {
             let adjustField = app.buttons["Adjust Field"]
             if adjustField.waitForExistence(timeout: 4) && adjustField.isHittable {
                 adjustField.tap()
-                sleep(4)   // corner-editor cover settles
-                // NOTE: a modally-presented imagery Map renders as a blank surface in the simulator's
-                // XCUI screenshots (unlike the inline satellite overlay above), so 32g/32h document the
-                // flow reaching the editor and returning; the reprojection itself is verified in code
+                sleep(4)   // the FieldBoundsEditor sheet settles
+                // NOTE: the editor is now a large sheet (was a fullScreenCover) with a first-non-zero
+                // geometry mount gate, which fixes the white-screen on device. In the simulator's XCUI
+                // screenshots an imagery Map can still capture blank, so 32g/32h document the flow
+                // reaching the editor and returning; the reprojection itself is verified in code
                 // (Save → FieldsModel.save → onFieldsChanged → MatchStore.invalidateForFieldChange →
                 // MatchDetailModel.reanalyze) and on-device.
                 export("32g-adjust-field", app: app)

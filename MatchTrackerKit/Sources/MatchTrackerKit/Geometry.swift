@@ -109,40 +109,13 @@ public enum FieldGeometry {
             && length / width > 1.2
     }
 
-    /// Infer a field rectangle from a full-match GPS track (no training walk needed):
-    /// filter to accurate points, trim occupancy outliers, fit the min-area oriented
-    /// rectangle, and sanity-check against `sport`'s plausible pitch dimensions. Defaults to
-    /// soccer so existing call sites are unchanged.
+    /// Infer a field rectangle from a full-match GPS track (no training walk needed): fit the
+    /// dense core of play with `FieldFitter` (which rejects warm-up laps, parking-walk tails, and
+    /// bench clusters — see FieldFitter.swift), then sanity-check against `sport`'s plausible pitch
+    /// dimensions. Defaults to soccer so existing call sites are unchanged. Retained as the public
+    /// entry point for field inference; the fitting itself now lives in `FieldFitter`.
     public static func inferFieldRectangle(from track: [TrackPoint], sport: SportProfile = .soccer) -> OrientedRectangle? {
-        let filtered = track.filter { $0.horizontalAccuracy <= TrackPoint.maximumUsableHorizontalAccuracy && isPlausibleCoordinate($0.coordinate) }
-        guard filtered.count >= 8 else { return nil }
-
-        let coordinates = filtered.map(\.coordinate)
-        let frame = ENUFrame(reference: centroid(of: coordinates))
-        let projected = coordinates.map { frame.project($0) }
-
-        // Trim occupancy outliers (warm-up / walk-off excursions): drop the points whose
-        // distance from the median center exceeds the 98th percentile of that distance.
-        let medianX = median(projected.map { Double($0.x) })
-        let medianY = median(projected.map { Double($0.y) })
-        let distances = projected.map { hypot(Double($0.x) - medianX, Double($0.y) - medianY) }
-        let cutoff = percentile(distances, 0.98)
-        let kept = zip(projected, distances).compactMap { $0.1 <= cutoff ? $0.0 : nil }
-        guard kept.count >= 4 else { return nil }
-
-        guard let rect = minimumAreaRectangle(for: kept) else { return nil }
-
-        // Players don't quite reach the touchlines; expand the occupied cloud a touch.
-        let length = rect.lengthMeters * 1.05
-        let width = rect.widthMeters * 1.05
-
-        let centerCoordinate = frame.unproject(rect.center)
-        let rectangle = makeOrientedRectangle(
-            center: centerCoordinate,
-            lengthMeters: length,
-            widthMeters: width,
-            headingDegrees: rect.headingDegrees
-        )
+        guard let rectangle = FieldFitter.fitFieldRectangle(track: track) else { return nil }
         guard isPlausiblePitch(rectangle, sport: sport) else { return nil }
         return rectangle
     }
@@ -202,6 +175,14 @@ public struct FieldProjector: Sendable {
         let overrunLong = max(0, abs(long) - halfLength)
         let overrunShort = max(0, abs(short) - halfWidth)
         return overrunLong <= toleranceMeters && overrunShort <= toleranceMeters
+    }
+
+    /// Whether a coordinate is on the field of play: inside the touchline rectangle, allowing a
+    /// metric `marginMeters` slop on each axis (a normalized-coordinate box test widened by the
+    /// margin). This is the on/off-field gate used to reject off-field route data from analysis —
+    /// the positive form of `distanceOutsideMeters`. Equivalent to `contains(_:toleranceMeters:)`.
+    public func isOnField(_ coordinate: Coordinate2D, marginMeters: Double) -> Bool {
+        contains(coordinate, toleranceMeters: marginMeters)
     }
 
     /// How far (meters) the coordinate lies OUTSIDE the touchline rectangle; 0 when inside.
