@@ -21,6 +21,11 @@ struct MatchesView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingImport = false
     @State private var navigationPath: [UUID] = []
+    /// Precomputed month-grouped list model (see MatchListSupport). Rebuilt once per matches-array
+    /// change via `.task(id:)`, never per row — the LazyVStack stays lazy.
+    @State private var listData: MatchListData = .empty
+    @State private var searchText = ""
+    @State private var filter: MatchFilter = .all
 
     init(isAtRoot: Binding<Bool> = .constant(true),
          isScrolledDown: Binding<Bool> = .constant(false)) {
@@ -37,43 +42,14 @@ struct MatchesView: View {
                 if matches.matches.isEmpty && !liveMatches.isLive {
                     emptyState
                 } else {
-                    // ScrollView + LazyVStack (not List) so cards get scroll transitions and a
-                    // pressed-state scale — List swallows both.
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            if showBacklogTeaser {
-                                backlogTeaser
-                            }
-                            // On iOS 26+ the live match rides in the tab bar's bottom accessory
-                            // (see RootTabView), so this in-list card would be a duplicate affordance.
-                            if #unavailable(iOS 26.0), liveMatches.isLive {
-                                liveCard
-                            }
-                            ForEach(matches.matches) { summary in
-                                NavigationLink(value: summary.id) {
-                                    MatchRow(summary: summary)
-                                }
-                                .buttonStyle(PressableCardStyle())
-                                .scrollTransition(.interactive(timingCurve: .easeOut),
-                                                  axis: .vertical) { content, phase in
-                                    content
-                                        .opacity(phase.isIdentity ? 1 : 0.55)
-                                        .scaleEffect(phase.isIdentity ? 1 : 0.965)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        // iPad / wide split: keep the card column a readable measure, centered,
-                        // instead of full-bleed cards spanning the whole canvas.
-                        .readableWidth()
-                    }
-                    .scrollIndicators(.automatic)
-                    .modifier(ScrollDownTracker(isScrolledDown: $isScrolledDown))
+                    matchList
                 }
             }
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Matches")
+            // Search over the precomputed haystacks (field, month/year, score, format, GPS).
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic),
+                        prompt: "Search matches")
             .navigationDestination(for: UUID.self) { id in
                 if let summary = matches.matches.first(where: { $0.id == id }) {
                     MatchDetailView(summary: summary)
@@ -99,11 +75,106 @@ struct MatchesView: View {
                 }
             }
             .task { await backlogImporter.scanIfNeeded() }
+            // Rebuild the grouped precompute once per matches-array change (see MatchListData.build).
+            .task(id: matchesSignature) {
+                listData = MatchListData.build(matches: matches.matches, store: matches)
+            }
             .sheet(isPresented: $showingImport) { BacklogImportView() }
         }
         .onChange(of: navigationPath) { _, path in
             isAtRoot = path.isEmpty
         }
+    }
+
+    /// Identity of the current matches array — count folded with every id — so the precompute
+    /// rebuilds only when matches actually change (add / remove / reorder), not on every render.
+    private var matchesSignature: Int {
+        var hasher = Hasher()
+        hasher.combine(matches.matches.count)
+        for match in matches.matches { hasher.combine(match.id) }
+        return hasher.finalize()
+    }
+
+    /// The month-sectioned list. A fixed filter chip row sits under the title; the scroll view below
+    /// carries the backlog teaser, the pre-26 live card, and the pinned-header month sections. Card
+    /// design, press style, scroll transitions, and the badge cache are unchanged — this restructures
+    /// around the existing row, it doesn't redesign it.
+    private var matchList: some View {
+        let sections = listData.sections(filter: filter, query: searchText)
+        return VStack(spacing: 0) {
+            MatchFilterBar(data: listData, selection: $filter)
+                .padding(.vertical, 8)
+
+            // ScrollView + LazyVStack (not List) so cards get scroll transitions and a pressed-state
+            // scale — List swallows both.
+            ScrollView {
+                LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
+                    if showBacklogTeaser {
+                        backlogTeaser
+                    }
+                    // On iOS 26+ the live match rides in the tab bar's bottom accessory (see
+                    // RootTabView), so this in-list card would be a duplicate affordance.
+                    if #unavailable(iOS 26.0), liveMatches.isLive {
+                        liveCard
+                    }
+
+                    if sections.isEmpty {
+                        filteredEmptyState
+                    } else {
+                        ForEach(sections) { section in
+                            Section {
+                                ForEach(section.items) { item in
+                                    NavigationLink(value: item.id) {
+                                        MatchRow(summary: item.summary, dateLabel: item.dateLabel)
+                                    }
+                                    .buttonStyle(PressableCardStyle())
+                                    .scrollTransition(.interactive(timingCurve: .easeOut),
+                                                      axis: .vertical) { content, phase in
+                                        content
+                                            .opacity(phase.isIdentity ? 1 : 0.55)
+                                            .scaleEffect(phase.isIdentity ? 1 : 0.965)
+                                    }
+                                }
+                            } header: {
+                                MatchSectionHeader(title: section.title, detail: section.detail)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                // iPad / wide split: keep the card column a readable measure, centered, instead of
+                // full-bleed cards spanning the whole canvas.
+                .readableWidth()
+            }
+            .scrollIndicators(.automatic)
+            .modifier(ScrollDownTracker(isScrolledDown: $isScrolledDown))
+        }
+    }
+
+    /// Shown when an active search/filter matches nothing: a quiet one-liner and a reset.
+    private var filteredEmptyState: some View {
+        VStack(spacing: 12) {
+            Text("No matches match your filters.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                Haptics.selection()
+                filter = .all
+                searchText = ""
+            } label: {
+                Text("Clear filters")
+                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                    .foregroundStyle(Theme.turf)
+                    .padding(.horizontal, 16)
+                    .frame(height: 40)
+                    .background(Theme.chipFill(Theme.turf), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.chipStroke(Theme.turf), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
     }
 
     /// Quiet upsell for the historic-backlog import: shown once there's a meaningful backlog of
@@ -307,6 +378,9 @@ struct PressableCardStyle: ButtonStyle {
 /// One list row: date, field name, duration, distance, mini position badge.
 struct MatchRow: View {
     let summary: MatchSummary
+    /// Year-aware date label, precomputed off the row builder (see MatchListSupport) so the row
+    /// never constructs a formatter on appearance.
+    let dateLabel: String
     @EnvironmentObject private var store: MatchStore
     @State private var position: (role: PositionRole, side: PositionSide, confidence: Double)?
     @State private var fieldName: String?
@@ -317,13 +391,16 @@ struct MatchRow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(summary.startDate, format: .dateTime.weekday().month().day().hour().minute())
+                    Text(dateLabel)
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .monospacedDigit()
+                    // Unknown field → show nothing (no placeholder); keep format / route badges.
                     HStack(spacing: 6) {
-                        Text(fieldName ?? "Unknown field")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if let fieldName {
+                            Text(fieldName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         formatBadge
                         recordingKindBadge
                     }
@@ -338,22 +415,35 @@ struct MatchRow: View {
                         .padding(.vertical, 4)
                         .background(Theme.chipFill(scoreTint), in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.chipStroke(scoreTint), lineWidth: 1))
-                } else if let position {
-                    PositionBadge(role: position.role, side: position.side, confidence: position.confidence)
+                } else {
+                    positionBadge
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 18) {
                 metric(MatchFormat.distance(summary.distanceMeters), "Distance", Theme.pace)
                 metric(MatchFormat.shortDuration(summary.duration), "Duration", Theme.signal)
                 Spacer()
-                if score != nil, let position {
-                    PositionBadge(role: position.role, side: position.side, confidence: position.confidence)
+                if score != nil {
+                    positionBadge
                 }
             }
         }
         .padding(16)
         .themedCard()
         .task { await loadBadge() }
+    }
+
+    /// The position pill, shown only when it's honest: hand-reported positions win (they're the
+    /// player's own statement — first + "+N"); otherwise a detected estimate appears only at
+    /// confidence ≥ 0.5. No positions and no confident estimate → nothing (never a defaulted "CM").
+    @ViewBuilder
+    private var positionBadge: some View {
+        let reported = summary.record?.reportedPositions ?? []
+        if !reported.isEmpty {
+            ReportedPositionBadge(positions: reported)
+        } else if let position, position.confidence >= 0.5 {
+            PositionBadge(role: position.role, side: position.side, confidence: position.confidence)
+        }
     }
 
     /// A small glyph + label for non-default match formats (pickup / indoor). `.match` shows nothing.

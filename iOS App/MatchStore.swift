@@ -223,6 +223,25 @@ final class MatchStore: ObservableObject {
         }
     }
 
+    // MARK: - Field-edit invalidation
+
+    /// A saved field's geometry changed (a corner edit — from a match's Adjust Field flow or the
+    /// Fields tab). The field rectangle is the projection basis for every match that resolves to it,
+    /// so the persisted row badges (position / field name) and the in-memory analytics that back the
+    /// season-comparison heatmaps + run baselines are all stale. Without a field → match index we
+    /// can't cheaply tell which matches resolve to the edited field, so this clears conservatively:
+    /// drop every cached badge (rows recompute lazily on next render) and reproject every cached
+    /// detail model (which also refreshes `cachedHeatmaps` / `runBaselines`, both derived from it).
+    func invalidateForFieldChange() {
+        if !badgeCache.isEmpty {
+            badgeCache.removeAll()
+            persistBadgeCache()
+        }
+        for model in detailCache.values {
+            model.reanalyze()
+        }
+    }
+
     static func decodeRecord(from url: URL) -> MatchRecord? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data)

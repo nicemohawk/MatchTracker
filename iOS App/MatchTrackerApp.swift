@@ -87,8 +87,12 @@ final class AppEnvironment: ObservableObject {
         self.seeder = NearbyFieldSeeder(fields: fields, uploads: uploads, settings: settings)
         self.backlogImporter = BacklogImporter(matches: matches, fields: fields)
 
-        fields.onFieldsChanged = { [weak connectivity, weak uploads] in
+        fields.onFieldsChanged = { [weak connectivity, weak uploads, weak matches] in
             connectivity?.pushContext()
+            // A field's geometry may have changed (corner edit) — reproject every match that resolves
+            // to it and drop stale row badges. One mechanism for both the Fields tab's own corner
+            // editor and a match's Adjust Field flow, since both save through `FieldsModel`.
+            matches?.invalidateForFieldChange()
             Task { await uploads?.uploadFields() }
         }
         matches.onNewMatches = { [weak uploads] summaries in
@@ -111,7 +115,23 @@ final class AppEnvironment: ObservableObject {
     func bootstrap() async {
         connectivity.start()
         await uploads.bootstrapAPIKey()
+#if DEBUG
+        // Headless diagnostic import: `-ImportDiagnostics YES` loads Documents/diagnostics-import.
+        // matchtrackerdiag into HealthKit + the app group before the first match refresh.
+        await DiagnosticArchiveImport.runHeadlessIfRequested(healthKit: matches.healthKit) { [weak self] in
+            await self?.fields.reload()
+        }
+#endif
         await matches.refresh()
+#if DEBUG
+        // Headless diagnostic export: `-ExportDiagnostics YES` writes the full history to
+        // Documents/diagnostics-export.matchtrackerdiag after the first refresh has the match list.
+        await DiagnosticArchive.runHeadlessExportIfRequested(
+            summaries: matches.matches, fields: fields.fields,
+            settings: .current(contributeDetectedFields: settings.contributeDetectedFields),
+            healthKit: matches.healthKit
+        )
+#endif
         await uploads.flushQueue()
         await trainingLoad.refresh()
         // Workrate average is computed live where it's rendered (WorkrateSection) — the detail

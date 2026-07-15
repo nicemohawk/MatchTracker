@@ -9,11 +9,17 @@ struct HeatmapSection: View {
     @ObservedObject var detail: MatchDetailModel
     let analytics: MatchAnalytics
     @EnvironmentObject private var store: MatchStore
+    @EnvironmentObject private var fields: FieldsModel
     @State private var showSatellite = false
     @State private var compareWithSeason = false
     @State private var comparisonMode: ComparisonMode = .compare
     @State private var isHoldingCompare = false
     @State private var hintPulse = false
+    /// Field-boundary correction: the corner editor presentation + the field it's editing (carrying
+    /// whether it's a draft to bind on save), and a brief post-save "Reprojecting…" acknowledgment.
+    @State private var showFieldEditor = false
+    @State private var pendingAdjustment: MatchDetailModel.AdjustableField?
+    @State private var isReprojecting = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// One-time discoverability: the "Hold to flip" pill shows until the user's first successful
     /// hold, then never again (persisted). Key name kept stable across builds.
@@ -33,6 +39,8 @@ struct HeatmapSection: View {
     var body: some View {
         VStack(spacing: 12) {
             displayChips
+
+            if isReprojecting { reprojectingBanner }
 
             if showSatellite {
                 SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap)
@@ -58,6 +66,73 @@ struct HeatmapSection: View {
             isHoldingCompare = false
             Haptics.selection()
         }
+        .fullScreenCover(isPresented: $showFieldEditor) {
+            if let adjustment = pendingAdjustment {
+                NavigationStack {
+                    CornerEditorView(field: adjustment.field) {
+                        handleFieldSaved(adjustment)
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { showFieldEditor = false }
+                        }
+                    }
+                }
+                // Covers inherit the environment on modern SwiftUI, but pass the fields model
+                // explicitly so the reused CornerEditorView always resolves its @EnvironmentObject.
+                .environmentObject(fields)
+            }
+        }
+    }
+
+    /// Brief inline acknowledgment shown on the section right after a corner edit saves. The
+    /// reprojection itself already ran synchronously (via `onFieldsChanged`), so this is feedback
+    /// that the analysis changed rather than a spinner gating real work.
+    private var reprojectingBanner: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Reprojecting match…")
+                .font(.system(.footnote, design: .rounded).weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Capsule().fill(Theme.surfaceElevated))
+        .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.opacity)
+    }
+
+    // MARK: - Field adjustment
+
+    /// Open the corner editor for this match's resolved field. No-op if nothing is resolvable.
+    private func beginFieldAdjustment() {
+        guard let adjustment = detail.adjustableField() else { return }
+        pendingAdjustment = adjustment
+        showFieldEditor = true
+    }
+
+    /// After the corner edit saves: pin a freshly-corrected draft field to the record (a match with
+    /// no prior saved field), then surface the "Reprojecting…" acknowledgment and a success haptic.
+    /// Reduce Motion drops the transition but keeps the message and haptic.
+    private func handleFieldSaved(_ adjustment: MatchDetailModel.AdjustableField) {
+        showFieldEditor = false
+        if adjustment.isDraft { detail.bindField(id: adjustment.field.id) }
+        pendingAdjustment = nil
+        if reduceMotion {
+            isReprojecting = true
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) { isReprojecting = true }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            if reduceMotion {
+                isReprojecting = false
+            } else {
+                withAnimation(.easeInOut(duration: 0.25)) { isReprojecting = false }
+            }
+        }
     }
 
     // MARK: - Display chips
@@ -73,6 +148,14 @@ struct HeatmapSection: View {
             displayChip(title: "Compare", systemImage: "square.2.layers.3d",
                         isOn: compareWithSeason, disabled: showSatellite) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { compareWithSeason.toggle() }
+            }
+            // Correct a mis-resolved field boundary from here — quietly, and only in satellite mode
+            // where the misalignment against the imagery is obvious (hidden when no field resolved).
+            if showSatellite && detail.canAdjustField {
+                displayChip(title: "Adjust Field",
+                            systemImage: "arrow.up.and.down.and.arrow.left.and.right", isOn: false) {
+                    beginFieldAdjustment()
+                }
             }
             Spacer(minLength: 0)
         }

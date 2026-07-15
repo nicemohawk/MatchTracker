@@ -141,6 +141,69 @@ final class MatchDetailModel: ObservableObject {
         }
     }
 
+    // MARK: - Field-edit recompute
+
+    /// Rebuild this match's analytics after its resolved field's geometry changed (a corner edit
+    /// from this screen or the Fields tab). The field rectangle is the projection basis for the
+    /// heatmap / position / thirds / runs, so a boundary edit invalidates all of it. Reuses the
+    /// already-fetched track + heart rate (no HealthKit round-trip) and recomputes from the current
+    /// field resolution. A no-op before the first `load()`, where `load()` will pick up the new
+    /// geometry itself; safe to call repeatedly.
+    func reanalyze() {
+        guard hasLoaded else { return }
+        analytics = computeAnalytics(track: track)
+    }
+
+    /// Whether this match has an on-pitch field whose corners can be adjusted — a real GPS match with
+    /// a resolved rectangle, not an indoor / HR-only placeholder (whose rectangle carries no corners).
+    var canAdjustField: Bool {
+        guard let analytics else { return false }
+        return analytics.rectangle.corners.count == 4 && !track.isEmpty
+    }
+
+    /// A corner correction from the match screen edits this field. `isDraft` distinguishes the two
+    /// cases the caller must handle on save.
+    struct AdjustableField {
+        /// The `FieldModel` to hand to `CornerEditorView`.
+        var field: FieldModel
+        /// True when `field` is a fresh draft synthesized from an inferred / naive projection (no
+        /// saved field backed this match). The caller binds it to the record on save via `bindField`.
+        var isDraft: Bool
+    }
+
+    /// The field a corner correction should edit. When the match resolves to a saved field (explicit
+    /// id, else geometric best-match), that exact field is returned so the edit re-fits geometry for
+    /// every match that uses it. Otherwise the resolved rectangle (inferred from the track, or a naive
+    /// bounding fit) is wrapped in a draft field to edit and persist. Nil when no field is resolved.
+    func adjustableField() -> AdjustableField? {
+        guard canAdjustField, let analytics else { return nil }
+        if let fieldID = record?.fieldID, let field = fields.field(id: fieldID) {
+            return AdjustableField(field: field, isDraft: false)
+        }
+        if let matched = fields.store.bestMatch(for: track.map(\.coordinate)) {
+            return AdjustableField(field: matched, isDraft: false)
+        }
+        let draft = FieldModel(
+            id: UUID(),
+            name: analytics.fieldName ?? "Match Field",
+            createdAt: Date(),
+            outline: analytics.rectangle.corners,
+            rectangle: analytics.rectangle,
+            source: analytics.fieldSource ?? .inferred,
+            observationCount: 0
+        )
+        return AdjustableField(field: draft, isDraft: true)
+    }
+
+    /// Pin a freshly-corrected draft field to this match's record so the match always resolves to it.
+    /// Only for the draft path (a match that had no saved field before the correction); persisting the
+    /// record recomputes analytics through the store, matching the geometry the corner edit produced.
+    func bindField(id: UUID) {
+        guard var record, record.fieldID != id else { return }
+        record.fieldID = id
+        if let persist { persist(record) } else { updateRecord(record) }
+    }
+
     // MARK: - Analytics pipeline
 
     /// A degenerate field used only to satisfy `MatchAnalytics`'s projector-dependent fields for an

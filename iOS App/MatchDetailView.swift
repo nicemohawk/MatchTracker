@@ -219,6 +219,12 @@ struct MatchDetailView: View {
             // Avg HR are always real. `.lineLimit(1)` + `.minimumScaleFactor` keep every value on a
             // single line so no tile wraps taller than its neighbors: the four read as one row.
             let hasGPS = !(detail?.track.isEmpty ?? true)
+            // Distance is real whenever a total exists: prefer the route-integrated distance, else the
+            // HKWorkout total the Matches list row shows. Only genuinely-zero distance reads "—", so a
+            // route-less workout no longer disagrees with its own list row. (Sprints/Runs still need a
+            // route, so they keep the track-based "—".)
+            let routeDistanceMeters = detail?.analytics?.workrate.totalDistanceMeters ?? 0
+            let distanceMeters = routeDistanceMeters > 0 ? routeDistanceMeters : summary.distanceMeters
             HStack(spacing: 10) {
                 staggeredEntrance(
                     StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
@@ -234,8 +240,8 @@ struct MatchDetailView: View {
                 } else {
                     staggeredEntrance(
                         gpsStatTile(title: "Distance",
-                                    value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
-                                    systemImage: "figure.run", tint: Theme.pace, hasGPS: hasGPS),
+                                    value: MatchFormat.distance(distanceMeters),
+                                    systemImage: "figure.run", tint: Theme.pace, hasGPS: distanceMeters > 0),
                         index: 1)
                 }
                 staggeredEntrance(

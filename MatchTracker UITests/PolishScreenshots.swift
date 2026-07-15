@@ -68,6 +68,22 @@ final class PolishScreenshots: XCTestCase {
         _ = selectTab("Matches", expectingNavBar: "Matches", in: app)
         export("30-matches", app: app)
 
+        // Reworked matches list: tap a filter chip so the month-grouped list filters down. Prefer
+        // "Has GPS" (demo matches carry routes); fall back to the newest year chip. Reset to "All"
+        // after so the later match-detail walk starts from the full list.
+        let gpsChip = app.buttons["Has GPS"].firstMatch
+        let yearChip = app.buttons.matching(
+            NSPredicate(format: "label MATCHES %@", "20[0-9]{2}")).firstMatch
+        let filterChip = gpsChip.exists ? gpsChip : yearChip
+        if filterChip.waitForExistence(timeout: 4) && filterChip.isHittable {
+            filterChip.tap()
+            sleep(1)
+            export("30b-matches-filtered", app: app)
+            let allChip = app.buttons["All"].firstMatch
+            if allChip.exists && allChip.isHittable { allChip.tap() }
+            sleep(1)
+        }
+
         // Team tab: header bar + leaderboard (roster load fails offline → local fallback card).
         _ = selectTab("Team", expectingNavBar: "Team", in: app)
         sleep(2)
@@ -258,6 +274,36 @@ final class PolishScreenshots: XCTestCase {
                 satellite.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 sleep(4)   // let the imagery tiles load and the camera settle
                 export("32f-heatmap-satellite", app: app)
+            }
+
+            // Field-boundary correction (append-only): from satellite mode, open the corner editor for
+            // the resolved field, nudge a corner, save, and confirm the section reprojects end-to-end.
+            let adjustField = app.buttons["Adjust Field"]
+            if adjustField.waitForExistence(timeout: 4) && adjustField.isHittable {
+                adjustField.tap()
+                sleep(4)   // corner-editor cover settles
+                // NOTE: a modally-presented imagery Map renders as a blank surface in the simulator's
+                // XCUI screenshots (unlike the inline satellite overlay above), so 32g/32h document the
+                // flow reaching the editor and returning; the reprojection itself is verified in code
+                // (Save → FieldsModel.save → onFieldsChanged → MatchStore.invalidateForFieldChange →
+                // MatchDetailModel.reanalyze) and on-device.
+                export("32g-adjust-field", app: app)
+
+                // Nudge a corner handle, then save. Save routes through FieldsModel and fires the
+                // reproject pipeline for this match. Coordinate fallback: the blank Metal surface can
+                // report the button non-hittable even when the tap lands.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.34, dy: 0.34))
+                    .press(forDuration: 0.9,
+                           thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.46, dy: 0.46)))
+                sleep(1)
+                let saveCorrections = app.buttons["Save Corrections"]
+                if saveCorrections.waitForExistence(timeout: 4) && saveCorrections.isHittable {
+                    saveCorrections.tap()
+                } else {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92)).tap()
+                }
+                sleep(3)   // "Reprojecting…" acknowledgment + section re-render
+                export("32h-post-adjust", app: app)
             }
 
             // Position section: toggle the transparent heatmap underlay ON (32d), then open the

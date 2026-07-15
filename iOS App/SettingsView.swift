@@ -272,10 +272,36 @@ struct SettingsView: View {
             if let demoMessage {
                 Text(demoMessage).font(.caption).foregroundStyle(.secondary)
             }
+
+            // Diagnostic archive: export this device's full match history to one shareable file, or
+            // load a shared archive into a simulator so analysis bugs reproduce against real data.
+            DiagnosticArchiveControls(
+                healthKit: environment.matches.healthKit,
+                summariesProvider: { environment.matches.matches },
+                fieldsProvider: { environment.fields.fields },
+                settingsSnapshot: {
+                    AnalysisSettingsSnapshot(
+                        measurementSystem: Self.measurementSystemName,
+                        localeIdentifier: Locale.current.identifier,
+                        contributeDetectedFields: settings.contributeDetectedFields
+                    )
+                },
+                onImported: { await environment.matches.refresh(); environment.fields.reload() }
+            )
         } header: {
             Text("Developer")
         } footer: {
             Text("Creates synthetic soccer matches (HealthKit workout, GPS route, and match record) that flow through the real analysis pipeline. DEBUG builds only.")
+        }
+    }
+
+    /// Locale measurement system as a stable token for the diagnostic settings snapshot.
+    private static var measurementSystemName: String {
+        switch Locale.current.measurementSystem {
+        case .metric: return "metric"
+        case .us: return "us"
+        case .uk: return "uk"
+        default: return Locale.current.measurementSystem.identifier
         }
     }
 
