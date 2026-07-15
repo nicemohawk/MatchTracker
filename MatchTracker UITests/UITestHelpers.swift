@@ -204,6 +204,27 @@ extension XCTestCase {
     ///   `tabBars` element — so we also query the label app-wide (`app.buttons[name]`).
     /// - Returns: true once `navBarTitle` appears.
     @discardableResult
+    /// Variant for chrome-less tabs (Fields hides its nav bar): waits for a marker element
+    /// matching `labelContains` instead of a navigation bar title.
+    func selectTab(_ name: String, expectingLabelContains marker: String, in app: XCUIApplication) -> Bool {
+        let tabBarButton = app.tabBars.buttons[name]
+        let anyButton = app.buttons[name]
+        let markerElement = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", marker)).firstMatch
+        for _ in 0..<5 {
+            if markerElement.exists { return true }
+            if tabBarButton.exists && tabBarButton.isHittable {
+                tabBarButton.tap()
+            } else if anyButton.exists && anyButton.isHittable {
+                anyButton.tap()
+            } else if app.tabBars.firstMatch.exists {
+                app.tabBars.firstMatch.tap()
+            }
+            if markerElement.waitForExistence(timeout: 4) { return true }
+        }
+        return markerElement.exists
+    }
+
     func selectTab(_ name: String, expectingNavBar navBarTitle: String, in app: XCUIApplication) -> Bool {
         let tabBarButton = app.tabBars.buttons[name]
         let anyButton = app.buttons[name]

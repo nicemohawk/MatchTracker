@@ -76,7 +76,7 @@ final class PolishScreenshots: XCTestCase {
         // Fields: a full-bleed map with floating standard controls (no custom drawer). The tab bar
         // stays visible; the trailing control column, bottom-leading list pill, and bottom-trailing
         // Add Field / Scan actions all float clear of it.
-        _ = selectTab("Fields", expectingNavBar: "Fields", in: app)
+        _ = selectTab("Fields", expectingLabelContains: "field", in: app)
         dismissLocationPromptIfPresent(timeout: 5)
         sleep(2)
         export("34-fields-map", app: app)

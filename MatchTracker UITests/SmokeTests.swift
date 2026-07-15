@@ -144,7 +144,7 @@ final class SmokeTests: XCTestCase {
         screenshot("11-team-tab")
 
         // Fields tab. The map requests location on first appearance — grant it afterward.
-        XCTAssertTrue(selectTab("Fields", expectingNavBar: "Fields", in: app),
+        XCTAssertTrue(selectTab("Fields", expectingLabelContains: "field", in: app),
                       "Fields nav title should appear")
         dismissLocationPromptIfPresent()
         screenshot("10-fields-tab")

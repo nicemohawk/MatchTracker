@@ -50,12 +50,9 @@ struct FieldsView: View {
             .overlay(alignment: .bottomTrailing) { actionStack }
             .overlay(alignment: .bottom) { emptyHint }
             .overlay(alignment: .top) { bannerOverlay }
-            .navigationTitle("Fields")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            // The title floats over satellite imagery — force light-on-dark chrome so it stays
-            // readable in light mode too.
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            // No title: the tab bar already says "Fields" and the map speaks for itself — a
+            // floating title over satellite imagery only costs legibility (Apple Maps ships none).
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingList) {
                 FieldsListSheet(
                     fields: fields.fields,
