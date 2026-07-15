@@ -40,7 +40,14 @@ struct MatchesView: View {
         NavigationStack(path: $navigationPath) {
             Group {
                 if matches.matches.isEmpty && !liveMatches.isLive {
-                    emptyState
+                    // The empty state is only honest AFTER a refresh has completed returning zero.
+                    // Before that — a first-ever launch with no persisted cache, still loading — show
+                    // skeleton rows so the empty state can never flash while the history loads.
+                    if matches.didCompleteInitialLoad {
+                        emptyState
+                    } else {
+                        skeletonList
+                    }
                 } else {
                     matchList
                 }
@@ -69,11 +76,6 @@ struct MatchesView: View {
                 }
             }
             .refreshable { await matches.refresh() }
-            .overlay {
-                if matches.isLoading && matches.matches.isEmpty {
-                    ProgressView()
-                }
-            }
             .task { await backlogImporter.scanIfNeeded() }
             // Rebuild the grouped precompute once per matches-array change (see MatchListData.build).
             .task(id: matchesSignature) {
@@ -92,6 +94,9 @@ struct MatchesView: View {
         var hasher = Hasher()
         hasher.combine(matches.matches.count)
         for match in matches.matches { hasher.combine(match.id) }
+        // Rebuild once when cold-cache rows reconcile into workout-backed ones (same id set), so the
+        // precompute picks up authoritative summaries without waiting for an add/remove.
+        hasher.combine(matches.reconcileToken)
         return hasher.finalize()
     }
 
@@ -154,6 +159,25 @@ struct MatchesView: View {
                 .frame(maxWidth: .infinity)
                 .modifier(GlassListHeader())
         }
+    }
+
+    /// First-ever cold launch, no persisted cache yet, refresh still running: redacted placeholder
+    /// cards in the list idiom so the screen reads as "your matches are loading", never as the empty
+    /// invite. Non-interactive and non-scrolling — it's a loading state, not content.
+    private var skeletonList: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(0..<7, id: \.self) { _ in
+                    SkeletonMatchRow()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .readableWidth()
+        }
+        .scrollDisabled(true)
+        .allowsHitTesting(false)
+        .accessibilityLabel("Loading matches")
     }
 
     /// Shown when an active search/filter matches nothing: a quiet one-liner and a reset.
@@ -395,6 +419,46 @@ struct PressableCardStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.975 : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
             .animation(.spring(duration: 0.25), value: configuration.isPressed)
+    }
+}
+
+/// Redacted placeholder mirroring `MatchRow`'s card geometry (two title lines, two big metrics), for
+/// the first-ever load before any row exists. A gentle shimmer conveys progress; Reduce Motion holds
+/// it steady. Uses the same `.themedCard()` chrome so the skeleton and real rows share a silhouette.
+struct SkeletonMatchRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    bar(width: 150, height: 15)
+                    bar(width: 90, height: 11)
+                }
+                Spacer()
+                bar(width: 44, height: 22)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 18) {
+                bar(width: 62, height: 24)
+                bar(width: 62, height: 24)
+                Spacer()
+            }
+        }
+        .padding(16)
+        .themedCard()
+        .opacity(reduceMotion ? 0.6 : (shimmer ? 0.85 : 0.45))
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { shimmer = true }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func bar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+            .fill(Theme.surfaceElevated)
+            .frame(width: width, height: height)
     }
 }
 

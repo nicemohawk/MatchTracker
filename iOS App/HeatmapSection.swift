@@ -15,6 +15,9 @@ struct HeatmapSection: View {
     /// mis-aligned field boundary is obvious against the actual route.
     @State private var showRoute = false
     @State private var compareWithSeason = false
+    /// Time window for the Compare cohort (see `CompareWindow`) — a compact picker that only appears
+    /// while Compare is on.
+    @State private var compareWindow: CompareWindow = .thisSeason
     @State private var comparisonMode: ComparisonMode = .compare
     @State private var isHoldingCompare = false
     @State private var hintPulse = false
@@ -52,11 +55,12 @@ struct HeatmapSection: View {
                     .fullBleed()
                 HeatmapLegend()
             } else if compareWithSeason {
-                if let seasonAverage {
-                    comparisonContent(seasonAverage: seasonAverage)
+                windowPicker
+                if let cohort {
+                    comparisonContent(cohort: cohort)
                 } else {
                     singleMatchPitch
-                    Text("Play more matches to compare — no other analyzed matches yet.")
+                    Text(comparisonUnavailableReason)
                         .font(.caption).foregroundStyle(.secondary)
                     HeatmapLegend()
                 }
@@ -222,15 +226,16 @@ struct HeatmapSection: View {
     // MARK: - Comparison UX
 
     @ViewBuilder
-    private func comparisonContent(seasonAverage: HeatmapGrid) -> some View {
+    private func comparisonContent(cohort: CohortComparison) -> some View {
         modeControl
+        cohortCaption(cohort)
 
         switch comparisonMode {
         case .compare:
-            comparePitch(seasonAverage: seasonAverage)
+            comparePitch(seasonAverage: cohort.average)
             HeatmapLegend()
         case .difference:
-            if let diff = analytics.heatmap.difference(from: seasonAverage) {
+            if let diff = analytics.heatmap.difference(from: cohort.average) {
                 PitchHeatmapCanvas(render: .difference(diff))
                     .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
                     .background(Theme.pitchTurfBottom)
@@ -238,6 +243,50 @@ struct HeatmapSection: View {
             }
             DivergingHeatmapLegend()
         }
+    }
+
+    /// Honest one-liner naming the exact cohort the pitch is compared against — which venue / scope
+    /// and how many matches — so the overlay never implies more specificity than it used.
+    private func cohortCaption(_ cohort: CohortComparison) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: cohort.scope == .venue ? "mappin.and.ellipse" : "square.stack.3d.up")
+                .font(.caption2)
+            Text(cohort.caption)
+                .font(.system(.caption, design: .rounded).weight(.medium))
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Compact window chips (Season / 90 days / All time), scoping the Compare cohort. Only rendered
+    /// while Compare is on; scrolls horizontally to match the app's chip-row idiom.
+    private var windowPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(CompareWindow.allCases) { window in
+                    windowChip(window)
+                }
+            }
+        }
+    }
+
+    private func windowChip(_ window: CompareWindow) -> some View {
+        let isSelected = compareWindow == window
+        return Button {
+            guard compareWindow != window else { return }
+            Haptics.selection()
+            withAnimation(.easeInOut(duration: 0.2)) { compareWindow = window }
+        } label: {
+            Text(window.chipLabel)
+                .font(.system(.footnote, design: .rounded).weight(.semibold))
+                .foregroundStyle(isSelected ? accent : Color.primary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 34)
+                .background(Capsule().fill(isSelected ? Theme.chipFill(accent) : Theme.surfaceElevated))
+                .overlay(Capsule().strokeBorder(isSelected ? Theme.chipStroke(accent) : Theme.surfaceStroke, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     /// Two theme chips selecting how the comparison reads.
@@ -352,21 +401,18 @@ struct HeatmapSection: View {
         }
     }
 
-    /// Cell-wise average of every OTHER analyzed match's heatmap (cached only — never loads).
-    private var seasonAverage: HeatmapGrid? {
-        let grids = store.cachedHeatmaps(excluding: detail.matchIdentifier)
-            .filter { $0.columns == analytics.heatmap.columns && $0.rows == analytics.heatmap.rows }
-        guard !grids.isEmpty else { return nil }
-        var averaged = grids[0]
-        let count = Double(grids.count)
-        for index in averaged.cells.indices {
-            averaged.cells[index] = grids.reduce(0) { $0 + $1.cells[index] } / count
-        }
-        let peak = averaged.cells.max() ?? 1
-        if peak > 0 {
-            for index in averaged.cells.indices { averaged.cells[index] /= peak }
-        }
-        return averaged
+    /// The peer cohort to compare against, filtered by venue / format / window (see
+    /// `MatchStore.cohortComparison`). Cached analytics only — never triggers a load.
+    private var cohort: CohortComparison? {
+        store.cohortComparison(for: detail, window: compareWindow)
+    }
+
+    /// Why Compare has nothing to show — indoor matches have no GPS to compare, otherwise the cohort
+    /// simply hasn't filled yet for this venue/format/window.
+    private var comparisonUnavailableReason: String {
+        detail.matchFormat == .indoor
+            ? "Indoor sessions have no GPS route to compare on the pitch."
+            : "Play more \(detail.matchFormat == .smallSided ? "pickup " : "")matches to compare — no comparable matches analyzed yet."
     }
 }
 

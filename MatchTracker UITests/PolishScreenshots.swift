@@ -422,6 +422,126 @@ final class PolishScreenshots: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 8)
     }
 
+    /// Task-specific walk on the REAL imported-history device (never generates demo data, so the
+    /// user's history is untouched): proves the persisted summary cache paints the list on a warm
+    /// cold-launch, and captures the Compare venue/format/window cohort caption. Run explicitly
+    /// against the real-history sim:
+    ///   xcodebuild test ... -destination 'id=DFDED7F4-9BBE-4E33-9B24-69032169ABDE' \
+    ///     -only-testing:"MatchTracker UITests/PolishScreenshots/testColdLaunchAndCohortCompare"
+    func testColdLaunchAndCohortCompare() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-hasOnboarded", "YES"]
+
+        // A real match card's NavigationLink folds date + field + metrics into one long button label,
+        // so a length floor cleanly separates cards from the short filter chips ("All", "Match", …).
+        let rowPredicate = NSPredicate(
+            format: "label MATCHES %@ AND NOT (label CONTAINS[c] 'Import your history')", ".{24,}")
+
+        // --- First launch: seed the summary cache. This build has never persisted matchSummaries.json,
+        // so the list hydrates from HealthKit + records via refresh(), which then writes the snapshot.
+        app.launch()
+        handleHealthKitPrompt(app: app)
+        dismissHealthSyncAlertIfPresent(app: app)
+        XCTAssertTrue(app.navigationBars["Matches"].waitForExistence(timeout: 30),
+                      "Matches should be the launch surface")
+        let firstRow = app.buttons.matching(rowPredicate).firstMatch
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 30),
+                      "The real imported history should populate the Matches list")
+        sleep(2)   // let refresh() finish writing the summary snapshot before relaunching
+        export("30i-matches-real", app: app)
+
+        // --- Warm cold-launch: relaunch with the cache on disk and assert rows are present without an
+        // async wait — the list paints from the synchronous snapshot, not after a HealthKit round-trip.
+        // Timed from just after launch() returns so process-spawn time is excluded; the snapshot render
+        // is what we're measuring.
+        app.terminate()
+        app.launch()
+        let paintStart = Date()
+        let warmRow = app.buttons.matching(rowPredicate).firstMatch
+        let painted = warmRow.waitForExistence(timeout: 1.5)
+        let elapsedMS = Date().timeIntervalSince(paintStart) * 1000
+        XCTAssertTrue(painted, "Cached rows should paint within 1.5s of a warm launch")
+        add(XCTAttachment(string: String(format: "Warm cold-launch: first row visible %.0f ms after launch()", elapsedMS)))
+        export("30j-matches-cold-cache", app: app)
+
+        // --- Build a peer cohort: open several matches so their heatmaps cache (the cohort is drawn
+        // from analyzed matches, same as the old season average), then compare one against them.
+        openSeveralMatches(app: app, rowPredicate: rowPredicate, target: 8)
+
+        // Back to the list root, scrolled to the top, before opening the match we'll compare.
+        _ = app.navigationBars["Matches"].waitForExistence(timeout: 10)
+        app.swipeDown(velocity: .fast)
+        XCTAssertTrue(openMatchDetail(app: app, rowPredicate: rowPredicate),
+                      "Should open a GPS match detail to compare")
+        dismissLocationPromptIfPresent(timeout: 4)
+
+        // Heatmap is the default section for a GPS match. Wait for the section chips (detail loaded),
+        // then toggle Compare on.
+        _ = app.buttons["Workrate"].waitForExistence(timeout: 20)
+        let heatmapChip = app.buttons["Heatmap"]
+        if heatmapChip.exists && heatmapChip.isHittable { heatmapChip.tap() }
+        let compareChip = app.buttons["Compare"]
+        XCTAssertTrue(compareChip.waitForExistence(timeout: 15), "Compare chip should exist on the Heatmap section")
+        compareChip.tap()
+
+        // The window picker (Season / 90 days / All time) only exists while Compare is on.
+        let seasonChip = app.buttons["Season"]
+        XCTAssertTrue(seasonChip.waitForExistence(timeout: 8), "Compare window picker should appear while comparing")
+        let allTimeChip = app.buttons["All time"]
+        if allTimeChip.exists && allTimeChip.isHittable { allTimeChip.tap(); sleep(1) }   // widen for a fuller cohort
+
+        // Honest cohort caption ("vs N matches here · …" / "vs N matches (any field)"), or the empty
+        // "Play more matches" line if too few matches were analyzed — record whichever is true.
+        let cohortCaption = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'vs '")).firstMatch
+        let capHit = cohortCaption.waitForExistence(timeout: 4)
+        add(XCTAttachment(string: capHit ? "Cohort caption: \(cohortCaption.label)" : "No cohort caption (too few analyzed)"))
+        sleep(1)
+        export("32i-compare-cohort", app: app)
+    }
+
+    /// Opens distinct match rows one at a time (tap → wait for detail → back), keyed by their button
+    /// label so each open is a different match, scrolling when the visible set is exhausted. Warms
+    /// each match's cached analytics so the Compare cohort has heatmaps to average.
+    private func openSeveralMatches(app: XCUIApplication, rowPredicate: NSPredicate, target: Int) {
+        var opened = Set<String>()
+        var scrolls = 0
+        while opened.count < target && scrolls < target * 3 {
+            let rows = app.buttons.matching(rowPredicate)
+            var tapped = false
+            for index in 0..<rows.count {
+                let row = rows.element(boundBy: index)
+                guard row.exists, !opened.contains(row.label), row.isHittable else { continue }
+                opened.insert(row.label)
+                row.tap()
+                dismissLocationPromptIfPresent(timeout: 3)
+                guard app.buttons["Workrate"].waitForExistence(timeout: 20) else { continue } // opened?
+                sleep(1)                                                   // let heatmap analytics cache
+                let back = app.navigationBars.buttons.element(boundBy: 0)
+                if back.exists && back.isHittable { back.tap() }
+                _ = app.navigationBars["Matches"].waitForExistence(timeout: 10)
+                tapped = true
+                break
+            }
+            if !tapped { app.swipeUp(velocity: .slow); scrolls += 1 }
+        }
+    }
+
+    /// Taps the first match card and confirms the detail actually pushed (a NavigationLink tap right
+    /// after a scroll animation is occasionally swallowed), retrying up to three times. Verified by
+    /// the appearance of the detail's "Workrate" section chip, which the Matches list never shows.
+    private func openMatchDetail(app: XCUIApplication, rowPredicate: NSPredicate) -> Bool {
+        for _ in 0..<3 {
+            let row = app.buttons.matching(rowPredicate).firstMatch
+            guard row.waitForExistence(timeout: 10) else { return false }
+            row.tap()
+            if app.buttons["Workrate"].waitForExistence(timeout: 12) { return true }
+            // Tap didn't push (or a prompt intercepted it) — clear any prompt and retry from the top.
+            dismissLocationPromptIfPresent(timeout: 2)
+            if app.navigationBars["Matches"].exists { app.swipeDown(velocity: .fast) }
+        }
+        return app.buttons["Workrate"].exists
+    }
+
     /// Dismisses the "iCloud Health Data Sync is Off" card (Not Now) if it is on screen. It can be
     /// presented as an in-app card or a system alert, so both the app's own tree and Springboard are
     /// checked. Best-effort: returns quietly when no such card exists.
