@@ -214,6 +214,11 @@ struct MatchDetailView: View {
                 Spacer(minLength: 0)
             }
 
+            // Distance/Sprints/Runs are GPS-derived — meaningless without a route — so they read
+            // "—" (not a misleading 0) when the match has no track. Duration, Time on Pitch, and
+            // Avg HR are always real. `.lineLimit(1)` + `.minimumScaleFactor` keep every value on a
+            // single line so no tile wraps taller than its neighbors: the four read as one row.
+            let hasGPS = !(detail?.track.isEmpty ?? true)
             HStack(spacing: 10) {
                 staggeredEntrance(
                     StatTile(title: "Duration", value: MatchFormat.shortDuration(summary.duration),
@@ -228,14 +233,14 @@ struct MatchDetailView: View {
                         index: 1)
                 } else {
                     staggeredEntrance(
-                        StatTile(title: "Distance",
-                                 value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
-                                 systemImage: "figure.run", tint: Theme.pace),
+                        gpsStatTile(title: "Distance",
+                                    value: MatchFormat.distance(detail?.analytics?.workrate.totalDistanceMeters ?? summary.distanceMeters),
+                                    systemImage: "figure.run", tint: Theme.pace, hasGPS: hasGPS),
                         index: 1)
                 }
                 staggeredEntrance(
-                    StatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
-                             systemImage: "hare", tint: Theme.sprint),
+                    gpsStatTile(title: "Sprints", value: "\(detail?.analytics?.workrate.sprintCount ?? 0)",
+                                systemImage: "hare", tint: Theme.sprint, hasGPS: hasGPS),
                     index: 2)
                 if let hr = detail?.heartRate {
                     staggeredEntrance(
@@ -244,11 +249,13 @@ struct MatchDetailView: View {
                         index: 3)
                 } else {
                     staggeredEntrance(
-                        StatTile(title: "Runs", value: "\(detail?.analytics?.workrate.runCount ?? 0)",
-                                 systemImage: "bolt.fill", tint: Theme.turf),
+                        gpsStatTile(title: "Runs", value: "\(detail?.analytics?.workrate.runCount ?? 0)",
+                                    systemImage: "bolt.fill", tint: Theme.turf, hasGPS: hasGPS),
                         index: 3)
                 }
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
         }
         // Interior padding for the ring + numerals + chips; the wash below fills full width.
         .padding(.horizontal, 20)
@@ -278,6 +285,23 @@ struct MatchDetailView: View {
             withAnimation(animation) { ringProgress = target }
         } else {
             ringProgress = target
+        }
+    }
+
+    /// A hero tile for a GPS-derived metric (distance, sprints, runs). Without a route these numbers
+    /// are meaningless, so the tile shows an em dash and announces "not available — no GPS" to
+    /// VoiceOver instead of a misleading zero. HR/Duration/Time-on-Pitch tiles never route through
+    /// here — they are always real.
+    private func gpsStatTile(title: String, value: String, systemImage: String,
+                             tint: Color, hasGPS: Bool) -> some View {
+        Group {
+            if hasGPS {
+                StatTile(title: title, value: value, systemImage: systemImage, tint: tint)
+            } else {
+                StatTile(title: title, value: "—", systemImage: systemImage, tint: tint)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(title): not available — no GPS")
+            }
         }
     }
 
@@ -335,7 +359,7 @@ struct MatchDetailView: View {
                 case .workrate:
                     WorkrateSection(detail: detail, analytics: analytics)
                 case .position:
-                    PositionSection(analytics: analytics)
+                    PositionSection(detail: detail, analytics: analytics)
                 case .events:
                     EventsSection(detail: detail)
                 case .video:

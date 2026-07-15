@@ -25,8 +25,11 @@ public struct MatchStats: Codable, Sendable {
     public var meanY: Double?
     /// Which signals fed `workrateScore` (`"gps+hr"` / `"gps"` / `"hr"`); wire `effort_source`.
     public var effortSource: String?
+    /// Positions the wearer hand-reported for this match (wire `reported_positions`), omitted when
+    /// nil. Ground truth the player supplied, distinct from the inferred `position_role`/`side`.
+    public var reportedPositions: [ReportedPosition]?
 
-    public init(totalDistanceMeters: Double = 0, timeOnPitch: TimeInterval = 0, sprintCount: Int = 0, runCount: Int = 0, workrateScore: Double = 0, speedZones: SpeedZones = SpeedZones(), averageHeartRate: Double? = nil, positionRole: PositionRole? = nil, positionSide: PositionSide? = nil, meanX: Double? = nil, meanY: Double? = nil, effortSource: String? = nil) {
+    public init(totalDistanceMeters: Double = 0, timeOnPitch: TimeInterval = 0, sprintCount: Int = 0, runCount: Int = 0, workrateScore: Double = 0, speedZones: SpeedZones = SpeedZones(), averageHeartRate: Double? = nil, positionRole: PositionRole? = nil, positionSide: PositionSide? = nil, meanX: Double? = nil, meanY: Double? = nil, effortSource: String? = nil, reportedPositions: [ReportedPosition]? = nil) {
         self.totalDistanceMeters = totalDistanceMeters
         self.timeOnPitch = timeOnPitch
         self.sprintCount = sprintCount
@@ -39,11 +42,13 @@ public struct MatchStats: Codable, Sendable {
         self.meanX = meanX
         self.meanY = meanY
         self.effortSource = effortSource
+        self.reportedPositions = reportedPositions
     }
 
     /// Derive the upload stats from the Kit's analytics outputs. This is the single place the
-    /// wire summary is assembled from a `WorkrateReport` (+ optional `PositionEstimate`).
-    public init(report: WorkrateReport, position: PositionEstimate? = nil) {
+    /// wire summary is assembled from a `WorkrateReport` (+ optional `PositionEstimate`). The
+    /// wearer's hand-`reportedPositions` (from the `MatchRecord`, not analytics) pass through here.
+    public init(report: WorkrateReport, position: PositionEstimate? = nil, reportedPositions: [ReportedPosition]? = nil) {
         self.init(
             totalDistanceMeters: report.totalDistanceMeters,
             timeOnPitch: report.timeOnPitch,
@@ -56,7 +61,8 @@ public struct MatchStats: Codable, Sendable {
             positionSide: position?.side,
             meanX: position.map { Double($0.meanPoint.x) },
             meanY: position.map { Double($0.meanPoint.y) },
-            effortSource: report.effortSource
+            effortSource: report.effortSource,
+            reportedPositions: reportedPositions
         )
     }
 
@@ -73,6 +79,7 @@ public struct MatchStats: Codable, Sendable {
         case meanX = "mean_x"
         case meanY = "mean_y"
         case effortSource = "effort_source"
+        case reportedPositions = "reported_positions"
     }
 
     /// Wire shape of `speed_zones`: seconds per zone with `_s`-suffixed keys.
@@ -97,6 +104,7 @@ public struct MatchStats: Codable, Sendable {
         try container.encodeIfPresent(meanX, forKey: .meanX)
         try container.encodeIfPresent(meanY, forKey: .meanY)
         try container.encodeIfPresent(effortSource, forKey: .effortSource)
+        try container.encodeIfPresent(reportedPositions, forKey: .reportedPositions)
 
         var zones = container.nestedContainer(keyedBy: SpeedZoneKeys.self, forKey: .speedZones)
         try zones.encode(speedZones.standing, forKey: .standing)
@@ -119,6 +127,7 @@ public struct MatchStats: Codable, Sendable {
         meanX = try container.decodeIfPresent(Double.self, forKey: .meanX)
         meanY = try container.decodeIfPresent(Double.self, forKey: .meanY)
         effortSource = try container.decodeIfPresent(String.self, forKey: .effortSource)
+        reportedPositions = try container.decodeIfPresent([ReportedPosition].self, forKey: .reportedPositions)
 
         if let zones = try? container.nestedContainer(keyedBy: SpeedZoneKeys.self, forKey: .speedZones) {
             speedZones = SpeedZones(

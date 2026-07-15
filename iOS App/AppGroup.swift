@@ -14,6 +14,13 @@ enum AppGroup {
         if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
             return url
         }
+        // The app group is unavailable at runtime (entitlement not granted by the signing profile,
+        // or unsigned CI build). We fall back to Application Support so the app keeps working, but
+        // this means phone/watch/widget data silently diverges — shout about it in DEBUG so it's
+        // never mistaken for the real shared container.
+        #if DEBUG
+        MatchLog.error("App group \(identifier) unavailable — falling back to Application Support. Shared phone/watch data will diverge. Check the app group is enabled on the App ID and in the provisioning profile.", category: "appgroup")
+        #endif
         let fallback = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MatchTracker", isDirectory: true)
         try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)

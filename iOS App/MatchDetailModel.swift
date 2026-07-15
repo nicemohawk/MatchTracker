@@ -131,11 +131,12 @@ final class MatchDetailModel: ObservableObject {
         }
     }
 
-    /// Recompute after an events edit (playing intervals / position may change). Indoor sessions
-    /// have no track but still recompute so a substitution edit reshapes the HR-based workrate.
+    /// Recompute after an events edit (playing intervals / position may change). Route-less sessions
+    /// have no track but still recompute when they can score from heart rate (indoor, or any import
+    /// with HR samples) so a substitution edit reshapes the HR-based workrate.
     func updateRecord(_ record: MatchRecord) {
         self.record = record
-        if !track.isEmpty || matchFormat == .indoor {
+        if !track.isEmpty || matchFormat == .indoor || !heartRateSamples.isEmpty {
             analytics = computeAnalytics(track: track)
         }
     }
@@ -155,11 +156,17 @@ final class MatchDetailModel: ObservableObject {
             events: events, matchStart: matchStart, matchEnd: matchEnd
         )
 
-        // No route to place onto. An indoor session still scores from heart rate alone, so its
-        // analytics (and thus the workrate/events views) exist even with an empty track; the
-        // projector-dependent pieces stay empty. Any other format with no field is un-analyzable.
+        // No route to place onto. Heart rate alone still scores workrate, so any route-less match
+        // that has HR samples gets analytics (and thus the workrate/events views) even with an
+        // empty track — an indoor session, or a backlog import Apple saved without a route. The
+        // projector-dependent pieces (heatmap/runs/position) stay empty; they are never fabricated.
+        // Without HR (and not indoor, which always scores HR-only even at HR 0) there is nothing to
+        // analyze.
         guard let resolved = resolveField(track: track) else {
-            guard matchFormat == .indoor else { return nil }
+            guard matchFormat == .indoor || !heartRateSamples.isEmpty else { return nil }
+            // HR-only path: pass an indoor context so WorkrateAnalyzer weights effort from heart
+            // rate alone (its distance scaling is unused with no track) and stamps effort_source
+            // "hr". This is the exact call the indoor branch makes — reused for any route-less match.
             let context = MatchContext(format: .indoor)
             var workrate = WorkrateAnalyzer.analyze(
                 track: track, runs: [], playingIntervals: intervals,

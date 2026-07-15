@@ -203,6 +203,65 @@ final class RoadmapBackendTests: XCTestCase {
         XCTAssertEqual(json["mean_y"] as? Double, 0.31)
     }
 
+    func testMatchStatsReportedPositionsWireShape() throws {
+        let stats = MatchStats(
+            report: WorkrateReport(totalDistanceMeters: 0, timeOnPitch: 0, workrateScore: 0),
+            reportedPositions: [
+                ReportedPosition(role: .midfielder, side: .center),
+                ReportedPosition(role: .forward)   // side-less entry
+            ]
+        )
+        let json = try jsonObject(try Self.isoEncoder.encode(stats))
+        let positions = try XCTUnwrap(json["reported_positions"] as? [[String: Any]])
+        XCTAssertEqual(positions.count, 2)
+        XCTAssertEqual(positions[0]["role"] as? String, "midfielder")
+        XCTAssertEqual(positions[0]["side"] as? String, "center")
+        XCTAssertEqual(positions[1]["role"] as? String, "forward")
+        XCTAssertNil(positions[1]["side"], "a side-less reported position omits the side key")
+
+        let decoded = try Self.isoDecoder.decode(MatchStats.self, from: try Self.isoEncoder.encode(stats))
+        XCTAssertEqual(decoded.reportedPositions, stats.reportedPositions)
+    }
+
+    func testMatchStatsOmitsReportedPositionsWhenNil() throws {
+        let stats = MatchStats(report: WorkrateReport(totalDistanceMeters: 0, timeOnPitch: 0, workrateScore: 0))
+        let json = try jsonObject(try Self.isoEncoder.encode(stats))
+        XCTAssertNil(json["reported_positions"], "nil reportedPositions is omitted from the wire")
+
+        let decoded = try Self.isoDecoder.decode(MatchStats.self, from: try Self.isoEncoder.encode(stats))
+        XCTAssertNil(decoded.reportedPositions)
+    }
+
+    // MARK: - MatchRecord reportedPositions persistence
+
+    func testMatchRecordReportedPositionsRoundTrip() throws {
+        let record = MatchRecord(
+            id: UUID(), startDate: Date(timeIntervalSince1970: 0), endDate: nil, fieldID: nil,
+            events: [], teamCode: nil,
+            reportedPositions: [
+                ReportedPosition(role: .defender, side: .left),
+                ReportedPosition(role: .goalkeeper)   // side-less entry
+            ]
+        )
+        let data = try MatchTrackerJSON.encoder().encode(record)
+        let decoded = try MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data)
+        XCTAssertEqual(decoded.reportedPositions, record.reportedPositions)
+    }
+
+    func testMatchRecordReportedPositionsAbsentDecodesNil() throws {
+        // A record written before this field existed carries no `reportedPositions` key. Synthesized
+        // Codable omits the key for a nil optional, so a nil-positions record IS that legacy shape;
+        // decodeIfPresent keeps such old files loading with the field simply nil ("never edited").
+        let record = MatchRecord(id: UUID(), startDate: Date(timeIntervalSince1970: 0), endDate: nil,
+                                 fieldID: nil, events: [], teamCode: nil)
+        let data = try MatchTrackerJSON.encoder().encode(record)
+        let json = try jsonObject(data)
+        XCTAssertNil(json["reportedPositions"], "nil reportedPositions is omitted from the record JSON")
+
+        let decoded = try MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data)
+        XCTAssertNil(decoded.reportedPositions)
+    }
+
     func testMatchPayloadSportIDWireKey() throws {
         let payload = MatchPayload(uuid: UUID(), recordedAt: Date(timeIntervalSince1970: 0),
                                    coordinates: [[40, -83]], events: [], fieldUUID: nil,

@@ -36,11 +36,17 @@ final class ConnectivityManager: NSObject, ObservableObject {
     }
 
     /// Push the current field list + team/player settings so the watch can auto-detect fields offline.
+    ///
+    /// Guarded on `isPaired && isWatchAppInstalled`: without a paired watch running the counterpart
+    /// app, `updateApplicationContext` fails with "WCSession counterpart app not installed" and the
+    /// call is doomed. We re-push from `sessionWatchStateDidChange` once a watch actually appears, so
+    /// nothing is lost — we just stop hammering when there's no receiver.
     func pushContext() {
         #if canImport(WatchConnectivity)
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
         guard session.activationState == .activated else { return }
+        guard session.isPaired, session.isWatchAppInstalled else { return }
 
         Task { @MainActor in
             var context: [String: Any] = [
@@ -50,7 +56,11 @@ final class ConnectivityManager: NSObject, ObservableObject {
             if let data = fields.encodedFields() {
                 context["fields"] = data
             }
-            try? session.updateApplicationContext(context)
+            do {
+                try session.updateApplicationContext(context)
+            } catch {
+                MatchLog.error("updateApplicationContext failed: \(error.localizedDescription)", category: "connectivity")
+            }
         }
         #endif
     }
@@ -66,6 +76,14 @@ extension ConnectivityManager: WCSessionDelegate {
 
     func sessionDidDeactivate(_ session: WCSession) {
         WCSession.default.activate()
+    }
+
+    /// Pairing / watch-app-install state changed. If a usable watch just appeared, push the context
+    /// we were suppressing while there was no receiver.
+    func sessionWatchStateDidChange(_ session: WCSession) {
+        if session.isPaired, session.isWatchAppInstalled {
+            pushContext()
+        }
     }
 
     func session(_ session: WCSession, didReceive file: WCSessionFile) {

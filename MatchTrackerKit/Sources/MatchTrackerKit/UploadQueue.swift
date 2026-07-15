@@ -1,5 +1,88 @@
 import Foundation
 
+// MARK: - Circuit breaker
+
+/// A lightweight circuit breaker that trips after a run of *transport-level* failures (TLS handshake
+/// failure, host unreachable, no network) and suspends further attempts for a cooldown, so a broken
+/// or misconfigured endpoint isn't hammered with back-to-back doomed connections in one session.
+///
+/// Reaching the server at all — even a 5xx or a 4xx — counts as healthy transport and closes the
+/// breaker: only failures where no server was reached count toward tripping. Thread-safe.
+public final class CircuitBreaker: @unchecked Sendable {
+    private let failureThreshold: Int
+    private let cooldown: TimeInterval
+    private let lock = NSLock()
+    private var consecutiveFailures = 0
+    private var openedUntil: Date?
+
+    /// - Parameters:
+    ///   - failureThreshold: consecutive transport failures required to trip (default 3).
+    ///   - cooldown: how long to stay open before allowing a probe (default 5 minutes).
+    public init(failureThreshold: Int = 3, cooldown: TimeInterval = 300) {
+        self.failureThreshold = max(1, failureThreshold)
+        self.cooldown = cooldown
+    }
+
+    /// Whether a network attempt is allowed right now. Once the cooldown elapses the breaker
+    /// half-opens: the next call returns `true` (a single probe) until a success closes it or a
+    /// failure re-opens it.
+    public func allowsRequest(now: Date = Date()) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let openUntil = openedUntil else { return true }
+        if now >= openUntil {
+            openedUntil = nil   // half-open: let one probe through
+            return true
+        }
+        return false
+    }
+
+    /// A reached server (any HTTP response) or successful upload resets the breaker.
+    public func recordSuccess() {
+        lock.lock()
+        defer { lock.unlock() }
+        consecutiveFailures = 0
+        openedUntil = nil
+    }
+
+    /// Record a failure. Only `transportLevel` failures count toward tripping; a reached-but-erroring
+    /// server resets the transport counter instead.
+    public func recordFailure(transportLevel: Bool, now: Date = Date()) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard transportLevel else {
+            consecutiveFailures = 0
+            return
+        }
+        consecutiveFailures += 1
+        if consecutiveFailures >= failureThreshold {
+            openedUntil = now.addingTimeInterval(cooldown)
+        }
+    }
+
+    /// URLError codes where no server was reached — TLS failures, unreachable/unresolvable host,
+    /// dropped or absent connectivity. HTTP status errors are deliberately excluded (server reached).
+    public static func isTransportFailure(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        return transportFailureCodes.contains(urlError.code)
+    }
+
+    private static let transportFailureCodes: Set<URLError.Code> = [
+        .secureConnectionFailed,        // TLS handshake failed (e.g. -9802 wrong cert)
+        .serverCertificateUntrusted,
+        .serverCertificateHasBadDate,
+        .serverCertificateHasUnknownRoot,
+        .serverCertificateNotYetValid,
+        .clientCertificateRejected,
+        .cannotConnectToHost,
+        .cannotFindHost,
+        .dnsLookupFailed,
+        .notConnectedToInternet,
+        .networkConnectionLost,
+        .timedOut
+    ]
+}
+
 // MARK: - Offline upload queue
 
 /// One queued upload, persisted as a single JSON file so it survives app relaunches. `payloadJSON`
@@ -34,15 +117,19 @@ public struct PendingUpload: Codable, Identifiable, Sendable {
 public final class UploadQueue {
     private let directory: URL
     private let client: APIClient
+    private let breaker: CircuitBreaker
     private let lock = NSLock()
     private var storage: [PendingUpload] = []
 
     /// Backoff is capped at six hours.
     private static let maximumBackoff: TimeInterval = 21600
 
-    public init(directory: URL, client: APIClient) {
+    /// - Parameter breaker: the transport circuit breaker to consult before dispatching. Pass a
+    ///   shared instance so other paths on the same host (e.g. the live relay) trip together.
+    public init(directory: URL, client: APIClient, breaker: CircuitBreaker = CircuitBreaker()) {
         self.directory = directory.appendingPathComponent("uploads", isDirectory: true)
         self.client = client
+        self.breaker = breaker
         loadPersisted()
     }
 
@@ -76,7 +163,12 @@ public final class UploadQueue {
     /// - Returns: the number of items still queued afterward.
     @discardableResult
     public func flush() async -> Int {
+        // Endpoint tripped the breaker recently: leave everything queued and try again after the
+        // cooldown rather than firing a fresh storm of doomed connections.
+        guard breaker.allowsRequest() else { return count() }
         for item in dueItems(asOf: Date()) {
+            // A transport failure mid-flush trips the breaker; stop hammering the rest immediately.
+            guard breaker.allowsRequest() else { break }
             do {
                 switch item.kind {
                 case .match:
@@ -86,8 +178,10 @@ public final class UploadQueue {
                     let fields = try Self.payloadDecoder.decode([FieldModel].self, from: item.payloadJSON)
                     try await client.post(fields: fields)
                 }
+                breaker.recordSuccess()
                 remove(id: item.id)
             } catch {
+                breaker.recordFailure(transportLevel: CircuitBreaker.isTransportFailure(error))
                 recordFailure(id: item.id, error: error)
             }
         }

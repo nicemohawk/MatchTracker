@@ -20,6 +20,9 @@ enum AppGroupStorage {
         if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
             return url
         }
+        #if DEBUG
+        MatchLog.error("App group \(identifier) unavailable on watch — falling back to Documents. Field DB / match records won't be shared with the phone. Check the app group is enabled on the watch App ID and provisioning profile.", category: "appgroup")
+        #endif
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
@@ -32,7 +35,13 @@ enum AppGroupStorage {
     }
 
     static var defaults: UserDefaults {
-        UserDefaults(suiteName: identifier) ?? .standard
+        if let defaults = UserDefaults(suiteName: identifier) {
+            return defaults
+        }
+        #if DEBUG
+        MatchLog.error("UserDefaults(suiteName: \(identifier)) is nil on watch — falling back to .standard; team/player metadata won't match the phone.", category: "appgroup")
+        #endif
+        return .standard
     }
 
     enum DefaultsKey {

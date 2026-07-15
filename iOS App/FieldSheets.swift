@@ -360,6 +360,8 @@ struct CornerEditorView: View {
                 }
             }
             .mapStyle(.imagery)
+            // Metal-backed: never let layout resolve the map to zero height mid-transition.
+            .frame(minHeight: 160)
         }
         .overlay(alignment: .bottom) { guidanceBar }
         .navigationTitle("Adjust Corners")
@@ -456,6 +458,9 @@ struct MapPreview: View {
                 .stroke(color, lineWidth: 2)
         }
         .mapStyle(.hybrid)
+        // Metal-backed: never let layout resolve this to zero height mid-transition
+        // ("CAMetalLayer ignoring invalid setDrawableSize 0x0" in device logs).
+        .frame(minHeight: 120)
     }
 }
 

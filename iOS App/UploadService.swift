@@ -18,6 +18,11 @@ final class UploadService: ObservableObject {
     /// Persistent retry queue; created once an API key exists (it needs a live client).
     private var queue: UploadQueue?
 
+    /// Shared transport circuit breaker: a run of TLS/unreachable-host failures on any path (queue
+    /// flush or live relay) suspends further attempts for a cooldown, so a misconfigured endpoint
+    /// isn't hammered per-fieldsChanged / per-live-tick.
+    private let breaker = CircuitBreaker()
+
     private let settings: SettingsStore
     private let fields: FieldsModel
     private unowned let matches: MatchStore
@@ -33,7 +38,7 @@ final class UploadService: ObservableObject {
         self.settings = settings
         self.fields = fields
         self.matches = matches
-        self.defaults = UserDefaults(suiteName: AppGroup.identifier) ?? .standard
+        self.defaults = Self.appGroupDefaults()
         self.deviceID = Self.resolveDeviceID(defaults: defaults)
         self.apiKey = KeychainHelper.string(forKey: keychainKey)
     }
@@ -71,7 +76,7 @@ final class UploadService: ObservableObject {
 
     private func makeQueueIfNeeded() {
         guard queue == nil, let client else { return }
-        queue = UploadQueue(directory: AppGroup.containerURL, client: client)
+        queue = UploadQueue(directory: AppGroup.containerURL, client: client, breaker: breaker)
         pendingUploadCount = queue?.pending.count ?? 0
     }
 
@@ -88,12 +93,17 @@ final class UploadService: ObservableObject {
 
     /// Relay one live update to the backend, best-effort (sideline dashboards).
     func relayLive(_ update: LiveMatchUpdate) {
+        // Per-tick relay: skip entirely while the breaker is open so a broken endpoint isn't hit on
+        // every live update.
+        guard breaker.allowsRequest() else { return }
         guard let client,
               let teamCode = settings.teamCode.isEmpty ? nil : settings.teamCode else { return }
         Task {
             do {
                 try await client.postLive(update, matchUUID: deviceScopedLiveMatchID, teamCode: teamCode)
+                breaker.recordSuccess()
             } catch {
+                breaker.recordFailure(transportLevel: CircuitBreaker.isTransportFailure(error))
                 MatchLog.error("Live relay failed: \(error.localizedDescription)", category: "live")
             }
         }
@@ -295,6 +305,18 @@ final class UploadService: ObservableObject {
         var set = uploadedIDs
         ids.forEach { set.insert($0) }
         defaults.set(set.map(\.uuidString), forKey: uploadedKey)
+    }
+
+    /// App-group `UserDefaults`, or `.standard` if the suite can't be opened (entitlement not
+    /// granted). The fallback quietly diverges from the watch/widgets, so make it loud in DEBUG.
+    private static func appGroupDefaults() -> UserDefaults {
+        if let defaults = UserDefaults(suiteName: AppGroup.identifier) {
+            return defaults
+        }
+        #if DEBUG
+        MatchLog.error("UserDefaults(suiteName: \(AppGroup.identifier)) is nil — falling back to .standard; uploaded-set and deviceID will diverge from the shared container.", category: "appgroup")
+        #endif
+        return .standard
     }
 
     private static func resolveDeviceID(defaults: UserDefaults) -> UUID {

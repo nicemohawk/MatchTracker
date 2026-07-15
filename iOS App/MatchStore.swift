@@ -4,6 +4,20 @@
 import Foundation
 import HealthKit
 import MatchTrackerKit
+#if canImport(os)
+import os
+#endif
+
+/// The handful of values a Matches-list row needs to render its badge (position pill, field name,
+/// GPS-route glyph). Persisted once per match so rows render instantly on cold launch instead of
+/// triggering a full analytics compute (heatmap / runs / workrate / field-fit) as they scroll in.
+struct MatchBadge: Codable, Equatable {
+    var role: PositionRole?
+    var side: PositionSide?
+    var confidence: Double?
+    var fieldName: String?
+    var hasRoute: Bool
+}
 
 /// One row in the Matches list: an HK soccer workout joined with its received `MatchRecord`.
 /// `workout` is nil for "orphan" record-only matches whose HKWorkout couldn't be fetched
@@ -40,12 +54,18 @@ final class MatchStore: ObservableObject {
 
     private var detailCache: [UUID: MatchDetailModel] = [:]
 
+    /// Persisted row-badge cache (see `MatchBadge`), loaded once from the app-group container so the
+    /// Matches list paints without recomputing analytics per row on every cold launch.
+    private var badgeCache: [UUID: MatchBadge] = [:]
+    private static let badgeCacheFileName = "matchBadges.json"
+
     /// Invoked with newly seen workout UUIDs so the app can auto-upload them.
     var onNewMatches: (([MatchSummary]) -> Void)?
 
     init(healthKit: HealthKitService = .shared, fields: FieldsModel) {
         self.healthKit = healthKit
         self.fields = fields
+        badgeCache = Self.loadBadgeCache()
     }
 
     func refresh() async {
@@ -78,6 +98,37 @@ final class MatchStore: ObservableObject {
         } catch {
             loadError = error.localizedDescription
         }
+    }
+
+    // MARK: - Row badge cache
+
+    /// The persisted badge for a match, if we've computed it before. Lets a row render instantly
+    /// without a HealthKit fetch + analytics compute.
+    func cachedBadge(for id: UUID) -> MatchBadge? {
+        badgeCache[id]
+    }
+
+    /// Store (or refresh) the badge for a match and persist the cache. Called once per match after
+    /// its first analytics load.
+    func storeBadge(_ badge: MatchBadge, for id: UUID) {
+        guard badgeCache[id] != badge else { return }
+        badgeCache[id] = badge
+        persistBadgeCache()
+    }
+
+    private static var badgeCacheURL: URL {
+        AppGroup.containerURL.appendingPathComponent(badgeCacheFileName)
+    }
+
+    private static func loadBadgeCache() -> [UUID: MatchBadge] {
+        guard let data = try? Data(contentsOf: badgeCacheURL),
+              let decoded = try? JSONDecoder().decode([UUID: MatchBadge].self, from: data) else { return [:] }
+        return decoded
+    }
+
+    private func persistBadgeCache() {
+        guard let data = try? JSONEncoder().encode(badgeCache) else { return }
+        try? data.write(to: Self.badgeCacheURL, options: .atomic)
     }
 
     /// Cached detail model for a match; call `load()` on it to fetch the track and analytics.
@@ -158,6 +209,12 @@ final class MatchStore: ObservableObject {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(record) else { return }
         try? data.write(to: AppGroup.matchRecordURL(for: record.id), options: .atomic)
+
+        // The stored badge (position / field / route) may be stale after an edit — drop it so the
+        // row recomputes once from the refreshed detail model.
+        if badgeCache.removeValue(forKey: record.id) != nil {
+            persistBadgeCache()
+        }
 
         if let index = matches.firstIndex(where: { $0.id == record.id }) {
             let summary = MatchSummary(id: record.id, workout: matches[index].workout, record: record)

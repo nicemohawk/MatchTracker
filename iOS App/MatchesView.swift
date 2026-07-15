@@ -3,6 +3,9 @@
 
 import SwiftUI
 import MatchTrackerKit
+#if DEBUG
+import os
+#endif
 
 struct MatchesView: View {
     /// True while no detail is pushed; drives the settings circle's root-only visibility.
@@ -417,18 +420,61 @@ struct MatchRow: View {
     }
 
     private func loadBadge() async {
+        // Fast path: a previously computed badge renders instantly with no HealthKit fetch or
+        // analytics compute — the heavy work happens once per match, ever.
+        if let badge = store.cachedBadge(for: summary.id) {
+            hasRoute = badge.hasRoute
+            fieldName = badge.fieldName
+            if let role = badge.role, let side = badge.side, let confidence = badge.confidence {
+                position = (role, side, confidence)
+            }
+            return
+        }
+
         let detail = store.detailModel(for: summary)
+
+        #if DEBUG
+        // Signpost the (expensive, first-time) analytics load so per-row cost is trivial to profile.
+        let signposter = OSSignposter(subsystem: "com.nicemohawk.MatchTracker", category: "matchrow")
+        let signpostID = signposter.makeSignpostID()
+        let interval = signposter.beginInterval("loadBadge", id: signpostID)
+        let start = Date()
+        #endif
+
         await detail.load()
+
+        #if DEBUG
+        signposter.endInterval("loadBadge", interval)
+        MatchLog.info("MatchRow badge load took \(String(format: "%.0f", Date().timeIntervalSince(start) * 1000)) ms", category: "matchrow")
+        #endif
+
         hasRoute = !detail.track.isEmpty
+        var resolvedFieldName: String?
+        var resolvedPosition: (role: PositionRole, side: PositionSide, confidence: Double)?
         if let analytics = detail.analytics {
             // Indoor sessions carry only a placeholder position estimate — don't badge one.
             if summary.record?.format != .indoor {
-                position = (analytics.position.role, analytics.position.side, analytics.position.confidence)
+                resolvedPosition = (analytics.position.role, analytics.position.side, analytics.position.confidence)
             }
-            fieldName = analytics.fieldName
+            resolvedFieldName = analytics.fieldName
         } else if let fieldID = summary.record?.fieldID {
             // Record-only match: resolve the field name directly (no analytics available).
-            fieldName = store.fields.field(id: fieldID)?.name
+            resolvedFieldName = store.fields.field(id: fieldID)?.name
+        }
+
+        position = resolvedPosition
+        fieldName = resolvedFieldName
+
+        // Only persist a stable result: analytics computed, or a record-only match with no HK
+        // workout that could still sync a route later. Skips caching a transient "no route" for a
+        // workout whose analytics failed this time, so it retries on the next appearance.
+        if detail.analytics != nil || summary.workout == nil {
+            store.storeBadge(
+                MatchBadge(role: resolvedPosition?.role, side: resolvedPosition?.side,
+                           confidence: resolvedPosition?.confidence, fieldName: resolvedFieldName,
+                           hasRoute: !detail.track.isEmpty),
+                for: summary.id
+            )
         }
     }
 }

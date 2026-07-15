@@ -85,6 +85,20 @@ public struct MatchEvent: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// A position the wearer reports having played, edited by hand on the match detail. Distinct from
+/// the app's inferred `PositionEstimate`: this is ground truth the player supplied. `side` is
+/// optional so a role with no meaningful side (e.g. a lone striker, or "I just played defense")
+/// round-trips as a role-only entry.
+public struct ReportedPosition: Codable, Sendable, Equatable, Hashable {
+    public let role: PositionRole
+    public let side: PositionSide?
+
+    public init(role: PositionRole, side: PositionSide? = nil) {
+        self.role = role
+        self.side = side
+    }
+}
+
 /// Watch-side record of one match; JSON codable, transferred watch -> phone.
 public struct MatchRecord: Codable, Identifiable, Sendable {
     public var id: UUID                 // == HKWorkout.uuid when available
@@ -96,10 +110,14 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     public var sportID: String?             // nil == soccer (SportProfile.id)
     public var headings: [HeadingSample]?   // optional device-heading samples for track fusion
     public var format: MatchFormat?         // nil ≡ .match (wire "format")
+    /// Positions the wearer says they played, edited on the phone. `nil` means never edited (so the
+    /// UI can distinguish "not set" from "set to empty"); synthesized Codable decodes it with
+    /// `decodeIfPresent`, keeping records written before this field loading cleanly.
+    public var reportedPositions: [ReportedPosition]?
 
     // Synthesized Codable: every added field is optional, so JSON written before they existed
     // still decodes cleanly (the keys are simply absent, `format` nil ≡ .match).
-    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil) {
+    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil, reportedPositions: [ReportedPosition]? = nil) {
         self.id = id
         self.startDate = startDate
         self.endDate = endDate
@@ -109,6 +127,7 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
         self.sportID = sportID
         self.headings = headings
         self.format = format
+        self.reportedPositions = reportedPositions
     }
 }
 
