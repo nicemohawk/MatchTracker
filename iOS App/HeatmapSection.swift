@@ -84,7 +84,8 @@ struct HeatmapSection: View {
         .sheet(isPresented: $showFieldEditor) {
             if let adjustment = pendingAdjustment {
                 NavigationStack {
-                    FieldBoundsEditor(field: adjustment.field) {
+                    FieldBoundsEditor(field: adjustment.field,
+                                      route: detail.track.map(\.coordinate.clCoordinate)) {
                         handleFieldSaved(adjustment)
                     }
                     .toolbar {

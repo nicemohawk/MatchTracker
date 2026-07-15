@@ -24,6 +24,10 @@ import MatchTrackerKit
 /// presents it directly as a sheet.
 struct FieldBoundsEditor: View {
     let field: FieldModel
+    /// The match's raw GPS route, when the editor is opened from a match's analysis — drawn under
+    /// the correction so corners can be aligned against where play actually happened. Empty when
+    /// editing from the Fields tab (no match context).
+    var route: [CLLocationCoordinate2D] = []
     /// Called after a successful save (the caller dismisses / reprojects).
     var onSaved: () -> Void
 
@@ -37,8 +41,9 @@ struct FieldBoundsEditor: View {
     @State private var cameraTick = 0
     @State private var grabbedCorner: Int?
 
-    init(field: FieldModel, onSaved: @escaping () -> Void) {
+    init(field: FieldModel, route: [CLLocationCoordinate2D] = [], onSaved: @escaping () -> Void) {
         self.field = field
+        self.route = route
         self.onSaved = onSaved
         _cameraPosition = State(initialValue: .region(field.rectangle.mapRegion))
     }
@@ -57,6 +62,12 @@ struct FieldBoundsEditor: View {
         MapMountGate {
             MapReader { proxy in
                 Map(position: $cameraPosition) {
+                    // Match route under everything: the evidence to align the corners against.
+                    if route.count > 1 {
+                        MapPolyline(coordinates: route)
+                            .stroke(Theme.signal.opacity(0.65),
+                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    }
                     if corners.count >= 3 {
                         MapPolygon(coordinates: corners)
                             .foregroundStyle(Theme.turf.opacity(0.15))
