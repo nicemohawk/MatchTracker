@@ -60,7 +60,7 @@ struct MatchesView: View {
                         // instead of full-bleed cards spanning the whole canvas.
                         .readableWidth()
                     }
-                    .scrollIndicators(.hidden)
+                    .scrollIndicators(.automatic)
                 }
             }
             .background(Theme.background.ignoresSafeArea())
@@ -278,6 +278,8 @@ struct MatchRow: View {
     @EnvironmentObject private var store: MatchStore
     @State private var position: (role: PositionRole, side: PositionSide, confidence: Double)?
     @State private var fieldName: String?
+    /// Whether a GPS route was recorded — nil until the lazy detail load resolves it.
+    @State private var hasRoute: Bool?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -291,6 +293,7 @@ struct MatchRow: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         formatBadge
+                        recordingKindBadge
                     }
                 }
                 Spacer()
@@ -334,6 +337,19 @@ struct MatchRow: View {
         }
     }
 
+    /// How the match was captured: a route glyph when a GPS track exists, nothing otherwise.
+    /// (Indoor sessions already carry the house glyph via `formatBadge`, so they're excluded here —
+    /// one icon per row, never two.)
+    @ViewBuilder
+    private var recordingKindBadge: some View {
+        if summary.record?.format != .indoor, hasRoute == true {
+            Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                .font(.caption2)
+                .foregroundStyle(Theme.pace)
+                .accessibilityLabel("GPS route recorded")
+        }
+    }
+
     private func formatLabel(icon: String, text: String) -> some View {
         HStack(spacing: 3) {
             Image(systemName: icon)
@@ -374,6 +390,7 @@ struct MatchRow: View {
     private func loadBadge() async {
         let detail = store.detailModel(for: summary)
         await detail.load()
+        hasRoute = !detail.track.isEmpty
         if let analytics = detail.analytics {
             // Indoor sessions carry only a placeholder position estimate — don't badge one.
             if summary.record?.format != .indoor {
