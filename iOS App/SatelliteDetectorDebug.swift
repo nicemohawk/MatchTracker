@@ -106,10 +106,24 @@ enum SatelliteDetectorValidation {
             return "snapshot failed"
         }
         let image = snapshot.mkSnapshot.image
+        // Pre-gate ridge candidates (drawn thin/blue) reveal where the model-driven search landed even
+        // when nothing passed the gates — the key signal when debugging a 0-detection worn pitch.
+        let ridgeRectangles = detector.ridgeSearchDebugRectangles(snapshot: snapshot)
         let renderer = UIGraphicsImageRenderer(size: image.size)
         let annotated = renderer.image { context in
             image.draw(at: .zero)
             let cg = context.cgContext
+            cg.setLineWidth(2)
+            cg.setStrokeColor(UIColor.systemBlue.cgColor)
+            for rectangle in ridgeRectangles {
+                let points = rectangle.corners.map { snapshot.mkSnapshot.point(for: $0.clCoordinate) }
+                guard points.count == 4 else { continue }
+                cg.beginPath()
+                cg.move(to: points[0])
+                for point in points.dropFirst() { cg.addLine(to: point) }
+                cg.closePath()
+                cg.strokePath()
+            }
             cg.setLineWidth(4)
             for (index, rectangle) in detections.enumerated() {
                 let points = rectangle.corners.map { snapshot.mkSnapshot.point(for: $0.clCoordinate) }
@@ -135,7 +149,11 @@ enum SatelliteDetectorValidation {
         }
         guard let data = annotated.pngData() else { return "png encode failed" }
         try? data.write(to: url, options: .atomic)
-        return detections.isEmpty ? "no detections" : "\(detections.count) detection(s)"
+        let base = detections.isEmpty ? "no detections" : "\(detections.count) detection(s)"
+        // Attach ridge-search introspection so a 0-detection region shows WHY (orientation found,
+        // candidates produced, and the gate breakdown for the strongest ones).
+        let diagnostics = detector.ridgeSearchDiagnostics(snapshot: snapshot)
+        return "\(base) :: \(diagnostics)"
     }
 
     // MARK: - Parsing & IO

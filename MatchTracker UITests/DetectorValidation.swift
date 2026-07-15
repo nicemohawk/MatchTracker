@@ -33,12 +33,29 @@ final class DetectorValidation: XCTestCase {
 
     private let regions: [Region] = [
         // Positives — large public multi-pitch soccer complexes (many full-size grass pitches, so a
-        // ~0.008° frame captures several even if the listed centre is slightly off).
+        // ~0.008° frame captures several even if the listed centre is slightly off). These are the
+        // crisp, multi-pitch case the Vision path already handled well.
         Region(name: "PosWRALRaleigh", latitude: 35.8847, longitude: -78.5482, span: 0.0050, expectsPitch: true),
         Region(name: "PosStarSanAntonio", latitude: 29.5412, longitude: -98.3932, span: 0.0050, expectsPitch: true),
         Region(name: "PosWWTechFenton", latitude: 38.5455, longitude: -90.4383, span: 0.0045, expectsPitch: true),
+
+        // Positives — SINGLE pitch that FILLS most of the frame with FAINT markings, at two zooms.
+        // This is the field-report failure mode: Vision returns no rectangle for a lone frame-filling
+        // pitch (its touchlines run near/off the frame edge and the markings are low-contrast), so the
+        // scorer never saw a candidate. The model-driven ridge search recovers these. WW Tech's centre
+        // pitch is dark turf with faint dark-on-dark lines that fills the frame at these spans.
+        Region(name: "PosWWTechFillA", latitude: 38.5455, longitude: -90.4383, span: 0.0015, expectsPitch: true),
+        Region(name: "PosWWTechFillB", latitude: 38.5455, longitude: -90.4383, span: 0.0022, expectsPitch: true),
+
+        // Positives — WORN municipal-park grass pitch (tan/patchy turf, faint white chalk outline and
+        // centre circle), at two zooms including "fills most of the frame". A WRAL overflow field north
+        // of the complex; Vision found nothing here, the ridge search recovers it.
+        Region(name: "PosWornFill", latitude: 35.8858, longitude: -78.5494, span: 0.0017, expectsPitch: true),
+        Region(name: "PosWornWide", latitude: 35.8858, longitude: -78.5494, span: 0.0022, expectsPitch: true),
+
         // Negative controls — open Pacific water, and a large uniform-green farm field (a realistic
-        // false-positive trap: green + rectangular but with no white pitch markings).
+        // false-positive trap: green + rectangular but with no white pitch markings). The ridge search
+        // adds many more candidates, so these guard that its extra recall costs no precision.
         Region(name: "NegPacific", latitude: 36.5000, longitude: -122.6000, span: 0.010, expectsPitch: false),
         Region(name: "NegFarmland", latitude: 38.6868, longitude: -90.0342, span: 0.0050, expectsPitch: false)
     ]

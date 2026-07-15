@@ -324,57 +324,123 @@ struct PitchHeatmapCanvas: View {
     }
 }
 
-/// Draws the heatmap warped onto the field polygon over a non-interactive satellite map.
+/// Satellite mode: the camera rotates so the field's long axis is horizontal, the match heatmap is
+/// painted onto the imagery as georeferenced `MapPolygon` cells (projection-correct — they cannot
+/// drift from the pitch), and the full pitch line set is drawn over them as map-space polylines.
 struct SatelliteHeatmapOverlay: View {
     let rectangle: OrientedRectangle
     let heatmap: HeatmapGrid
 
     var body: some View {
-        MapReader { proxy in
-            Map(initialPosition: .region(rectangle.mapRegion), interactionModes: []) {
-                MapPolygon(coordinates: rectangle.coordinateRing)
-                    .stroke(.white, lineWidth: 2)
-                    .foregroundStyle(.white.opacity(0.05))
+        Map(initialPosition: cameraPosition, interactionModes: []) {
+            // Heat cells — each grid cell as a quad in real-world coordinates, so it stays welded
+            // to the pitch regardless of camera heading/zoom.
+            ForEach(heatCells) { cell in
+                MapPolygon(coordinates: cell.coordinates)
+                    .foregroundStyle(cell.color)
             }
-            .mapStyle(.imagery)
-            .overlay {
-                Canvas { context, _ in
-                    guard heatmap.columns > 0, heatmap.rows > 0, rectangle.corners.count == 4 else { return }
-                    for row in 0..<heatmap.rows {
-                        for column in 0..<heatmap.columns {
-                            let value = heatmap[column, row]
-                            guard value > 0.05 else { continue }
-                            let quad = cellQuad(column: column, row: row, proxy: proxy)
-                            guard let path = quad else { continue }
-                            context.fill(path, with: .color(HeatColor.color(for: value)))
-                        }
-                    }
-                }
-                .allowsHitTesting(false)
+            // Pitch markings (touchlines, halfway, center circle, penalty + goal boxes) as
+            // map-space polylines aligned to the field rectangle.
+            ForEach(Array(outlinePolylines.enumerated()), id: \.offset) { _, line in
+                MapPolyline(coordinates: line)
+                    .stroke(Theme.pitchLines, lineWidth: 2)
             }
+        }
+        .mapStyle(.imagery)
+    }
+
+    /// Rotate the camera so the field's long axis runs horizontally: heading = long-axis bearing
+    /// + 90° puts the perpendicular (short axis) "up", laying the long axis left-to-right. Distance
+    /// frames the pitch with margin — the long axis is the binding dimension on screen.
+    private var cameraPosition: MapCameraPosition {
+        let heading = (rectangle.headingDegrees + 90).truncatingRemainder(dividingBy: 360)
+        let distance = max(rectangle.lengthMeters, rectangle.widthMeters * 1.9) * 1.55
+        return .camera(MapCamera(centerCoordinate: rectangle.center.clCoordinate,
+                                 distance: distance, heading: heading))
+    }
+
+    // MARK: - Heat cells
+
+    private struct HeatCell: Identifiable {
+        let id: Int
+        let coordinates: [CLLocationCoordinate2D]
+        let color: Color
+    }
+
+    private var heatCells: [HeatCell] {
+        guard heatmap.columns > 0, heatmap.rows > 0, rectangle.corners.count == 4 else { return [] }
+        var cells: [HeatCell] = []
+        for row in 0..<heatmap.rows {
+            for column in 0..<heatmap.columns {
+                let value = heatmap[column, row]
+                guard value > 0.05 else { continue }
+                let u0 = CGFloat(column) / CGFloat(heatmap.columns)
+                let u1 = CGFloat(column + 1) / CGFloat(heatmap.columns)
+                let v0 = CGFloat(row) / CGFloat(heatmap.rows)
+                let v1 = CGFloat(row + 1) / CGFloat(heatmap.rows)
+                let coordinates = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+                    .map { fieldPoint($0.0, $0.1) }
+                cells.append(HeatCell(id: row * heatmap.columns + column,
+                                      coordinates: coordinates,
+                                      color: HeatColor.color(for: value)))
+            }
+        }
+        return cells
+    }
+
+    // MARK: - Pitch outline (map-space)
+
+    /// The SoccerPitch line set expressed in normalized field space, then mapped to coordinates.
+    /// Proportions are relative to the actual field dimensions so the markings sit correctly on
+    /// the imagery even when the pitch isn't a regulation 105×68.
+    private var outlinePolylines: [[CLLocationCoordinate2D]] {
+        guard rectangle.corners.count == 4,
+              rectangle.lengthMeters > 0, rectangle.widthMeters > 0 else { return [] }
+        let length = CGFloat(rectangle.lengthMeters)
+        let width = CGFloat(rectangle.widthMeters)
+        var lines: [[(CGFloat, CGFloat)]] = []
+
+        // Outer boundary + halfway line.
+        lines.append([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)])
+        lines.append([(0.5, 0), (0.5, 1)])
+
+        // Center circle (9.15 m radius) — an ellipse in normalized space (length ≠ width scale).
+        let ru = 9.15 / length, rv = 9.15 / width
+        lines.append(ellipse(centerU: 0.5, centerV: 0.5, radiusU: ru, radiusV: rv))
+
+        // Penalty (16.5 m × 40.32 m) and goal (5.5 m × 18.32 m) boxes, both ends.
+        for end in [true, false] {
+            lines.append(box(depthMeters: 16.5, heightMeters: 40.32,
+                             length: length, width: width, leftSide: end))
+            lines.append(box(depthMeters: 5.5, heightMeters: 18.32,
+                             length: length, width: width, leftSide: end))
+        }
+
+        return lines.map { line in line.map { fieldPoint($0.0, $0.1) } }
+    }
+
+    /// A goal-line box `depthMeters` deep and `heightMeters` tall, centered on the short axis.
+    private func box(depthMeters: CGFloat, heightMeters: CGFloat,
+                     length: CGFloat, width: CGFloat, leftSide: Bool) -> [(CGFloat, CGFloat)] {
+        let du = depthMeters / length
+        let halfH = (heightMeters / width) / 2
+        let u0: CGFloat = leftSide ? 0 : 1
+        let u1: CGFloat = leftSide ? du : 1 - du
+        let vTop = 0.5 - halfH, vBottom = 0.5 + halfH
+        return [(u0, vTop), (u1, vTop), (u1, vBottom), (u0, vBottom), (u0, vTop)]
+    }
+
+    private func ellipse(centerU: CGFloat, centerV: CGFloat,
+                         radiusU: CGFloat, radiusV: CGFloat, segments: Int = 48) -> [(CGFloat, CGFloat)] {
+        (0...segments).map { step in
+            let angle = 2 * CGFloat.pi * CGFloat(step) / CGFloat(segments)
+            return (centerU + radiusU * cos(angle), centerV + radiusV * sin(angle))
         }
     }
 
-    private func cellQuad(column: Int, row: Int, proxy: MapProxy) -> Path? {
-        let u0 = CGFloat(column) / CGFloat(heatmap.columns)
-        let u1 = CGFloat(column + 1) / CGFloat(heatmap.columns)
-        let v0 = CGFloat(row) / CGFloat(heatmap.rows)
-        let v1 = CGFloat(row + 1) / CGFloat(heatmap.rows)
-        let corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
-        var points: [CGPoint] = []
-        for (u, v) in corners {
-            let coordinate = bilerp(u: u, v: v).clCoordinate
-            guard let point = proxy.convert(coordinate, to: .local) else { return nil }
-            points.append(point)
-        }
-        var path = Path()
-        path.addLines(points)
-        path.closeSubpath()
-        return path
-    }
-
-    /// Bilinear interpolation of the rectangle's corner ring to a normalized (u,v) point.
-    private func bilerp(u: CGFloat, v: CGFloat) -> Coordinate2D {
+    /// Bilinear interpolation of the rectangle's corner ring to a normalized (u,v) field point.
+    /// u runs along the long axis (corners[0]→corners[1]), v along the short axis (corners[0]→corners[3]).
+    private func fieldPoint(_ u: CGFloat, _ v: CGFloat) -> CLLocationCoordinate2D {
         let c = rectangle.corners
         func mix(_ a: Coordinate2D, _ b: Coordinate2D, _ t: CGFloat) -> Coordinate2D {
             Coordinate2D(latitude: a.latitude + (b.latitude - a.latitude) * Double(t),
@@ -382,7 +448,7 @@ struct SatelliteHeatmapOverlay: View {
         }
         let top = mix(c[0], c[1], u)
         let bottom = mix(c[3], c[2], u)
-        return mix(top, bottom, v)
+        return mix(top, bottom, v).clCoordinate
     }
 }
 

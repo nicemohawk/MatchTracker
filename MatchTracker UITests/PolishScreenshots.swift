@@ -227,6 +227,63 @@ final class PolishScreenshots: XCTestCase {
             for _ in 0..<8 { app.swipeUp(velocity: .fast) }
             sleep(1)
             export("33-match-detail-comments", app: app)
+
+            // The video-chip row drags above can trigger the back-swipe and pop the detail view, so
+            // each of the two captures below re-opens the match fresh from the list. A freshly opened
+            // detail sits on its default Heatmap section with the section-chip row at its start, so
+            // the early chips (Heatmap first, Position fourth) are on-screen and hittable. Re-opening
+            // scrolls the list to top first — after the earlier walk the list can be scrolled so the
+            // first matching row sits off-screen and isn't tappable.
+            func reopenMatchDetail() {
+                _ = selectTab("Matches", expectingNavBar: "Matches", in: app)
+                for _ in 0..<6 { app.swipeDown(velocity: .fast) }
+                sleep(1)
+                let cell = app.staticTexts
+                    .matching(NSPredicate(format: "label CONTAINS 'Demo Park' OR label CONTAINS 'Unknown field'")).firstMatch
+                if cell.waitForExistence(timeout: 6) {
+                    cell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    sleep(3)
+                }
+            }
+
+            // One fresh detail session covers all three captures. Tap chips by coordinate to bypass
+            // the hittability machinery (the section chips live in a horizontally scrolling row).
+            reopenMatchDetail()
+
+            // Heatmap section is the default — capture satellite mode FIRST, before selecting the
+            // Position chip scrolls the chip row away from the Heatmap chip. Satellite shows the
+            // rotated field imagery with the heat cells and full pitch outline overlaid.
+            let satellite = app.buttons["Satellite"]
+            if satellite.waitForExistence(timeout: 4) {
+                satellite.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                sleep(4)   // let the imagery tiles load and the camera settle
+                export("32f-heatmap-satellite", app: app)
+            }
+
+            // Position section: toggle the transparent heatmap underlay ON (32d), then open the
+            // multi-select position editor (32e).
+            let positionChip = app.buttons["Position"].firstMatch
+            if positionChip.waitForExistence(timeout: 4) {
+                positionChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                sleep(1)
+                app.swipeUp(velocity: .slow)   // scroll the hero off so the pitch/controls fill the view
+                sleep(1)
+                let underlay = app.buttons["position-heatmap-underlay"]
+                if underlay.waitForExistence(timeout: 3) {
+                    underlay.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    sleep(1)
+                }
+                export("32d-position", app: app)
+
+                let editChip = app.buttons["position-edit"]
+                if editChip.waitForExistence(timeout: 3) {
+                    editChip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    sleep(1)
+                    app.swipeUp(velocity: .slow)   // reveal the expanded multi-select editor grid
+                    sleep(1)
+                    export("32e-position-edit", app: app)
+                }
+            }
         }
     }
 

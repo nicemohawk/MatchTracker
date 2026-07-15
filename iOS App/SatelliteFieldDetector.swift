@@ -51,7 +51,8 @@ struct SatelliteFieldDetector {
         /// Zoom-equivalent scales applied to the requested span. 1.0 is the frame as asked; 0.8
         /// zooms IN so a pitch that's small in a wide frame grows past the rectangle detector's
         /// minimum size; 1.35 zooms OUT so a tightly-framed pitch keeps its touchlines inside the
-        /// image (VNDetectRectangles won't lock onto edges that run off-frame).
+        /// image (VNDetectRectangles won't lock onto edges that run off-frame, and the ridge search
+        /// frames a pitch more reliably once its whole outline is visible).
         static let scales: [Double] = [0.8, 1.0, 1.35]
 
         // Plausible pitch metrics — deliberately wider than the strict soccer-only Kit check so
@@ -76,6 +77,10 @@ struct SatelliteFieldDetector {
         static let minGrassFraction = 0.60   // grass-dominant interior
         static let minLineFraction = 0.15    // some touchline evidence
         static let minScore = 0.34
+        /// Interior brightness std-dev ceiling. A smooth playing surface (worn or lush) stays well
+        /// below this; tree canopy, a car-filled parking lot and rooftops sit above it. Calibrated so
+        /// real pitches pass with margin while the vegetation/parking clutter that reads as green is cut.
+        static let maxInteriorRoughness = 0.135
 
         // Non-max suppression IoU above which the lower-scoring candidate is dropped.
         static let suppressionIoU = 0.30
@@ -160,33 +165,112 @@ struct SatelliteFieldDetector {
 
     // MARK: - Analysis
 
-    /// Run the candidate generator + scoring over a single snapshot. Internal so the DEBUG harness
+    /// Run the candidate generators + scoring over a single snapshot. Internal so the DEBUG harness
     /// can report per-snapshot detail.
+    ///
+    /// TWO candidate generators feed one scorer:
+    ///  • Vision (`VNDetectRectanglesRequest`) — wins on crisp, high-contrast complexes where the
+    ///    quad is obvious, but keys on strong edge gradients and so returns NOTHING for a faint chalk
+    ///    outline on worn/textured grass (the real failure the field report hit).
+    ///  • A model-driven RIDGE SEARCH (`ridgeSearchImageQuads`) — estimates the pitch's line
+    ///    orientation from the whole-frame white-paint ridge map, then sweeps oriented rectangles
+    ///    aligned to it and hill-climbs the best ones onto the markings. This recovers exactly the
+    ///    faint / edge-of-frame pitches Vision misses.
+    /// Both emit image-space (top-left origin) quads; a single `proposal(imageQuad:)` path scores and
+    /// GATES every candidate identically, so precision is governed by one scorer regardless of source.
     func analyze(snapshot: Snapshot) -> [Proposal] {
         guard let ciImage = CIImage(image: snapshot.mkSnapshot.image) else { return [] }
         let imageSize = snapshot.mkSnapshot.image.size
 
-        var normalizedQuads = rectangleCandidates(in: ciImage)
-        normalizedQuads += rectangleCandidates(in: lineEnhanced(ciImage))
+        // Vision candidates (raw + line-enhanced), converted from normalized bottom-left to image points.
+        var imageQuads = visionImageQuads(in: ciImage, imageSize: imageSize)
+        imageQuads += visionImageQuads(in: lineEnhanced(ciImage), imageSize: imageSize)
 
         var proposals: [Proposal] = []
-        for quad in normalizedQuads {
-            // Vision normalized points use a bottom-left origin; convert to top-left image points.
-            let visionImagePoints = quad.map { point in
-                CGPoint(x: point.x * imageSize.width, y: (1 - point.y) * imageSize.height)
+        // Vision candidates: gate with the shared scorer only (these are already tightly framed).
+        for quad in imageQuads {
+            if let proposal = proposal(imageQuad: quad, snapshot: snapshot, enforceRoughness: false) {
+                proposals.append(proposal)
             }
-            let coordinates = visionImagePoints.map { pixelToCoordinate($0, snapshot: snapshot) }
-            guard let rectangle = FieldGeometry.fitOrientedRectangle(to: coordinates),
-                  plausibleDimensions(rectangle) else { continue }
-
-            // Score against the CLEAN fitted rectangle edges (projected back to image space), so line
-            // evidence is measured along straight touchlines rather than Vision's slightly ragged quad.
-            let edgePoints = rectangle.corners.map { snapshot.mkSnapshot.point(for: $0.clCoordinate) }
-            let evaluation = evaluate(edgeImagePoints: edgePoints, sampler: snapshot.sampler, rectangle: rectangle)
-            guard evaluation.passes else { continue }
-            proposals.append(Proposal(rectangle: rectangle, score: evaluation.score))
+        }
+        // Model-driven candidates from the white-line ridge map, each snapped onto the touchlines by a
+        // final alignment against the real scorer, then gated with the extra ridge precision check.
+        let maps = RidgeMaps(sampler: snapshot.sampler, imageSize: imageSize)
+        for hypothesis in ridgeSearchHypotheses(maps: maps, imageSize: imageSize) {
+            let quad = alignToScorer(hypothesis, snapshot: snapshot).corners()
+            if let proposal = proposal(imageQuad: quad, snapshot: snapshot, enforceRoughness: true) {
+                proposals.append(proposal)
+            }
         }
         return proposals
+    }
+
+#if DEBUG
+    /// DEBUG-only introspection of the ridge-search path for one snapshot: how many oriented
+    /// candidates it produced and, for the strongest few, the fit + gate breakdown. Lets the
+    /// validation harness show WHY a worn pitch did/didn't survive without a rebuild-per-guess loop.
+    func ridgeSearchDiagnostics(snapshot: Snapshot) -> String {
+        guard let ciImage = CIImage(image: snapshot.mkSnapshot.image) else { return "no-ci" }
+        let imageSize = snapshot.mkSnapshot.image.size
+        let maps = RidgeMaps(sampler: snapshot.sampler, imageSize: imageSize)
+        let orientationDegrees = dominantOrientations(maps: maps).map { Int(($0 * 180 / .pi).rounded()) % 180 }
+        let hypotheses = ridgeSearchHypotheses(maps: maps, imageSize: imageSize)
+            .map { alignToScorer($0, snapshot: snapshot) }
+        var lines = ["orient=\(orientationDegrees) ridgeQuads=\(hypotheses.count)"]
+        for hypothesis in hypotheses.prefix(5) {
+            let coordinates = hypothesis.corners().map { pixelToCoordinate($0, snapshot: snapshot) }
+            guard let rectangle = FieldGeometry.fitOrientedRectangle(to: coordinates) else {
+                lines.append("fit-fail"); continue
+            }
+            let plausible = plausibleDimensions(rectangle)
+            let edgePoints = rectangle.corners.map { snapshot.mkSnapshot.point(for: $0.clCoordinate) }
+            let evaluation = evaluate(edgeImagePoints: edgePoints, sampler: snapshot.sampler, rectangle: rectangle)
+            let aspect = rectangle.lengthMeters / max(rectangle.widthMeters, 1)
+            lines.append(String(format: "L%.0f×W%.0f a%.2f plaus=%@ grass%.2f line%.2f e%d rgh%.3f s%.2f pass=%@",
+                rectangle.lengthMeters, rectangle.widthMeters, aspect, plausible ? "Y" : "N",
+                evaluation.grassFraction, evaluation.lineFraction, evaluation.supportedEdges,
+                evaluation.roughness, evaluation.score, evaluation.passes ? "Y" : "N"))
+        }
+        return lines.joined(separator: " | ")
+    }
+
+    /// DEBUG-only: the fitted rectangles for the ridge search's refined candidates BEFORE gating, so
+    /// the harness can draw where the model-driven search actually landed (pass or fail).
+    func ridgeSearchDebugRectangles(snapshot: Snapshot) -> [OrientedRectangle] {
+        guard let ciImage = CIImage(image: snapshot.mkSnapshot.image) else { return [] }
+        let imageSize = snapshot.mkSnapshot.image.size
+        let maps = RidgeMaps(sampler: snapshot.sampler, imageSize: imageSize)
+        return ridgeSearchHypotheses(maps: maps, imageSize: imageSize).compactMap { hypothesis in
+            let aligned = alignToScorer(hypothesis, snapshot: snapshot)
+            return FieldGeometry.fitOrientedRectangle(to: aligned.corners().map { pixelToCoordinate($0, snapshot: snapshot) })
+        }
+    }
+#endif
+
+    /// Vision rectangle candidates as image-space (top-left origin) corner rings.
+    private func visionImageQuads(in image: CIImage, imageSize: CGSize) -> [[CGPoint]] {
+        rectangleCandidates(in: image).map { quad in
+            // Vision normalized points use a bottom-left origin; convert to top-left image points.
+            quad.map { CGPoint(x: $0.x * imageSize.width, y: (1 - $0.y) * imageSize.height) }
+        }
+    }
+
+    /// Fit → plausibility → score → gate one image-space candidate quad. Returns a scored proposal
+    /// only if it clears the precision gates. Shared by BOTH candidate generators; `enforceRoughness`
+    /// adds the ridge-only interior-texture gate.
+    private func proposal(imageQuad points: [CGPoint], snapshot: Snapshot, enforceRoughness: Bool) -> Proposal? {
+        guard points.count == 4 else { return nil }
+        let coordinates = points.map { pixelToCoordinate($0, snapshot: snapshot) }
+        guard let rectangle = FieldGeometry.fitOrientedRectangle(to: coordinates),
+              plausibleDimensions(rectangle) else { return nil }
+
+        // Score against the CLEAN fitted rectangle edges (projected back to image space), so line
+        // evidence is measured along straight touchlines rather than a slightly ragged candidate quad.
+        let edgePoints = rectangle.corners.map { snapshot.mkSnapshot.point(for: $0.clCoordinate) }
+        let evaluation = evaluate(edgeImagePoints: edgePoints, sampler: snapshot.sampler, rectangle: rectangle)
+        guard evaluation.passes else { return nil }
+        if enforceRoughness && !passesRidgePrecisionGate(evaluation) { return nil }
+        return Proposal(rectangle: rectangle, score: evaluation.score)
     }
 
     /// Quadrilateral candidates as normalized (bottom-left origin) corner rings.
@@ -217,6 +301,524 @@ struct SatelliteFieldDetector {
         ])
     }
 
+    // MARK: - Ridge search (model-driven candidate generator)
+    //
+    // Vision needs a strong quad to lock onto; a faint chalk outline on worn grass produces none, so
+    // the scorer never gets a candidate to score. This generator inverts the problem: it reads the
+    // white-line evidence FIRST (a coarse ridge map over the whole frame), estimates the pitch's grid
+    // orientation from it, then proposes oriented rectangles aligned to that grid and hill-climbs the
+    // strongest ones onto the markings. It hands well-framed quads to the SAME scorer/gates as Vision,
+    // so it only adds recall — precision is still owned by `evaluate`.
+
+    private enum RidgeTuning {
+        /// Downsampled grid resolution for the coarse ridge/grass maps (cells per side). 256 over a
+        /// 1024 px frame is a 4 px cell — fine enough to register a painted line, coarse enough that a
+        /// full frame-wide sweep of oriented rectangles stays well inside the time budget.
+        static let gridResolution = 256
+        /// Coarse-search center grid: fractional positions across the frame (biased away from the very
+        /// edge where a pitch can't be fully framed). Hill-climb reaches between grid points, so a
+        /// modest grid suffices and keeps a full-frame sweep well inside the time budget.
+        static let centerFractions: [CGFloat] = [0.22, 0.36, 0.50, 0.64, 0.78]
+        /// Candidate long-side lengths as a fraction of the frame — 45–95% covers a pitch that fills
+        /// most of the view (the field-report case) down to a smaller pitch inside a wider frame.
+        static let lengthFractions: [CGFloat] = [0.45, 0.60, 0.75, 0.90]
+        /// Candidate aspect ratios (long:short). Hill-climb + the metric plausibility gate cover the rest.
+        static let aspects: [CGFloat] = [1.30, 1.50, 1.70]
+        /// How many coarse candidates to hill-climb, and how many refined quads to hand to the scorer.
+        static let refineCount = 12
+        static let outputCount = 10
+        /// Coarse pre-filter: interior grass floor to survive into ranking (keeps the search off
+        /// parking lots / rooftops before the expensive full scorer ever runs).
+        static let minCoarseGrass = 0.50
+    }
+
+    /// Downsampled per-cell maps over one snapshot: `white` ≈ painted-line likeness (bright AND
+    /// low-saturation), `grass` = field-surface likelihood. Addressed in image-point space to match
+    /// the sampler convention the rest of the detector uses.
+    struct RidgeMaps {
+        let grid: Int
+        let cell: CGFloat            // image points per grid cell
+        let imageSize: CGSize
+        private let white: [Float]
+        private let grass: [Float]
+
+        init(sampler: PixelSampler, imageSize: CGSize) {
+            let grid = RidgeTuning.gridResolution
+            self.grid = grid
+            self.imageSize = imageSize
+            self.cell = imageSize.width / CGFloat(grid)
+            var white = [Float](repeating: 0, count: grid * grid)
+            var grass = [Float](repeating: 0, count: grid * grid)
+            // Painted markings are a LOCAL brightness ridge: a line pixel is brighter (and whiter/less
+            // saturated) than the turf a few px to either side — but NOT necessarily bright in absolute
+            // terms. Faint chalk on worn tan grass fails an absolute white threshold yet still stands
+            // proud of its immediate surroundings, so we score each cell by that local relief instead.
+            // `shoulder` is how far out (image px) the flanking turf is compared against.
+            let shoulder: CGFloat = 5
+            let cellPx = imageSize.width / CGFloat(grid)
+            for gj in 0..<grid {
+                for gi in 0..<grid {
+                    let baseX = (CGFloat(gi) + 0.5) * cellPx
+                    let baseY = (CGFloat(gj) + 0.5) * (imageSize.height / CGFloat(grid))
+                    if let rgb = sampler.rgb(at: CGPoint(x: baseX, y: baseY)) {
+                        grass[gj * grid + gi] = Float(SatelliteFieldDetector.staticFieldLikelihood(r: rgb.r, g: rgb.g, b: rgb.b))
+                    }
+                    // A painted line is ~1 px wide but a grid cell spans several px, so sampling only the
+                    // cell centre would MISS most of the line (it registers only where the line happens
+                    // to cross a centre) and render markings as dotted, undervaluing a real outline. Take
+                    // the MAX relief over a 3×3 sub-grid inside the cell so every cell the line touches
+                    // lights up — sampling is just array indexing, so this stays cheap.
+                    var maxRelief = 0.0
+                    for (sx, sy) in [(0.0, 0.0), (-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
+                        let x = baseX + CGFloat(sx)
+                        let y = baseY + CGFloat(sy)
+                        guard let center = sampler.brightnessAndSaturation(at: CGPoint(x: x, y: y)),
+                              center.brightness > 0.32 else { continue }
+                        let left = sampler.brightnessAndSaturation(at: CGPoint(x: x - shoulder, y: y))
+                        let right = sampler.brightnessAndSaturation(at: CGPoint(x: x + shoulder, y: y))
+                        let up = sampler.brightnessAndSaturation(at: CGPoint(x: x, y: y - shoulder))
+                        let down = sampler.brightnessAndSaturation(at: CGPoint(x: x, y: y + shoulder))
+                        // Vertical line → bright centre vs darker left/right (horizontal relief);
+                        // horizontal line → relief up/down. A marking of EITHER orientation registers.
+                        let relief = max(Self.ridgeRelief(center: center, a: left, b: right),
+                                         Self.ridgeRelief(center: center, a: up, b: down))
+                        maxRelief = max(maxRelief, relief)
+                    }
+                    // GRASS-MASK the line response: a pitch marking has turf immediately beside it, a
+                    // parking-lot stripe / roofline / cart-path edge has asphalt or water. Sampling the
+                    // grass a short way out on all four sides and keeping the response only where turf
+                    // flanks the ridge erases crisp NON-pitch lines — the parking stripes and path edges
+                    // that were out-shining faint chalk and dragging the search off the field entirely.
+                    // Use the MEAN grass over all four flanks, not the max: a pitch marking is
+                    // surrounded by turf on every side, whereas a parking stripe (even one near the lot's
+                    // grass margin) or a path edge has asphalt on at least one side, dropping the mean.
+                    // This is what finally erases dense parking-lot stripe fields that a one-sided test
+                    // let through and that kept out-competing the faint pitch.
+                    let flank: CGFloat = 11
+                    var flankSum = 0.0
+                    var flankTaps = 0.0
+                    for (fx, fy) in [(-flank, 0), (flank, 0), (0, -flank), (0, flank)] {
+                        if let rgb = sampler.rgb(at: CGPoint(x: baseX + fx, y: baseY + CGFloat(fy))) {
+                            flankSum += SatelliteFieldDetector.staticFieldLikelihood(r: rgb.r, g: rgb.g, b: rgb.b)
+                            flankTaps += 1
+                        }
+                    }
+                    let flankGrass = flankTaps > 0 ? flankSum / flankTaps : 0
+                    let grassMask = min(1.0, max(0.0, (flankGrass - 0.45) / 0.30))
+                    white[gj * grid + gi] = Float(min(1.0, maxRelief / 0.12) * grassMask)
+                }
+            }
+            self.white = white
+            self.grass = grass
+        }
+
+        /// Local line relief at a cell: how much brighter AND whiter (less saturated) the center is
+        /// than the brighter of its two flanking shoulders. Positive only for a genuine bright, near-
+        /// neutral ridge, so dry-grass streaks (which brighten but stay saturated) score ~0. Mirrors
+        /// the relative test in `perimeterLineSupport`, just computed omnidirectionally for the map.
+        private static func ridgeRelief(center: (brightness: Double, saturation: Double),
+                                        a: (brightness: Double, saturation: Double)?,
+                                        b: (brightness: Double, saturation: Double)?) -> Double {
+            guard let a, let b else { return 0 }
+            let brighter = center.brightness - max(a.brightness, b.brightness)
+            let whiter = max(a.saturation, b.saturation) - center.saturation
+            guard brighter > 0, whiter > -0.02 else { return 0 }
+            // Fold in a gentle whiteness factor so a bright-but-still-green bump is discounted.
+            return brighter * min(1.0, max(0.25, (whiter + 0.06) / 0.12))
+        }
+
+        func whiteAt(_ point: CGPoint) -> Float { self[point.x, point.y, white] }
+        func grassAt(_ point: CGPoint) -> Float { self[point.x, point.y, grass] }
+
+        private subscript(_ px: CGFloat, _ py: CGFloat, _ map: [Float]) -> Float {
+            let gi = Int(px / cell)
+            let gj = Int(py / cell)
+            guard gi >= 0, gi < grid, gj >= 0, gj < grid else { return 0 }
+            return map[gj * grid + gi]
+        }
+    }
+
+    /// One oriented-rectangle hypothesis in image-point space. `angle` is the long-axis bearing in
+    /// image coordinates (x right, y down), radians.
+    private struct RectHypothesis {
+        var center: CGPoint
+        var halfLength: CGFloat
+        var halfWidth: CGFloat
+        var angle: CGFloat
+        var score: Double
+
+        func corners() -> [CGPoint] {
+            let u = CGPoint(x: cos(angle), y: sin(angle))
+            let v = CGPoint(x: -sin(angle), y: cos(angle))
+            func point(_ a: CGFloat, _ b: CGFloat) -> CGPoint {
+                CGPoint(x: center.x + u.x * a + v.x * b, y: center.y + u.y * a + v.y * b)
+            }
+            return [point(-halfLength, -halfWidth), point(halfLength, -halfWidth),
+                    point(halfLength, halfWidth), point(-halfLength, halfWidth)]
+        }
+    }
+
+    /// Produce model-driven candidate hypotheses (oriented rectangles in image-point space) for one
+    /// snapshot, localized + hill-climbed against the coarse ridge map.
+    private func ridgeSearchHypotheses(maps: RidgeMaps, imageSize: CGSize) -> [RectHypothesis] {
+        let orientations = dominantOrientations(maps: maps)
+        guard !orientations.isEmpty else { return [] }
+        let frame = imageSize.width
+
+        // Coarse sweep: every orientation × center × length × aspect, cheaply scored off the maps.
+        var coarse: [RectHypothesis] = []
+        for angle in orientations {
+            for fx in RidgeTuning.centerFractions {
+                for fy in RidgeTuning.centerFractions {
+                    let center = CGPoint(x: fx * frame, y: fy * imageSize.height)
+                    // Cheap reject: center must sit on grass, otherwise this whole family is off-pitch.
+                    if maps.grassAt(center) < 0.5 { continue }
+                    for lengthFraction in RidgeTuning.lengthFractions {
+                        let halfLength = 0.5 * lengthFraction * frame
+                        for aspect in RidgeTuning.aspects {
+                            let halfWidth = halfLength / aspect
+                            var hypothesis = RectHypothesis(center: center, halfLength: halfLength,
+                                                            halfWidth: halfWidth, angle: angle, score: 0)
+                            let coarseScore = coarseScore(hypothesis, maps: maps)
+                            // Need a rectangle outline, not one bright edge: require ≥2 supported edges
+                            // on grass. The strict per-edge line-fraction gate is still enforced later by
+                            // the shared `evaluate` scorer.
+                            guard coarseScore.grass >= RidgeTuning.minCoarseGrass,
+                                  coarseScore.supportedEdges >= 2 else { continue }
+                            hypothesis.score = coarseScore.score
+                            coarse.append(hypothesis)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Refine the strongest coarse hypotheses: a coarse hill-climb for rough localization, then an
+        // edge-snap that locks each of the four sides onto its nearest line. Dedupe near-duplicates so
+        // the (expensive) real scorer only runs on distinct pitches.
+        let topCoarse = Array(coarse.sorted { $0.score > $1.score }.prefix(RidgeTuning.refineCount))
+        var refined: [RectHypothesis] = []
+        for hypothesis in topCoarse {
+            var candidate = hillClimb(hypothesis, maps: maps, frame: frame)
+            candidate = snapEdges(candidate, maps: maps)
+            candidate.score = coarseScore(candidate, maps: maps).score
+            if !refined.contains(where: { near($0, candidate, frame: frame) }) {
+                refined.append(candidate)
+            }
+        }
+        return Array(refined.sorted { $0.score > $1.score }.prefix(RidgeTuning.outputCount))
+    }
+
+    /// Lock each side of the rectangle onto its nearest line independently. The two length-edges (which
+    /// run along the long axis) sweep perpendicular to find the touchlines; the two width-edges sweep
+    /// to find the goal lines. Decoupling the four edges snaps a roughly-placed box tightly onto a
+    /// complete outline — far more reliable than joint coordinate descent — and, because each edge only
+    /// moves when it actually FINDS a line, a box straddling a pond or parking lot (which has no full
+    /// on-grass rectangle in the grass-masked map) can't manufacture one.
+    private func snapEdges(_ start: RectHypothesis, maps: RidgeMaps) -> RectHypothesis {
+        var hypothesis = start
+        let searchRange: CGFloat = 18
+        let minLineToMove = 0.10   // don't snap an edge to noise: it must find a real line to move
+        for _ in 0..<2 {
+            let u = CGPoint(x: cos(hypothesis.angle), y: sin(hypothesis.angle))
+            let v = CGPoint(x: -sin(hypothesis.angle), y: cos(hypothesis.angle))
+
+            // Coverage of an edge whose midpoint is `mid`, running along `axis` for ±halfSpan.
+            func coverage(mid: CGPoint, axis: CGPoint, halfSpan: CGFloat, normal: CGPoint) -> Double {
+                let steps = max(6, min(24, Int(halfSpan / 8)))
+                var sum = 0.0
+                for step in -steps...steps {
+                    let t = CGFloat(step) / CGFloat(steps)
+                    let base = CGPoint(x: mid.x + axis.x * t * halfSpan, y: mid.y + axis.y * t * halfSpan)
+                    var best = 0.0
+                    for offset in stride(from: CGFloat(-2), through: 2, by: 2) {
+                        best = max(best, Double(maps.whiteAt(CGPoint(x: base.x + normal.x * offset, y: base.y + normal.y * offset))))
+                    }
+                    sum += best
+                }
+                return sum / Double(2 * steps + 1)
+            }
+            // Best perpendicular offset for one edge; returns (offset, coverage). Offset 0 unless a line
+            // is genuinely found within range.
+            func bestOffset(signedHalf: CGFloat, alongAxis: CGPoint, normal: CGPoint, halfSpan: CGFloat) -> CGFloat {
+                var bestOffset: CGFloat = 0
+                var bestCoverage = 0.0
+                for delta in stride(from: -searchRange, through: searchRange, by: 2) {
+                    let mid = CGPoint(x: hypothesis.center.x + normal.x * (signedHalf + delta),
+                                      y: hypothesis.center.y + normal.y * (signedHalf + delta))
+                    let cover = coverage(mid: mid, axis: alongAxis, halfSpan: halfSpan, normal: normal)
+                    if cover > bestCoverage { bestCoverage = cover; bestOffset = delta }
+                }
+                return bestCoverage >= minLineToMove ? bestOffset : 0
+            }
+
+            // Length edges (run along u) at ±halfWidth along v → snap perpendicular (v) to the touchlines.
+            let plusW = hypothesis.halfWidth + bestOffset(signedHalf: hypothesis.halfWidth, alongAxis: u, normal: v, halfSpan: hypothesis.halfLength)
+            let minusW = -hypothesis.halfWidth + bestOffset(signedHalf: -hypothesis.halfWidth, alongAxis: u, normal: v, halfSpan: hypothesis.halfLength)
+            let newHalfWidth = (plusW - minusW) / 2
+            let shiftV = (plusW + minusW) / 2
+            // Width edges (run along v) at ±halfLength along u → snap perpendicular (u) to the goal lines.
+            let plusL = hypothesis.halfLength + bestOffset(signedHalf: hypothesis.halfLength, alongAxis: v, normal: u, halfSpan: hypothesis.halfWidth)
+            let minusL = -hypothesis.halfLength + bestOffset(signedHalf: -hypothesis.halfLength, alongAxis: v, normal: u, halfSpan: hypothesis.halfWidth)
+            let newHalfLength = (plusL - minusL) / 2
+            let shiftU = (plusL + minusL) / 2
+
+            hypothesis.center = CGPoint(x: hypothesis.center.x + u.x * shiftU + v.x * shiftV,
+                                        y: hypothesis.center.y + u.y * shiftU + v.y * shiftV)
+            hypothesis.halfLength = max(20, newHalfLength)
+            hypothesis.halfWidth = max(14, newHalfWidth)
+        }
+        return hypothesis
+    }
+
+    /// Final image-space alignment of a ridge hypothesis against the ACTUAL scorer (`evaluate`, via
+    /// the real sampler), not the coarse map. Coordinate-descent nudges center / size / angle to
+    /// maximize the scorer's own line evidence, snapping the box the last few pixels onto the touch-
+    /// lines the coarse ridge map located approximately. This is what closes the gap between "roughly
+    /// on the pitch" and "tight enough that `perimeterLineSupport` credits ≥2 edges".
+    private func alignToScorer(_ start: RectHypothesis, snapshot: Snapshot) -> RectHypothesis {
+        func lineScore(_ hypothesis: RectHypothesis) -> Double {
+            let coordinates = hypothesis.corners().map { pixelToCoordinate($0, snapshot: snapshot) }
+            guard let rectangle = FieldGeometry.fitOrientedRectangle(to: coordinates) else { return -1 }
+            let edgePoints = rectangle.corners.map { snapshot.mkSnapshot.point(for: $0.clCoordinate) }
+            let evaluation = evaluate(edgeImagePoints: edgePoints, sampler: snapshot.sampler, rectangle: rectangle)
+            // Reward line evidence and — weighted heavily — the supported-edge COUNT, because the gate
+            // needs ≥2 edges: a framing that catches all four touchlines must beat one that piles a high
+            // fraction onto a single edge (e.g. locking a shrunk box onto the halfway line).
+            return evaluation.lineFraction + 0.25 * Double(evaluation.supportedEdges)
+        }
+        // Keep the box PITCH-SHAPED throughout: a candidate can't raise its line score by collapsing
+        // width onto a single strong line (halfway line / parking stripe), so to improve it must catch
+        // lines on opposing edges — i.e. actually frame the rectangle.
+        func aspectOK(_ hypothesis: RectHypothesis) -> Bool {
+            let aspect = hypothesis.halfLength / max(hypothesis.halfWidth, 1)
+            return aspect >= 1.15 && aspect <= 2.2
+        }
+        var best = start
+        var bestScore = lineScore(best)
+        var positionStep: CGFloat = 12
+        var sizeStep: CGFloat = 14
+        var angleStep = CGFloat(4 * Double.pi / 180)
+        for _ in 0..<7 {
+            var improved = false
+            let candidates: [RectHypothesis] = [
+                mutate(best) { $0.center.x += positionStep }, mutate(best) { $0.center.x -= positionStep },
+                mutate(best) { $0.center.y += positionStep }, mutate(best) { $0.center.y -= positionStep },
+                mutate(best) { $0.halfLength += sizeStep }, mutate(best) { $0.halfLength = max(20, $0.halfLength - sizeStep) },
+                mutate(best) { $0.halfWidth += sizeStep }, mutate(best) { $0.halfWidth = max(14, $0.halfWidth - sizeStep) },
+                mutate(best) { $0.angle += angleStep }, mutate(best) { $0.angle -= angleStep }
+            ]
+            for candidate in candidates where aspectOK(candidate) {
+                let score = lineScore(candidate)
+                if score > bestScore { best = candidate; bestScore = score; improved = true }
+            }
+            if !improved { positionStep *= 0.5; sizeStep *= 0.5; angleStep *= 0.5 }
+        }
+        return best
+    }
+
+    /// Estimate the pitch's line-grid orientation(s) from the white-ridge map via a gradient-
+    /// orientation histogram. A rectangle's two perpendicular line families produce gradients 90°
+    /// apart; folding orientation into [0, 90°) collapses both into a single peak = the grid angle.
+    /// Returns that peak and its perpendicular (so the long axis can align to either family), plus a
+    /// secondary peak if the frame holds pitches at a second orientation.
+    private func dominantOrientations(maps: RidgeMaps) -> [CGFloat] {
+        let bins = 45                       // 2° resolution over [0, 90)
+        var histogram = [Double](repeating: 0, count: bins)
+        let grid = maps.grid
+        for gj in 1..<(grid - 1) {
+            for gi in 1..<(grid - 1) {
+                let gx = Double(maps.whiteAt(cellPoint(gi + 1, gj, maps)) - maps.whiteAt(cellPoint(gi - 1, gj, maps)))
+                let gy = Double(maps.whiteAt(cellPoint(gi, gj + 1, maps)) - maps.whiteAt(cellPoint(gi, gj - 1, maps)))
+                let magnitude = gx * gx + gy * gy
+                if magnitude < 0.0004 { continue }   // ignore flat turf
+                var degrees = atan2(gy, gx) * 180 / .pi
+                degrees = degrees.truncatingRemainder(dividingBy: 90)
+                if degrees < 0 { degrees += 90 }
+                let bin = min(bins - 1, Int(degrees / 90 * Double(bins)))
+                histogram[bin] += sqrt(magnitude)
+            }
+        }
+        // Smooth (circular) so a peak straddling two bins isn't split.
+        var smoothed = [Double](repeating: 0, count: bins)
+        for i in 0..<bins {
+            smoothed[i] = histogram[(i + bins - 1) % bins] + 2 * histogram[i] + histogram[(i + 1) % bins]
+        }
+        let total = smoothed.reduce(0, +)
+        guard total > 0 else { return [0, .pi / 2] }   // no line evidence → axis-aligned fallback
+
+        // Peak-pick with a minimum angular separation.
+        var peaks: [(bin: Int, weight: Double)] = []
+        for i in 0..<bins where smoothed[i] >= smoothed[(i + bins - 1) % bins] && smoothed[i] >= smoothed[(i + 1) % bins] {
+            peaks.append((i, smoothed[i]))
+        }
+        peaks.sort { $0.weight > $1.weight }
+
+        var orientations: [CGFloat] = []
+        for peak in peaks.prefix(2) where peak.weight > total / Double(bins) * 1.5 {
+            let theta = CGFloat(Double(peak.bin) / Double(bins) * 90 * .pi / 180)
+            orientations.append(theta)
+            orientations.append(theta + .pi / 2)   // perpendicular: long axis may run either way
+        }
+        // If the strongest peak is weak/absent, fall back to a small default set so the sweep still runs.
+        if orientations.isEmpty { orientations = [0, .pi / 4, .pi / 2] }
+        return Array(orientations.prefix(3))   // bound the sweep cost
+    }
+
+    private func cellPoint(_ gi: Int, _ gj: Int, _ maps: RidgeMaps) -> CGPoint {
+        CGPoint(x: (CGFloat(gi) + 0.5) * maps.cell, y: (CGFloat(gj) + 0.5) * maps.cell)
+    }
+
+    /// Cheap map-driven score used only to rank/refine coarse hypotheses (the real gate is `evaluate`).
+    /// Rewards white evidence along the four edges plus a grass-dominant interior, with small bonuses
+    /// for a center-circle ridge ring and a halfway line — structure unique to a real pitch.
+    private func coarseScore(_ hypothesis: RectHypothesis, maps: RidgeMaps)
+        -> (score: Double, grass: Double, supportedEdges: Int) {
+        let center = hypothesis.center
+        let u = CGPoint(x: cos(hypothesis.angle), y: sin(hypothesis.angle))
+        let v = CGPoint(x: -sin(hypothesis.angle), y: cos(hypothesis.angle))
+
+        // Interior grass FIRST, sampled on a dense grid reaching CLOSE to the box edges (inset 0.85):
+        // a real pitch is grass corner-to-corner, so this collapses toward zero the moment a candidate
+        // spills onto a parking lot, building or pond — the structures whose painted lines / rooflines
+        // otherwise out-shine faint chalk and pull the search off the field. Cheap; runs before the
+        // edge scan so off-field hypotheses bail immediately.
+        var grassSum = 0.0
+        var grassTaps = 0.0
+        for su in stride(from: -0.72, through: 0.72, by: 0.36) {
+            for sv in stride(from: -0.72, through: 0.72, by: 0.36) {
+                let point = CGPoint(x: center.x + u.x * su * hypothesis.halfLength + v.x * sv * hypothesis.halfWidth,
+                                    y: center.y + u.y * su * hypothesis.halfLength + v.y * sv * hypothesis.halfWidth)
+                grassSum += Double(maps.grassAt(point))
+                grassTaps += 1
+            }
+        }
+        let grass = grassTaps > 0 ? grassSum / grassTaps : 0
+        guard grass >= 0.40 else { return (0, grass, 0) }
+        // Smooth grass gate: 0 below 0.40, full above 0.70. Multiplies the whole line-based score so a
+        // candidate can never win on strong edges alone (parking-lot stripes / rooflines) — it must
+        // ALSO be grass-dominant. Sampled at inset 0.72 (not right to the corners) so a real pitch whose
+        // touchlines abut a building/road at the frame isn't unfairly starved.
+        let grassFactor = min(1.0, max(0.0, (grass - 0.40) / 0.30))
+
+        let corners = hypothesis.corners()
+
+        // Edge white coverage. The perpendicular search spans ±`searchRadius` px — WIDE enough that a
+        // candidate sitting ~10–20 px off the real touchline (well within a hill-climb step) still
+        // FEELS the line — but each hit is weighted by a linear falloff so the score PEAKS when the
+        // edge lies exactly on the line. That gives hill-climb a gradient that both pulls the box onto
+        // the markings and then tightens it there (the earlier ±3 px window saw nothing until already
+        // aligned, so grass — uniform across the field — dominated and the box drifted too wide).
+        let searchRadius: CGFloat = 14
+        var coverages = [Double](repeating: 0, count: 4)
+        var supportedEdges = 0
+        for edge in 0..<4 {
+            let a = corners[edge]
+            let b = corners[(edge + 1) % 4]
+            let length = hypot(b.x - a.x, b.y - a.y)
+            let steps = max(6, min(20, Int(length / 18)))
+            var normal = CGPoint(x: -(b.y - a.y), y: b.x - a.x)
+            let normalLength = hypot(normal.x, normal.y)
+            if normalLength > 0 { normal = CGPoint(x: normal.x / normalLength, y: normal.y / normalLength) }
+            var edgeSum = 0.0
+            for step in 0...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                let base = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+                var best = 0.0
+                for offset in stride(from: -searchRadius, through: searchRadius, by: 2) {
+                    let white = Double(maps.whiteAt(CGPoint(x: base.x + normal.x * offset, y: base.y + normal.y * offset)))
+                    let falloff = 1 - 0.6 * Double(abs(offset)) / Double(searchRadius)
+                    best = max(best, white * falloff)
+                }
+                edgeSum += best
+            }
+            let coverage = edgeSum / Double(steps + 1)
+            coverages[edge] = coverage
+            if coverage > 0.12 { supportedEdges += 1 }
+        }
+        // Score by the WEAKEST pair of edges, not the mean. A pitch is a COMPLETE rectangle, so even
+        // its two faintest edges sit on lines; clutter (a parking-lot boundary, a tree line) gives one
+        // or two strong edges but leaves the opposite edges empty, collapsing the weak-pair term to ~0.
+        // Maximizing this pulls hill-climb onto the whole outline instead of onto the single strongest
+        // line it can find — the behaviour that had every box drifting to the frame's clutter side.
+        let sorted = coverages.sorted()
+        let weakPair = (sorted[0] + sorted[1]) / 2
+        let strongPair = (sorted[2] + sorted[3]) / 2
+        let edgeCoverage = 0.70 * weakPair + 0.30 * strongPair
+
+        // Pitch-specific bonuses (ranking only): center-circle ridge ring + halfway line.
+        let circleRadius = min(hypothesis.halfLength, hypothesis.halfWidth) * 0.28
+        var ringSum: Float = 0
+        let ringTaps = 12
+        for k in 0..<ringTaps {
+            let phi = CGFloat(k) / CGFloat(ringTaps) * 2 * .pi
+            let point = CGPoint(x: center.x + cos(phi) * circleRadius, y: center.y + sin(phi) * circleRadius)
+            ringSum = max(ringSum, maps.whiteAt(point))
+        }
+        var halfwaySum = 0.0
+        let halfwayTaps = 6
+        for k in 0...halfwayTaps {
+            let s = (CGFloat(k) / CGFloat(halfwayTaps) - 0.5) * 2
+            let point = CGPoint(x: center.x + v.x * s * hypothesis.halfWidth, y: center.y + v.y * s * hypothesis.halfWidth)
+            halfwaySum += Double(maps.whiteAt(point))
+        }
+        let halfway = halfwaySum / Double(halfwayTaps + 1)
+
+        let aspect = hypothesis.halfLength / max(hypothesis.halfWidth, 1)
+        let aspectDelta = Double(aspect) - 1.5
+        let aspectPrior = exp(-(aspectDelta * aspectDelta) / (2 * 0.6 * 0.6))
+
+        // Line evidence drives the framing, but the whole thing is GATED by grass (multiplicative): a
+        // box on parking-lot stripes scores ~0 no matter how crisp those stripes are. A small additive
+        // grass pull keeps the initial climb anchored on the field before any line is found.
+        let lineScore = 0.72 * edgeCoverage + 0.10 * aspectPrior
+            + 0.10 * Double(ringSum) + 0.05 * halfway
+        let score = lineScore * grassFactor + 0.04 * grass
+        return (score, grass, supportedEdges)
+    }
+
+    /// Coordinate-descent refinement: nudge center / size / angle to maximize the coarse score, so a
+    /// hypothesis that merely overlaps the pitch snaps onto its actual outline before full scoring.
+    private func hillClimb(_ start: RectHypothesis, maps: RidgeMaps, frame: CGFloat) -> RectHypothesis {
+        var best = start
+        best.score = coarseScore(best, maps: maps).score
+        var positionStep = frame * 0.05
+        var sizeStep = frame * 0.05
+        var angleStep = CGFloat(7 * Double.pi / 180)
+        for _ in 0..<9 {
+            var improved = false
+            let candidates: [RectHypothesis] = [
+                mutate(best) { $0.center.x += positionStep }, mutate(best) { $0.center.x -= positionStep },
+                mutate(best) { $0.center.y += positionStep }, mutate(best) { $0.center.y -= positionStep },
+                mutate(best) { $0.halfLength += sizeStep }, mutate(best) { $0.halfLength = max(20, $0.halfLength - sizeStep) },
+                mutate(best) { $0.halfWidth += sizeStep }, mutate(best) { $0.halfWidth = max(14, $0.halfWidth - sizeStep) },
+                mutate(best) { $0.angle += angleStep }, mutate(best) { $0.angle -= angleStep }
+            ]
+            for var candidate in candidates {
+                let aspect = candidate.halfLength / max(candidate.halfWidth, 1)
+                guard aspect >= 1.15, aspect <= 2.2 else { continue }   // stay pitch-shaped, resist clutter drift
+                candidate.score = coarseScore(candidate, maps: maps).score
+                if candidate.score > best.score { best = candidate; improved = true }
+            }
+            if !improved { positionStep *= 0.55; sizeStep *= 0.55; angleStep *= 0.55 }
+        }
+        return best
+    }
+
+    private func mutate(_ hypothesis: RectHypothesis, _ body: (inout RectHypothesis) -> Void) -> RectHypothesis {
+        var copy = hypothesis
+        body(&copy)
+        return copy
+    }
+
+    /// Two hypotheses are near-duplicates if their centers are close and their sizes similar — used to
+    /// thin refined candidates before the (more expensive) full scorer runs.
+    private func near(_ a: RectHypothesis, _ b: RectHypothesis, frame: CGFloat) -> Bool {
+        hypot(a.center.x - b.center.x, a.center.y - b.center.y) < frame * 0.06
+            && abs(a.halfLength - b.halfLength) < frame * 0.06
+            && abs(a.halfWidth - b.halfWidth) < frame * 0.06
+    }
+
     // MARK: - Plausibility
 
     private func plausibleDimensions(_ rectangle: OrientedRectangle) -> Bool {
@@ -236,6 +838,8 @@ struct SatelliteFieldDetector {
         var lineFraction: Double
         var grassFraction: Double
         var aspectPrior: Double
+        var supportedEdges: Int
+        var roughness: Double
         var passes: Bool
     }
 
@@ -243,7 +847,8 @@ struct SatelliteFieldDetector {
     /// (top-left origin), in ring order. Internal so the DEBUG harness can log the breakdown.
     func evaluate(edgeImagePoints: [CGPoint], sampler: PixelSampler, rectangle: OrientedRectangle) -> Evaluation {
         let line = perimeterLineSupport(corners: edgeImagePoints, sampler: sampler)
-        let grassFraction = interiorGrassFraction(corners: edgeImagePoints, sampler: sampler)
+        let interior = interiorField(corners: edgeImagePoints, sampler: sampler)
+        let grassFraction = interior.grass
         let aspectPrior = aspectPrior(for: rectangle)
 
         let score = Tuning.lineWeight * line.fraction
@@ -254,12 +859,26 @@ struct SatelliteFieldDetector {
         // rejects a grass strip that merely borders a bright concrete curb/road on a single side
         // (one white-ish edge is not a pitch), while staying tolerant enough not to drop a real pitch
         // whose far touchlines are faint or partly shadowed.
+        //
         let passes = grassFraction >= Tuning.minGrassFraction
             && line.fraction >= Tuning.minLineFraction
             && line.supportedEdges >= 2
             && score >= Tuning.minScore
         return Evaluation(score: score, lineFraction: line.fraction, grassFraction: grassFraction,
-                          aspectPrior: aspectPrior, passes: passes)
+                          aspectPrior: aspectPrior, supportedEdges: line.supportedEdges,
+                          roughness: interior.roughness, passes: passes)
+    }
+
+    /// Extra precision gate applied ONLY to model-driven (ridge-search) candidates, which — unlike a
+    /// crisp Vision quad — are prone to latching onto high-texture clutter (a tree line, a car-filled
+    /// parking lot, rooftops) that happens to read as green. Interior roughness (brightness std-dev)
+    /// catches those; the ceiling is waived when the candidate already shows a strong, near-complete
+    /// outline (≥3 supported edges), which is itself decisive pitch evidence and whose own crisp
+    /// markings legitimately raise roughness. Not applied to Vision candidates, so it never costs the
+    /// recall the existing crisp-complex path already delivers.
+    private func passesRidgePrecisionGate(_ evaluation: Evaluation) -> Bool {
+        let hasStrongOutline = evaluation.supportedEdges >= 3 && evaluation.lineFraction >= 0.17
+        return evaluation.roughness <= Tuning.maxInteriorRoughness || hasStrongOutline
     }
 
     /// Fraction of samples along the rectangle perimeter that sit on a painted-line ridge. A pitch
@@ -343,25 +962,37 @@ struct SatelliteFieldDetector {
         return (samples > 0 ? hits / samples : 0, supportedEdges)
     }
 
-    /// Fraction of interior samples that read as field surface under a wide, hue-tolerant grass
-    /// band (vivid green through yellow-green to worn brown, including shadowed turf).
-    private func interiorGrassFraction(corners: [CGPoint], sampler: PixelSampler) -> Double {
-        guard corners.count == 4 else { return 0 }
+    /// Interior field evidence: the fraction of interior samples reading as field surface under a
+    /// wide, hue-tolerant grass band (vivid green → yellow-green → worn brown, including shadowed
+    /// turf), AND a `roughness` = std-dev of interior brightness. A real pitch — worn or lush — is a
+    /// SMOOTH surface (low roughness); tree canopy, a parking lot full of cars, and rooftops are
+    /// high-texture. Roughness is what finally separates a pitch from the vegetation / parking clutter
+    /// that reads as "green" per-pixel and kept passing the colour-only grass test.
+    private func interiorField(corners: [CGPoint], sampler: PixelSampler) -> (grass: Double, roughness: Double) {
+        guard corners.count == 4 else { return (0, 1) }
         let center = centroid(of: corners)
-        var total = 0.0
+        var grassTotal = 0.0
+        var brightnessTotal = 0.0
+        var brightnessSquaredTotal = 0.0
         var samples = 0.0
         // Sample a grid biased toward the interior (0.7 inset) so touchlines and adjacent surfaces
-        // outside the pitch don't pollute the turf estimate.
+        // outside the pitch don't pollute the estimate.
         for u in stride(from: -0.7, through: 0.7, by: 0.2) {
             for v in stride(from: -0.7, through: 0.7, by: 0.2) {
                 // Bilinear interior point from the centre toward each corner.
                 let point = interiorPoint(corners: corners, center: center, u: u, v: v)
                 guard let rgb = sampler.rgb(at: point) else { continue }
-                total += fieldLikelihood(r: rgb.r, g: rgb.g, b: rgb.b)
+                grassTotal += fieldLikelihood(r: rgb.r, g: rgb.g, b: rgb.b)
+                let brightness = (rgb.r + rgb.g + rgb.b) / 3
+                brightnessTotal += brightness
+                brightnessSquaredTotal += brightness * brightness
                 samples += 1
             }
         }
-        return samples > 0 ? total / samples : 0
+        guard samples > 0 else { return (0, 1) }
+        let mean = brightnessTotal / samples
+        let variance = max(0, brightnessSquaredTotal / samples - mean * mean)
+        return (grassTotal / samples, sqrt(variance))
     }
 
     /// A point inside the quad, parameterised by (u, v) in [-1, 1] from the centre.
@@ -378,6 +1009,12 @@ struct SatelliteFieldDetector {
     /// Soft field-surface likelihood (0…1) from RGB, tolerant of worn/brown turf and shadow while
     /// rejecting water (blue-dominant), asphalt/concrete (near-neutral grey) and rooftops.
     private func fieldLikelihood(r: Double, g: Double, b: Double) -> Double {
+        SatelliteFieldDetector.staticFieldLikelihood(r: r, g: g, b: b)
+    }
+
+    /// Static form so the ridge-map builder (which has no detector instance) shares the exact same
+    /// grass model as the interior scorer.
+    static func staticFieldLikelihood(r: Double, g: Double, b: Double) -> Double {
         let brightness = (r + g + b) / 3
         let maxC = max(r, max(g, b))
         let minC = min(r, min(g, b))
