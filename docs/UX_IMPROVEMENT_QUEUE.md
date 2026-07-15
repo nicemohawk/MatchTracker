@@ -112,3 +112,34 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
 - Add Field: one locate button; opens on the region framed in Fields; adjust phase — after
   4th corner, draggable numbered handles fine-tune before save (-AddFieldSeedCorners DEBUG
   hook for deterministic capture).
+
+## Wave 11 shipped: performance — buttery first load, match start, maps, data loads
+
+- iOS cold launch: MatchStore.init no longer decodes 330 per-match record files on main pre-paint
+  (snapshot-only hydrate; records decode off-main and attach post-paint; refresh() awaits the
+  init attach so launch-present records never read as "newly arrived"). Badge cache decodes
+  async with a race gate (loadedBadge) so early rows never take the cold path. Summary + badge
+  cache writes debounced (1s/1.5s) + off-main, flushed on scenePhase.background; per-render
+  O(n) matchesSignature hash replaced by MatchStore.contentVersion.
+- iOS analysis: computeAnalytics is a pure nonisolated pipeline on a detached task (inputs
+  snapshotted on main incl. FieldsModel-dependent field resolution; publishes back with
+  analyticsRevision). Field-save invalidation reanalyzes with yields + coalescing instead of a
+  synchronous storm. Compare cohort cached in @State keyed on (compare, window, analyticsRevision)
+  — was recomputed per render under a repeatForever pulse; venue map memoized in MatchStore
+  (was O(fields²) built twice per call).
+- iOS maps: satellite heat cells + pitch outline built once per (rectangle, grid) instead of
+  ~600 MapPolygons per body pass; FieldBoundsEditor camera tick scoped to the handle overlay
+  via CameraTicker (whole-Map re-render per pan frame eliminated); Route overlay coords cached.
+- Watch: optimistic match start — live UI appears right after startActivity; beginCollection
+  completes behind it (failure tears down to the start screen); in-progress persist moved to a
+  serial utility queue (ordered writes, clear-behind-pending). Launch primes the field store
+  off-main and runs HK auth + session recovery concurrently. Fields mirror: single replaceAll
+  persist (no per-field pretty-printed writes), decode on WCSession queue, no-op mirrors don't
+  bump fieldsRevision (no spurious location lookups). Metrics page: 1Hz elapsed-time subview
+  (was 20Hz whole-page rebuild); HKUnits cached. Match end: summary appears before
+  endCollection/analytics; runs detected once (summaryRunCounts, "--" while computing) —
+  SummaryView no longer re-runs RunDetector per body; record transfer encodes off-main.
+- Kit: FieldStore.replaceAll (single persist, additive) + test; on-disk fields JSON no longer
+  pretty-printed. 145 Kit tests green.
+- Validated: iOS + watch builds, cold-launch/cohort UI test on the real 330-match sim, all 4
+  watch smoke tests (incl. in-game walk through the reworked start/end lifecycle).

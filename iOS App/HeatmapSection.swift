@@ -21,6 +21,13 @@ struct HeatmapSection: View {
     @State private var comparisonMode: ComparisonMode = .compare
     @State private var isHoldingCompare = false
     @State private var hintPulse = false
+    /// Cached Compare cohort, refreshed via `.task(id:)` when the compare controls or this match's
+    /// analytics change. Previously a computed property read in `body`, which re-averaged every
+    /// cached match's heatmap on every render — and the hint pulse animation renders constantly.
+    @State private var cohort: CohortComparison?
+    /// Track coordinates for the satellite Route overlay, mapped once per toggle instead of
+    /// re-mapping the whole track on every body pass while the Route chip is on.
+    @State private var routeCoordinates: [Coordinate2D] = []
     /// Field-boundary correction: the corner editor presentation + the field it's editing (carrying
     /// whether it's a draft to bind on save), and a brief post-save "Reprojecting…" acknowledgment.
     @State private var showFieldEditor = false
@@ -50,7 +57,7 @@ struct HeatmapSection: View {
 
             if showSatellite {
                 SatelliteHeatmapOverlay(rectangle: analytics.rectangle, heatmap: analytics.heatmap,
-                                        route: showRoute ? detail.track.map(\.coordinate) : [])
+                                        route: routeCoordinates)
                     .frame(height: 360)
                     .fullBleed()
                 HeatmapLegend()
@@ -73,6 +80,10 @@ struct HeatmapSection: View {
             isHoldingCompare = false
             if !isOn { showRoute = false }   // the Route diagnostic only exists in satellite mode
         }
+        .onChange(of: showRoute) { _, isOn in
+            routeCoordinates = isOn ? detail.track.map(\.coordinate) : []
+        }
+        .task(id: cohortKey) { refreshCohort() }
         .onChange(of: comparisonMode) { _, _ in
             isHoldingCompare = false
             Haptics.selection()
@@ -149,6 +160,9 @@ struct HeatmapSection: View {
             } else {
                 withAnimation(.easeInOut(duration: 0.25)) { isReprojecting = false }
             }
+            // The save also reanalyzed the cohort's OTHER matches; this match's own revision bump
+            // may have fired before they finished, so refresh once more now that the dust settled.
+            refreshCohort()
         }
     }
 
@@ -402,10 +416,24 @@ struct HeatmapSection: View {
         }
     }
 
-    /// The peer cohort to compare against, filtered by venue / format / window (see
+    /// Identity of everything the cached cohort depends on; the `.task(id:)` in `body` re-fires
+    /// when it changes. `analyticsRevision` covers this match's reanalyses (events edit, field
+    /// reprojection) without diffing the analytics themselves.
+    private struct CohortKey: Equatable {
+        var isComparing: Bool
+        var window: CompareWindow
+        var analyticsRevision: Int
+    }
+
+    private var cohortKey: CohortKey {
+        CohortKey(isComparing: compareWithSeason, window: compareWindow,
+                  analyticsRevision: detail.analyticsRevision)
+    }
+
+    /// Rebuild the peer cohort to compare against, filtered by venue / format / window (see
     /// `MatchStore.cohortComparison`). Cached analytics only — never triggers a load.
-    private var cohort: CohortComparison? {
-        store.cohortComparison(for: detail, window: compareWindow)
+    private func refreshCohort() {
+        cohort = compareWithSeason ? store.cohortComparison(for: detail, window: compareWindow) : nil
     }
 
     /// Why Compare has nothing to show — indoor matches have no GPS to compare, otherwise the cohort
@@ -493,6 +521,18 @@ struct SatelliteHeatmapOverlay: View {
     /// Raw GPS coordinates for the field-fit diagnostic overlay; empty unless the "Route" chip is on.
     var route: [Coordinate2D] = []
 
+    /// Georeferenced overlay geometry, built once per (rectangle, grid) by the `.task(id:)` below.
+    /// Previously computed properties, which re-interpolated up to 600 MapPolygons plus the full
+    /// pitch line set on every body pass — e.g. each Route-chip toggle.
+    @State private var heatCells: [HeatCell] = []
+    @State private var outlinePolylines: [[CLLocationCoordinate2D]] = []
+
+    /// What the cached geometry was built from, so the task re-fires only when it actually changes.
+    private struct GeometryKey: Equatable {
+        var rectangle: OrientedRectangle
+        var cells: [Double]
+    }
+
     var body: some View {
         Map(initialPosition: cameraPosition, interactionModes: []) {
             // Heat cells — each grid cell as a quad in real-world coordinates, so it stays welded
@@ -515,6 +555,10 @@ struct SatelliteHeatmapOverlay: View {
             }
         }
         .mapStyle(.imagery)
+        .task(id: GeometryKey(rectangle: rectangle, cells: heatmap.cells)) {
+            heatCells = buildHeatCells()
+            outlinePolylines = buildOutlinePolylines()
+        }
     }
 
     /// Rotate the camera so the field's long axis runs horizontally: heading = long-axis bearing
@@ -535,7 +579,7 @@ struct SatelliteHeatmapOverlay: View {
         let color: Color
     }
 
-    private var heatCells: [HeatCell] {
+    private func buildHeatCells() -> [HeatCell] {
         guard heatmap.columns > 0, heatmap.rows > 0, rectangle.corners.count == 4 else { return [] }
         var cells: [HeatCell] = []
         for row in 0..<heatmap.rows {
@@ -561,7 +605,7 @@ struct SatelliteHeatmapOverlay: View {
     /// The SoccerPitch line set expressed in normalized field space, then mapped to coordinates.
     /// Proportions are relative to the actual field dimensions so the markings sit correctly on
     /// the imagery even when the pitch isn't a regulation 105×68.
-    private var outlinePolylines: [[CLLocationCoordinate2D]] {
+    private func buildOutlinePolylines() -> [[CLLocationCoordinate2D]] {
         guard rectangle.corners.count == 4,
               rectangle.lengthMeters > 0, rectangle.widthMeters > 0 else { return [] }
         let length = CGFloat(rectangle.lengthMeters)

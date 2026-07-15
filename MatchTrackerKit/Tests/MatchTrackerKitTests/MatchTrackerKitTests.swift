@@ -102,6 +102,30 @@ final class MatchTrackerKitTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
+    func testFieldStoreReplaceAllSwapsContentsAndPersists() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MatchTrackerKitTests-\(UUID().uuidString)")
+        let store = FieldStore(directory: directory)
+
+        let stale = FieldModel(id: UUID(), name: "Stale", createdAt: Date(), outline: [],
+                               rectangle: rectangle(center: fieldCenter, length: 90, width: 55, heading: 30),
+                               source: .trained, observationCount: 1)
+        let mirrored = FieldModel(id: UUID(), name: "Mirrored", createdAt: Date(), outline: [],
+                                  rectangle: rectangle(center: fieldCenter, length: 100, width: 64, heading: 0),
+                                  source: .trained, observationCount: 2)
+        try store.save(stale)
+
+        try store.replaceAll([mirrored])
+        XCTAssertEqual(store.fields.map(\.id), [mirrored.id])
+
+        let reloaded = FieldStore(directory: directory)
+        try reloaded.load()
+        XCTAssertEqual(reloaded.fields.map(\.id), [mirrored.id])
+        XCTAssertEqual(reloaded.fields.first?.name, "Mirrored")
+
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     func testRecordObservationProposesInferredField() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MatchTrackerKitTests-\(UUID().uuidString)")

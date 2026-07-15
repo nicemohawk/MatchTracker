@@ -16,21 +16,16 @@ struct MetricsView: View {
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: isLuminanceReduced ? 1.0 : 0.05)) { context in
-            VStack(alignment: .leading, spacing: 4) {
-                Text(elapsedString(at: context.date))
-                    .watchHeroNumeral()
-                    .foregroundStyle(dim(WatchTheme.cardYellow))
-                    .contentTransition(.numericText())
+        VStack(alignment: .leading, spacing: 4) {
+            ElapsedTimeText()
 
-                heartRateRow
-                distanceRow
-                caloriesRow
-                speedRow
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
+            heartRateRow
+            distanceRow
+            caloriesRow
+            speedRow
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
         .scenePadding(.top)
     }
 
@@ -89,6 +84,31 @@ struct MetricsView: View {
         color.opacity(isLuminanceReduced ? 0.65 : 1)
     }
 
+    // Metric to match the iOS app (MatchFormat.distance renders km everywhere).
+    private var distanceString: String {
+        String(format: "%.2f", workoutManager.distanceMeters / 1000)
+    }
+
+    private var speedString: String {
+        String(format: "%.1f", max(0, workoutManager.currentSpeed * 3.6))
+    }
+}
+
+/// The elapsed-time hero in its own view holding the once-a-second TimelineView, so the tick only
+/// rebuilds this numeral — the metric rows are invalidated solely by their @Observable values.
+private struct ElapsedTimeText: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            Text(elapsedString(at: context.date))
+                .watchHeroNumeral()
+                .foregroundStyle(WatchTheme.cardYellow.opacity(isLuminanceReduced ? 0.65 : 1))
+                .contentTransition(.numericText())
+        }
+    }
+
     private func elapsedString(at date: Date) -> String {
         let elapsed = Int(workoutManager.elapsedTime(at: date).rounded(.down))
         let hours = elapsed / 3600
@@ -101,15 +121,6 @@ struct MetricsView: View {
         }
         return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
                          : String(format: "%d:%02d", minutes, seconds)
-    }
-
-    // Metric to match the iOS app (MatchFormat.distance renders km everywhere).
-    private var distanceString: String {
-        String(format: "%.2f", workoutManager.distanceMeters / 1000)
-    }
-
-    private var speedString: String {
-        String(format: "%.1f", max(0, workoutManager.currentSpeed * 3.6))
     }
 }
 

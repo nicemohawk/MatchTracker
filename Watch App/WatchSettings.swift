@@ -50,8 +50,15 @@ enum WatchSettings {
         set { AppGroupStorage.defaults.set(newValue, forKey: Key.sportID) }
     }
 
+    /// Cached per sport id so repeated reads skip the linear scan of `SportProfile.all`.
+    private static var cachedSportProfile: (id: String, profile: SportProfile)?
+
     static var sportProfile: SportProfile {
-        SportProfile.all.first { $0.id == sportID } ?? .soccer
+        let id = sportID
+        if let cached = cachedSportProfile, cached.id == id { return cached.profile }
+        let profile = SportProfile.all.first { $0.id == id } ?? .soccer
+        cachedSportProfile = (id, profile)
+        return profile
     }
 
     /// Last-chosen match format for the start-screen quick pick (Match / Pickup / Indoor).

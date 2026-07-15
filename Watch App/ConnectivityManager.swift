@@ -54,8 +54,12 @@ final class ConnectivityManager: NSObject {
     }
 
     func send(matchRecord: MatchRecord) {
-        guard let url = writeTemporaryJSON(matchRecord, prefix: "match") else { return }
-        WCSession.default.transferFile(url, metadata: [TransferType.key: TransferType.matchRecord])
+        // Encode + temp-file write off the main queue: this fires from the summary's onAppear,
+        // right as its celebration animates in. transferFile itself just enqueues.
+        DispatchQueue.global(qos: .utility).async {
+            guard let url = self.writeTemporaryJSON(matchRecord, prefix: "match") else { return }
+            WCSession.default.transferFile(url, metadata: [TransferType.key: TransferType.matchRecord])
+        }
     }
 
     private func writeTemporaryJSON<T: Encodable>(_ value: T, prefix: String) -> URL? {
@@ -72,30 +76,35 @@ final class ConnectivityManager: NSObject {
 
     // MARK: - Inbound context
 
+    /// Called on WCSession's background queue: the JSON decode (the expensive part of a mirror)
+    /// stays here, and only the store/UI updates hop to main.
     private func apply(context: [String: Any]) {
-        if let fieldsData = context[ContextKey.fields] as? Data,
-           let fields = try? MatchTrackerJSON.decoder().decode([FieldModel].self, from: fieldsData) {
-            replaceStoredFields(with: fields)
-        }
-        if let teamCode = context[ContextKey.teamCode] as? String {
-            AppGroupStorage.teamCode = teamCode
-            self.teamCode = teamCode
-        }
-        if let playerName = context[ContextKey.playerName] as? String {
-            AppGroupStorage.playerName = playerName
-            self.playerName = playerName
+        let decodedFields = (context[ContextKey.fields] as? Data)
+            .flatMap { try? MatchTrackerJSON.decoder().decode([FieldModel].self, from: $0) }
+        let teamCode = context[ContextKey.teamCode] as? String
+        let playerName = context[ContextKey.playerName] as? String
+        DispatchQueue.main.async {
+            if let decodedFields {
+                self.replaceStoredFields(with: decodedFields)
+            }
+            if let teamCode {
+                AppGroupStorage.teamCode = teamCode
+                self.teamCode = teamCode
+            }
+            if let playerName {
+                AppGroupStorage.playerName = playerName
+                self.playerName = playerName
+            }
         }
     }
 
-    /// Replace the local field store contents with the phone's authoritative list.
+    /// Replace the local field store contents with the phone's authoritative list: one persist
+    /// for the whole list, and only when it actually changed — a no-op mirror must not bump
+    /// `fieldsRevision` and retrigger the start screen's location lookup.
     private func replaceStoredFields(with fields: [FieldModel]) {
         let store = AppGroupStorage.fieldStore
-        for existing in store.fields where !fields.contains(where: { $0.id == existing.id }) {
-            try? store.delete(id: existing.id)
-        }
-        for field in fields {
-            try? store.save(field)
-        }
+        guard fields != store.fields else { return }
+        try? store.replaceAll(fields)
         fieldsRevision += 1
     }
 }
@@ -108,15 +117,11 @@ extension ConnectivityManager: WCSessionDelegate {
                  error: Error?) {
         let context = session.receivedApplicationContext
         guard !context.isEmpty else { return }
-        DispatchQueue.main.async {
-            self.apply(context: context)
-        }
+        apply(context: context)
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        DispatchQueue.main.async {
-            self.apply(context: applicationContext)
-        }
+        apply(context: applicationContext)
     }
 
     /// Clean up the temporary JSON file backing a completed transfer. On success the file has

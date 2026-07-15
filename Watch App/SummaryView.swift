@@ -43,8 +43,8 @@ struct SummaryView: View {
                         statRow("Distance", value: distanceString, tint: .primary)
                         statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
                         statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .primary)
-                        statRow("Runs", value: "\(runCounts.runs)", tint: .primary)
-                        statRow("Sprints", value: "\(runCounts.sprints)", tint: .primary)
+                        statRow("Runs", value: runCounts.map { "\($0.runs)" } ?? "--", tint: .primary)
+                        statRow("Sprints", value: runCounts.map { "\($0.sprints)" } ?? "--", tint: .primary)
                         statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
                         statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
                     }
@@ -76,6 +76,9 @@ struct SummaryView: View {
             .padding(.horizontal, 4)
         }
         .onAppear(perform: finishUp)
+        // The post-match pipeline publishes the record after the summary appears; finish up again
+        // when it lands (the transfer/prompt parts were no-ops while it was still nil).
+        .onChange(of: workoutManager.finishedRecord?.id) { _, _ in finishUp() }
         .sheet(isPresented: $showFieldPrompt) {
             ProposedFieldSheet()
         }
@@ -139,11 +142,9 @@ struct SummaryView: View {
                                                     matchEnd: interval.end)
     }
 
-    private var runCounts: (runs: Int, sprints: Int) {
-        let runs = RunDetector.detectRuns(in: workoutManager.track,
-                                          configuration: .scaled(for: workoutManager.matchContext))
-        return (runs.filter { $0.intensity == .run }.count,
-                runs.filter { $0.intensity == .sprint }.count)
+    /// Computed once by the post-match pipeline; nil (shown as "--") while still computing.
+    private var runCounts: (runs: Int, sprints: Int)? {
+        workoutManager.summaryRunCounts
     }
 
     private var fieldName: String? {

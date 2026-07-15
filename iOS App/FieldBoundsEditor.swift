@@ -37,9 +37,32 @@ struct FieldBoundsEditor: View {
     @State private var corners: [CLLocationCoordinate2D] = []
     @State private var cameraPosition: MapCameraPosition
     /// Bumped continuously while the camera moves so the handle overlay (positions from
-    /// `proxy.convert`) re-renders in lockstep with the map.
-    @State private var cameraTick = 0
+    /// `proxy.convert`) re-renders in lockstep with the map. A reference held in plain `@State`
+    /// (NOT `@StateObject`) on purpose: only `CameraTrackedHandles` observes it, so the per-frame
+    /// bumps re-render just the handle overlay — never this body, whose Map content and
+    /// `fittedRectangle` refit depend only on `corners`.
+    @State private var cameraTicker = CameraTicker()
     @State private var grabbedCorner: Int?
+
+    private final class CameraTicker: ObservableObject {
+        @Published var tick = 0
+    }
+
+    /// Hosts the corner handles behind the ticker so continuous pan/zoom invalidates only this
+    /// subtree, keeping the editor body untouched during camera moves.
+    private struct CameraTrackedHandles: View {
+        @ObservedObject var ticker: CameraTicker
+        @Binding var corners: [CLLocationCoordinate2D]
+        @Binding var grabbedCorner: Int?
+        let proxy: MapProxy
+        let coordinateSpaceName: String
+
+        var body: some View {
+            FieldCornerHandles(corners: $corners, grabbedCorner: $grabbedCorner,
+                               proxy: proxy, coordinateSpaceName: coordinateSpaceName,
+                               cameraTick: ticker.tick)
+        }
+    }
 
     init(field: FieldModel, route: [CLLocationCoordinate2D] = [], onSaved: @escaping () -> Void) {
         self.field = field
@@ -81,12 +104,12 @@ struct FieldBoundsEditor: View {
                 }
                 .mapStyle(.imagery)
                 .mapControls { }
-                .onMapCameraChange(frequency: .continuous) { _ in cameraTick &+= 1 }
+                .onMapCameraChange(frequency: .continuous) { _ in cameraTicker.tick &+= 1 }
                 // Sibling overlay (not annotations) so a handle drag never fights the map pan.
                 .overlay {
-                    FieldCornerHandles(corners: $corners, grabbedCorner: $grabbedCorner,
-                                       proxy: proxy, coordinateSpaceName: Self.mapSpace,
-                                       cameraTick: cameraTick)
+                    CameraTrackedHandles(ticker: cameraTicker, corners: $corners,
+                                         grabbedCorner: $grabbedCorner, proxy: proxy,
+                                         coordinateSpaceName: Self.mapSpace)
                 }
                 .coordinateSpace(name: Self.mapSpace)
             }

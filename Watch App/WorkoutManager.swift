@@ -73,6 +73,10 @@ final class WorkoutManager: NSObject {
     var summaryAverageHeartRate: Double?
     var proposedField: FieldModel?
 
+    /// Run/sprint counts computed once by the post-match pipeline; nil while still computing.
+    /// SummaryView reads this instead of re-running the detector in its body.
+    var summaryRunCounts: (runs: Int, sprints: Int)?
+
     // MARK: Match identity
 
     @ObservationIgnored private var matchID = UUID()
@@ -96,6 +100,16 @@ final class WorkoutManager: NSObject {
     /// Sensor-fusion heading samples and live sideline streaming, both active only during a match.
     @ObservationIgnored private let headingRecorder = HeadingRecorder()
     @ObservationIgnored private let liveStreamer = LiveStreamer()
+
+    /// Serial queue for crash-safety record writes: keeps the JSON encode + disk write off the
+    /// event-logging path while preserving write order.
+    @ObservationIgnored private let persistQueue = DispatchQueue(label: "com.matchtracker.watch.persistInProgress",
+                                                                 qos: .utility)
+
+    // Units are immutable; cache them instead of rebuilding per didCollectDataOf callback.
+    private static let heartRateUnit = HKUnit.count().unitDivided(by: .minute())
+    private static let energyUnit = HKUnit.largeCalorie()
+    private static let distanceUnit = HKUnit.meter()
 
     /// Built per match so the selected sport's activity type is honored.
     private func makeWorkoutConfiguration() -> HKWorkoutConfiguration {
@@ -191,40 +205,60 @@ final class WorkoutManager: NSObject {
     // MARK: - Match lifecycle
 
     /// Configure and start the workout session for a match on an optional detected field.
+    ///
+    /// The live UI is shown as soon as the session starts — `beginCollection` is a HealthKit XPC
+    /// round-trip that can take seconds, so it completes after the transition and metrics simply
+    /// read 0 until the first samples arrive.
     func startMatch(field: FieldModel?) async {
         resetForNewMatch(field: field)
 
+        let configuration = makeWorkoutConfiguration()
+        let session: HKWorkoutSession
         do {
-            let configuration = makeWorkoutConfiguration()
-            let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
-            let builder = session.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
-            session.delegate = self
-            builder.delegate = self
-
-            self.session = session
-            self.builder = builder
-            // Indoor sessions have no usable GPS: skip the route builder entirely.
-            self.routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
-
-            let start = Date()
-            matchStartDate = start
-            session.startActivity(with: start)
-            try await builder.beginCollection(at: start)
-
-            // Indoor: no location updates, route, field detection, auto-sub or heading capture.
-            // HR/energy still collect; the track stays empty and currentSpeed stays 0.
-            if !isIndoor {
-                startLocationUpdates()
-                headingRecorder.start()
-            }
-            liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
-            log(.matchStart, haptic: false)
-            phase = .active
+            session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
         } catch {
             // If we can't start, fall back to the start screen.
             MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
             phase = .idle
+            return
+        }
+        let builder = session.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        session.delegate = self
+        builder.delegate = self
+
+        self.session = session
+        self.builder = builder
+        // Indoor sessions have no usable GPS: skip the route builder entirely.
+        self.routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+
+        let start = Date()
+        matchStartDate = start
+        session.startActivity(with: start)
+
+        // Indoor: no location updates, route, field detection, auto-sub or heading capture.
+        // HR/energy still collect; the track stays empty and currentSpeed stays 0.
+        if !isIndoor {
+            startLocationUpdates()
+            headingRecorder.start()
+        }
+        liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
+        phase = .active
+        log(.matchStart, haptic: false)
+
+        do {
+            try await builder.beginCollection(at: start)
+        } catch {
+            // Collection never began: tear down what the optimistic start spun up and fall back
+            // to the start screen, the same terminal state as the pre-optimistic failure path.
+            MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
+            stopLocationUpdates()
+            headingRecorder.stop()
+            headingRecorder.reset()
+            liveStreamer.stop()
+            session.end()
+            clearInProgressBehindPendingWrites()
+            reset()
         }
     }
 
@@ -303,7 +337,7 @@ final class WorkoutManager: NSObject {
             session?.end()
             builder?.discardWorkout()
             headingRecorder.reset()
-            AppGroupStorage.clearInProgress()
+            clearInProgressBehindPendingWrites()
             reset()
             return .discardedTooShort
         }
@@ -315,12 +349,16 @@ final class WorkoutManager: NSObject {
 
         // Capture the workout's average heart rate before finishing.
         if let statistics = builder?.statistics(for: HKQuantityType(.heartRate)) {
-            let unit = HKUnit.count().unitDivided(by: .minute())
-            summaryAverageHeartRate = statistics.averageQuantity()?.doubleValue(for: unit)
+            summaryAverageHeartRate = statistics.averageQuantity()?.doubleValue(for: Self.heartRateUnit)
         }
         elapsedAtPause = builder?.elapsedTime(at: end) ?? elapsedAtPause
 
         session?.end()
+
+        // Show the summary now: its hero stats (duration, distance, calories, avg HR) are already
+        // known, while the HealthKit finish + analytics pipeline below can take seconds. The
+        // record-driven rows fill in when `finishedRecord` publishes at the end.
+        phase = .summary
 
         var workout: HKWorkout?
         do {
@@ -363,11 +401,15 @@ final class WorkoutManager: NSObject {
         // Set explicitly so a formal match records `.match` rather than relying on the nil default.
         record.format = matchFormat
 
-        finishedWorkout = workout
-        finishedRecord = record
         AppGroupStorage.persistFinished(record)
-        AppGroupStorage.clearInProgress()
-        writeLastMatchSnapshot(record: record, end: end)
+        clearInProgressBehindPendingWrites()
+
+        // Detect runs once, feeding both the summary rows and the widget snapshot.
+        let runs = RunDetector.detectRuns(in: track, configuration: .scaled(for: matchContext))
+        let runCounts = (runs: runs.filter { $0.intensity == .run }.count,
+                         sprints: runs.filter { $0.intensity == .sprint }.count)
+        summaryRunCounts = runCounts
+        writeLastMatchSnapshot(record: record, end: end, sprintCount: runCounts.sprints)
 
         // Post-match field learning: refine a known field or propose a newly inferred one.
         // Skipped indoors — there is no GPS track to learn a field from.
@@ -382,13 +424,15 @@ final class WorkoutManager: NSObject {
             }
         }
 
-        phase = .summary
+        finishedWorkout = workout
+        // Published last: SummaryView refreshes off the record, so run counts and the proposed
+        // field must already be in place when it lands.
+        finishedRecord = record
         return .finished(workout: workout, record: record)
     }
 
     /// Feeds the widget's last-match Smart Stack card.
-    private func writeLastMatchSnapshot(record: MatchRecord, end: Date) {
-        let runs = RunDetector.detectRuns(in: track, configuration: .scaled(for: matchContext))
+    private func writeLastMatchSnapshot(record: MatchRecord, end: Date, sprintCount: Int) {
         let fieldName = record.fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id }?.name }
         let snapshot = LastMatchSnapshot(
@@ -402,7 +446,7 @@ final class WorkoutManager: NSObject {
             distanceMeters: distanceMeters,
             goalsUs: score.us,
             goalsThem: score.them,
-            sprintCount: runs.filter { $0.intensity == .sprint }.count
+            sprintCount: sprintCount
         )
         do {
             try snapshot.save(to: AppGroupStorage.containerURL)
@@ -418,6 +462,7 @@ final class WorkoutManager: NSObject {
         finishedRecord = nil
         proposedField = nil
         summaryAverageHeartRate = nil
+        summaryRunCounts = nil
         events = []
         track = []
         heartRate = 0
@@ -458,6 +503,7 @@ final class WorkoutManager: NSObject {
         finishedRecord = nil
         proposedField = nil
         summaryAverageHeartRate = nil
+        summaryRunCounts = nil
     }
 
     private func persistInProgress() {
@@ -470,7 +516,19 @@ final class WorkoutManager: NSObject {
             teamCode: AppGroupStorage.teamCode
         )
         record.format = matchFormat
-        AppGroupStorage.persistInProgress(record)
+        // The record snapshot above is cheap; the encode + disk write is not, so it happens on
+        // the serial persist queue (ordered, so a later snapshot can never be clobbered).
+        persistQueue.async {
+            AppGroupStorage.persistInProgress(record)
+        }
+    }
+
+    /// Clears the crash-safety record on the persist queue, behind any queued writes — clearing
+    /// directly could otherwise be overtaken by a pending write that resurrects a stale record.
+    private func clearInProgressBehindPendingWrites() {
+        persistQueue.async {
+            AppGroupStorage.clearInProgress()
+        }
     }
 
     // MARK: - Location
@@ -577,10 +635,6 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
     func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder,
                         didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        let heartRateUnit = HKUnit.count().unitDivided(by: .minute())
-        let energyUnit = HKUnit.largeCalorie()
-        let distanceUnit = HKUnit.meter()
-
         var newHeartRate: Double?
         var newCalories: Double?
         var newDistance: Double?
@@ -591,13 +645,13 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
             switch quantityType {
             case HKQuantityType(.heartRate):
-                if let value = statistics.mostRecentQuantity()?.doubleValue(for: heartRateUnit), value > 1 {
+                if let value = statistics.mostRecentQuantity()?.doubleValue(for: Self.heartRateUnit), value > 1 {
                     newHeartRate = value
                 }
             case HKQuantityType(.activeEnergyBurned):
-                newCalories = statistics.sumQuantity()?.doubleValue(for: energyUnit)
+                newCalories = statistics.sumQuantity()?.doubleValue(for: Self.energyUnit)
             case HKQuantityType(.distanceWalkingRunning):
-                newDistance = statistics.sumQuantity()?.doubleValue(for: distanceUnit)
+                newDistance = statistics.sumQuantity()?.doubleValue(for: Self.distanceUnit)
             default:
                 break
             }

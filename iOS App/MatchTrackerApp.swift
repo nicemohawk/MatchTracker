@@ -28,8 +28,15 @@ struct MatchTrackerApp: App {
                 .environment(environment.backlogImporter)
                 .task { await environment.bootstrap() }
                 .onChange(of: scenePhase) { _, phase in
-                    guard phase == .active else { return }
-                    Task { await AppEnvironment.current?.reconcile() }
+                    switch phase {
+                    case .active:
+                        Task { await AppEnvironment.current?.reconcile() }
+                    case .background:
+                        // Debounced cache writes flush now, before a possible process kill.
+                        AppEnvironment.current?.matches.flushPendingPersists()
+                    default:
+                        break
+                    }
                 }
         }
     }

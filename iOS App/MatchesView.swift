@@ -77,8 +77,9 @@ struct MatchesView: View {
             }
             .refreshable { await matches.refresh() }
             .task { await backlogImporter.scanIfNeeded() }
-            // Rebuild the grouped precompute once per matches-array change (see MatchListData.build).
-            .task(id: matchesSignature) {
+            // Rebuild the grouped precompute once per matches-array / badge-cache change, keyed on
+            // the store's monotonic version instead of hashing every match id per body evaluation.
+            .task(id: matches.contentVersion) {
                 listData = MatchListData.build(matches: matches.matches, store: matches)
             }
             .sheet(isPresented: $showingImport) { BacklogImportView() }
@@ -86,18 +87,6 @@ struct MatchesView: View {
         .onChange(of: navigationPath) { _, path in
             isAtRoot = path.isEmpty
         }
-    }
-
-    /// Identity of the current matches array — count folded with every id — so the precompute
-    /// rebuilds only when matches actually change (add / remove / reorder), not on every render.
-    private var matchesSignature: Int {
-        var hasher = Hasher()
-        hasher.combine(matches.matches.count)
-        for match in matches.matches { hasher.combine(match.id) }
-        // Rebuild once when cold-cache rows reconcile into workout-backed ones (same id set), so the
-        // precompute picks up authoritative summaries without waiting for an add/remove.
-        hasher.combine(matches.reconcileToken)
-        return hasher.finalize()
     }
 
     /// The month-sectioned list. A fixed filter chip row sits under the title; the scroll view below
@@ -598,8 +587,10 @@ struct MatchRow: View {
 
     private func loadBadge() async {
         // Fast path: a previously computed badge renders instantly with no HealthKit fetch or
-        // analytics compute — the heavy work happens once per match, ever.
-        if let badge = store.cachedBadge(for: summary.id) {
+        // analytics compute — the heavy work happens once per match, ever. Awaits the async cache
+        // decode so an early row never takes the cold path against a cache that merely hasn't
+        // finished loading.
+        if let badge = await store.loadedBadge(for: summary.id) {
             hasRoute = badge.hasRoute
             fieldName = badge.fieldName
             if let role = badge.role, let side = badge.side, let confidence = badge.confidence {

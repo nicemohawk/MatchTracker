@@ -30,6 +30,10 @@ final class MatchDetailModel: ObservableObject {
     @Published private(set) var record: MatchRecord?
     @Published private(set) var track: [TrackPoint] = []
     @Published private(set) var analytics: MatchAnalytics?
+    /// Monotonic version bumped every time `analytics` is republished — a cheap identity for views
+    /// that cache values derived from the analysis (e.g. the Compare cohort) and need to know when
+    /// to rebuild them without diffing the analytics themselves.
+    @Published private(set) var analyticsRevision = 0
     @Published private(set) var heartRate: (average: Double, maximum: Double)?
     @Published private(set) var heartRateSeries: [(date: Date, bpm: Double)] = []
     @Published private(set) var isLoading = false
@@ -39,6 +43,10 @@ final class MatchDetailModel: ObservableObject {
     private let fields: FieldsModel
     private var hasLoaded = false
     private var didReconcileSubs = false
+    /// Coalescing for off-main recomputes: while a pass is in flight, further requests set the flag
+    /// so exactly ONE follow-up pass runs at the end instead of queueing one per request.
+    private var analyticsTask: Task<Void, Never>?
+    private var needsReanalyze = false
 
     /// Persist an updated record through the app's store (set by `MatchStore`). When wired, this
     /// writes the record to disk and refreshes the cached summary + analytics.
@@ -81,11 +89,19 @@ final class MatchDetailModel: ObservableObject {
         }
 
         do {
-            let points = try await healthKit.fetchTrack(for: workout)
+            // The route fetch and the two heart-rate queries are independent of each other, so the
+            // three HealthKit round-trips run concurrently. Error semantics are unchanged: a failed
+            // track fetch fails the load; the heart-rate fetches degrade to nil/empty.
+            let start = matchStart, end = matchEnd
+            async let fetchedTrack = healthKit.fetchTrack(for: workout)
+            async let fetchedHeartRate = healthKit.fetchHeartRate(from: start, to: end)
+            async let fetchedSeries = healthKit.fetchHeartRateSeries(from: start, to: end)
+
+            let points = try await fetchedTrack
             track = points
-            heartRate = try? await healthKit.fetchHeartRate(from: matchStart, to: matchEnd)
-            heartRateSeries = (try? await healthKit.fetchHeartRateSeries(from: matchStart, to: matchEnd)) ?? []
-            analytics = computeAnalytics(track: points)
+            heartRate = try? await fetchedHeartRate
+            heartRateSeries = (try? await fetchedSeries) ?? []
+            publishAnalytics(await computeAnalyticsOffMain())
             loadFailed = analytics == nil && !points.isEmpty
             reconcileAutomaticSubs(track: points)
         } catch {
@@ -137,7 +153,7 @@ final class MatchDetailModel: ObservableObject {
     func updateRecord(_ record: MatchRecord) {
         self.record = record
         if !track.isEmpty || matchFormat == .indoor || !heartRateSamples.isEmpty {
-            analytics = computeAnalytics(track: track)
+            scheduleAnalyticsRecompute()
         }
     }
 
@@ -148,10 +164,40 @@ final class MatchDetailModel: ObservableObject {
     /// heatmap / position / thirds / runs, so a boundary edit invalidates all of it. Reuses the
     /// already-fetched track + heart rate (no HealthKit round-trip) and recomputes from the current
     /// field resolution. A no-op before the first `load()`, where `load()` will pick up the new
-    /// geometry itself; safe to call repeatedly.
+    /// geometry itself; safe to call repeatedly. Non-blocking: the pipeline runs off the main actor
+    /// and the refreshed analytics publish back here when done.
     func reanalyze() {
         guard hasLoaded else { return }
-        analytics = computeAnalytics(track: track)
+        scheduleAnalyticsRecompute()
+    }
+
+    /// Recompute analytics without blocking the main actor, coalescing bursts (e.g. a field edit
+    /// fanning out reanalyzes) into at most one in-flight pass plus one follow-up.
+    private func scheduleAnalyticsRecompute() {
+        needsReanalyze = true
+        guard analyticsTask == nil else { return }
+        analyticsTask = Task { [weak self] in
+            while let self, self.needsReanalyze {
+                self.needsReanalyze = false
+                let result = await self.computeAnalyticsOffMain()
+                self.publishAnalytics(result)
+            }
+            self?.analyticsTask = nil
+        }
+    }
+
+    /// Snapshot the pipeline's inputs on the main actor, run the pure computation on a background
+    /// task, and return the result here for publishing.
+    private func computeAnalyticsOffMain() async -> MatchAnalytics? {
+        let inputs = analyticsInputs()
+        return await Task.detached(priority: .userInitiated) {
+            Self.computeAnalytics(inputs: inputs)
+        }.value
+    }
+
+    private func publishAnalytics(_ result: MatchAnalytics?) {
+        analytics = result
+        analyticsRevision &+= 1
     }
 
     /// Whether this match has an on-pitch field whose corners can be adjusted — a real GPS match with
@@ -206,10 +252,37 @@ final class MatchDetailModel: ObservableObject {
 
     // MARK: - Analytics pipeline
 
+    /// Everything the pure pipeline needs, snapshotted on the main actor. All value types (the Kit
+    /// analytics types are Sendable), so `computeAnalytics` can run on a background task without
+    /// touching the model.
+    private struct AnalyticsInputs: Sendable {
+        var track: [TrackPoint]
+        var events: [MatchEvent]
+        var matchStart: Date
+        var matchEnd: Date
+        var format: MatchTrackerKit.MatchFormat
+        var heartRateSamples: [HeartRateSample]
+        var heartRate: (average: Double, maximum: Double)?
+        var knownField: ResolvedField?
+    }
+
+    private func analyticsInputs() -> AnalyticsInputs {
+        AnalyticsInputs(
+            track: track,
+            events: events,
+            matchStart: matchStart,
+            matchEnd: matchEnd,
+            format: matchFormat,
+            heartRateSamples: heartRateSamples,
+            heartRate: heartRate,
+            knownField: knownField()
+        )
+    }
+
     /// A degenerate field used only to satisfy `MatchAnalytics`'s projector-dependent fields for an
     /// indoor session that has no route. Those pieces (heatmap/runs/position) are never rendered for
     /// an indoor match — its detail view reduces to Workrate / Events / Video.
-    private static let indoorPlaceholderRectangle = OrientedRectangle(
+    private nonisolated static let indoorPlaceholderRectangle = OrientedRectangle(
         center: Coordinate2D(latitude: 0, longitude: 0),
         lengthMeters: 40, widthMeters: 20, headingDegrees: 0, corners: []
     )
@@ -218,13 +291,16 @@ final class MatchDetailModel: ObservableObject {
     /// geometry-derived playing intervals all treat a coordinate this far outside the touchline as
     /// still "on field". ~6 m absorbs GPS jitter and players who overrun the line without admitting
     /// warm-up laps, the bench, or the walk to the car.
-    private static let onFieldMarginMeters = 6.0
+    private nonisolated static let onFieldMarginMeters = 6.0
 
-    private func computeAnalytics(track: [TrackPoint]) -> MatchAnalytics? {
+    /// The pure pipeline — tens of thousands of GPS points across multiple passes, so it is
+    /// `nonisolated` and always invoked from a detached task, never on the main actor.
+    private nonisolated static func computeAnalytics(inputs: AnalyticsInputs) -> MatchAnalytics? {
+        let track = inputs.track
         // Manual sub events still drive the Events timeline, and stand in as the playing-interval
         // source for route-less sessions (below) where there's no geometry to derive them from.
         let recordedIntervals = SubstitutionTracker.playingIntervals(
-            events: events, matchStart: matchStart, matchEnd: matchEnd
+            events: inputs.events, matchStart: inputs.matchStart, matchEnd: inputs.matchEnd
         )
 
         // No route to place onto. Heart rate alone still scores workrate, so any route-less match
@@ -233,20 +309,20 @@ final class MatchDetailModel: ObservableObject {
         // projector-dependent pieces (heatmap/runs/position) stay empty; they are never fabricated.
         // Without HR (and not indoor, which always scores HR-only even at HR 0) there is nothing to
         // analyze.
-        guard let resolved = resolveField(track: track) else {
-            guard matchFormat == .indoor || !heartRateSamples.isEmpty else { return nil }
+        guard let resolved = resolveField(track: track, knownField: inputs.knownField) else {
+            guard inputs.format == .indoor || !inputs.heartRateSamples.isEmpty else { return nil }
             // HR-only path: pass an indoor context so WorkrateAnalyzer weights effort from heart
             // rate alone (its distance scaling is unused with no track) and stamps effort_source
             // "hr". This is the exact call the indoor branch makes — reused for any route-less match.
             let context = MatchContext(format: .indoor)
             var workrate = WorkrateAnalyzer.analyze(
                 track: track, runs: [], playingIntervals: recordedIntervals,
-                heartRate: heartRateSamples, context: context
+                heartRate: inputs.heartRateSamples, context: context
             )
-            if let heartRate { workrate.averageHeartRate = heartRate.average }
+            if let heartRate = inputs.heartRate { workrate.averageHeartRate = heartRate.average }
             return MatchAnalytics(
-                rectangle: Self.indoorPlaceholderRectangle,
-                projector: FieldProjector(rectangle: Self.indoorPlaceholderRectangle),
+                rectangle: indoorPlaceholderRectangle,
+                projector: FieldProjector(rectangle: indoorPlaceholderRectangle),
                 fieldName: nil,
                 fieldSource: nil,
                 playingIntervals: recordedIntervals,
@@ -260,7 +336,7 @@ final class MatchDetailModel: ObservableObject {
         }
 
         let projector = FieldProjector(rectangle: resolved.rectangle)
-        let context = MatchContext(format: matchFormat,
+        let context = MatchContext(format: inputs.format,
                                    fieldLengthMeters: resolved.rectangle.lengthMeters)
 
         // Everything below is projected through THIS field, so re-running it after a corner edit
@@ -272,14 +348,14 @@ final class MatchDetailModel: ObservableObject {
         // Fall back to the recorded-event intervals only if the deriver yields nothing.
         let derived = PlayIntervalDeriver.playingIntervals(
             track: track, field: resolved.rectangle,
-            matchStart: matchStart, matchEnd: matchEnd, marginMeters: Self.onFieldMarginMeters
+            matchStart: inputs.matchStart, matchEnd: inputs.matchEnd, marginMeters: onFieldMarginMeters
         )
         let intervals = derived.isEmpty ? recordedIntervals : derived
 
         // Reclip: heatmap and position are placed only from ON-FIELD points, so off-field warm-up
         // laps, the bench, and the walk-off never smear onto the pitch or bias the position dot.
         let onFieldTrack = track.filter {
-            projector.isOnField($0.coordinate, marginMeters: Self.onFieldMarginMeters)
+            projector.isOnField($0.coordinate, marginMeters: onFieldMarginMeters)
         }
 
         let heatmap = HeatmapGrid.compute(
@@ -293,11 +369,11 @@ final class MatchDetailModel: ObservableObject {
 
         var workrate = WorkrateAnalyzer.analyze(
             track: track, runs: runs, playingIntervals: intervals,
-            heartRate: heartRateSamples, context: context
+            heartRate: inputs.heartRateSamples, context: context
         )
-        if let heartRate { workrate.averageHeartRate = heartRate.average }
+        if let heartRate = inputs.heartRate { workrate.averageHeartRate = heartRate.average }
         let position = PositionAnalyzer.estimate(
-            points: onFieldTrack, projector: projector, events: events, playingIntervals: intervals
+            points: onFieldTrack, projector: projector, events: inputs.events, playingIntervals: intervals
         )
         // Industry-standard load metrics from the GPS route + on-pitch intervals — surfaced next
         // to the workrate so our numbers speak the same language as STATSports/Catapult.
@@ -318,40 +394,47 @@ final class MatchDetailModel: ObservableObject {
 
     /// Whether the majority of a run's track points lie on the field — the clip test that keeps
     /// off-pitch excursions (warm-up jog, walk to the bench) out of the runs set.
-    private func isOnFieldRun(_ run: RunSegment, track: [TrackPoint], projector: FieldProjector) -> Bool {
+    private nonisolated static func isOnFieldRun(_ run: RunSegment, track: [TrackPoint], projector: FieldProjector) -> Bool {
         let lower = max(0, run.pointRange.lowerBound)
         let upper = min(track.count, run.pointRange.upperBound)
         guard lower < upper else { return false }
         let points = track[lower..<upper]
         let onField = points.reduce(0) {
-            $0 + (projector.isOnField($1.coordinate, marginMeters: Self.onFieldMarginMeters) ? 1 : 0)
+            $0 + (projector.isOnField($1.coordinate, marginMeters: onFieldMarginMeters) ? 1 : 0)
         }
         return onField * 2 >= points.count
     }
 
-    private struct ResolvedField {
+    private struct ResolvedField: Sendable {
         var rectangle: OrientedRectangle
         var name: String?
         var source: FieldSource?
     }
 
-    private func resolveField(track: [TrackPoint]) -> ResolvedField? {
+    /// Field-resolution steps that need the main-actor models — run at input capture, before the
+    /// pipeline hops off the main actor. The track-fitting fallbacks run inside `resolveField`.
+    private func knownField() -> ResolvedField? {
         // 1. Explicit field id on the record.
         if let fieldID = record?.fieldID, let field = fields.field(id: fieldID) {
             return ResolvedField(rectangle: field.rectangle, name: field.name, source: field.source)
         }
         // 2. Best geometric match against saved fields.
-        let coordinates = track.map(\.coordinate)
-        if let matched = fields.store.bestMatch(for: coordinates) {
+        if let matched = fields.store.bestMatch(for: track.map(\.coordinate)) {
             return ResolvedField(rectangle: matched.rectangle, name: matched.name, source: matched.source)
         }
+        return nil
+    }
+
+    private nonisolated static func resolveField(track: [TrackPoint], knownField: ResolvedField?) -> ResolvedField? {
+        // 1–2. Explicit field id / best saved-field match, resolved on the main actor at capture.
+        if let knownField { return knownField }
         // 3. Fit a rectangle from the track itself — the robust dense-core fit (rejects warm-up
         //    walks / bench stints), NOT a bounding box, so an inferred field lands on the pitch.
         if let fitted = FieldFitter.fitFieldRectangle(track: track) {
             return ResolvedField(rectangle: fitted, name: nil, source: .inferred)
         }
         // 4. Last resort: naive bounding rectangle so the views still render.
-        if let naive = FieldGeometry.fitOrientedRectangle(to: coordinates) {
+        if let naive = FieldGeometry.fitOrientedRectangle(to: track.map(\.coordinate)) {
             return ResolvedField(rectangle: naive, name: nil, source: nil)
         }
         return nil

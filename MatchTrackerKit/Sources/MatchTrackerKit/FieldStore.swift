@@ -37,11 +37,18 @@ public final class FieldStore {
         try persist()
     }
 
+    /// Replace the whole field list with a single persist — for mirroring an authoritative
+    /// list (e.g. from the paired phone) without one encode + disk write per field.
+    public func replaceAll(_ fields: [FieldModel]) throws {
+        self.fields = fields
+        try persist()
+    }
+
     private func persist() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(fields)
         try data.write(to: fileURL, options: .atomic)
     }

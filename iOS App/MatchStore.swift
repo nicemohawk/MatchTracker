@@ -22,10 +22,10 @@ struct MatchBadge: Codable, Equatable {
 /// The minimum a Matches-list row needs to render its top-line numbers (date, duration, distance)
 /// with NO HealthKit round-trip. Persisted once per refresh so a cold launch paints the last-known
 /// list synchronously from disk, before the anchored HK workout query has returned. Everything else
-/// a row shows — field name, route glyph, position — already comes from the badge cache (also loaded
-/// synchronously); score / format / reported positions come from the on-disk `MatchRecord`, loaded
-/// synchronously too. So this snapshot only needs to carry the workout-derived values HK is the sole
-/// source of.
+/// a row shows — field name, route glyph, position — comes from the badge cache; score / format /
+/// reported positions come from the on-disk `MatchRecord`s. Both of those decode asynchronously
+/// off the pre-paint path and attach moments later. So this snapshot only needs to carry the
+/// workout-derived values HK is the sole source of.
 struct PersistedMatchSummary: Codable, Equatable {
     let id: UUID
     let startDate: Date
@@ -85,15 +85,23 @@ final class MatchStore: ObservableObject {
     /// month-grouped precompute refreshes once when cold-cache rows reconcile into workout-backed
     /// ones, even though the id set (and thus scroll identity) is unchanged.
     @Published private(set) var reconcileToken = 0
+    /// Monotonic version of the list's inputs: bumped on any `matches` mutation and when the async
+    /// badge-cache decode lands. The Matches list keys its precompute rebuild on this instead of
+    /// hashing every match id per body evaluation.
+    @Published private(set) var contentVersion = 0
 
     let healthKit: HealthKitService
     let fields: FieldsModel
 
     private var detailCache: [UUID: MatchDetailModel] = [:]
 
-    /// Persisted row-badge cache (see `MatchBadge`), loaded once from the app-group container so the
-    /// Matches list paints without recomputing analytics per row on every cold launch.
+    /// Persisted row-badge cache (see `MatchBadge`), decoded asynchronously off the pre-paint path
+    /// (its consumers all run post-paint) so the Matches list paints without recomputing analytics
+    /// per row on every cold launch.
     private var badgeCache: [UUID: MatchBadge] = [:]
+    /// The in-flight badge-cache decode; `loadedBadge(for:)` awaits it so the expensive per-row
+    /// cold path never fires just because the cache "looks empty" while still loading.
+    private var badgeCacheLoadTask: Task<Void, Never>?
     private static let badgeCacheFileName = "matchBadges.json"
     /// Persisted lightweight row snapshots (see `PersistedMatchSummary`) so the list paints the
     /// last-known rows synchronously on cold launch, before the HK workout query returns.
@@ -105,10 +113,51 @@ final class MatchStore: ObservableObject {
     init(healthKit: HealthKitService = .shared, fields: FieldsModel) {
         self.healthKit = healthKit
         self.fields = fields
-        badgeCache = Self.loadBadgeCache()
-        // Synchronously rehydrate the last-known list from disk so the first body evaluation renders
-        // the full history immediately, then `refresh()` reconciles it against HealthKit in place.
-        matches = Self.hydrateFromCache(records: loadRecords())
+        // Synchronously rehydrate the last-known list from the summary snapshots alone — one small
+        // file, no per-record decode — so the first body evaluation renders the full history
+        // immediately. Records and badges decode off the main actor and attach post-paint;
+        // `refresh()` then reconciles everything against HealthKit in place.
+        matches = Self.hydrateFromCache()
+
+        badgeCacheLoadTask = Task(priority: .userInitiated) { [weak self] in
+            let loaded = await Task.detached(priority: .userInitiated) { Self.loadBadgeCache() }.value
+            guard let self, !loaded.isEmpty else { return }
+            // Badges stored while the decode was in flight are fresher — they win the merge.
+            self.badgeCache = loaded.merging(self.badgeCache) { _, fresh in fresh }
+            self.contentVersion &+= 1
+        }
+        initialRecordsAttach = Task(priority: .userInitiated) { [weak self] in
+            let records = await Task.detached(priority: .userInitiated) { Self.loadRecordsFromDisk() }.value
+            self?.attach(records: records)
+        }
+    }
+
+    /// The init-time record load + attach. `refresh()` awaits it before diffing "newly arrived"
+    /// matches, so records already on disk at launch are never mistaken for new arrivals.
+    private var initialRecordsAttach: Task<Void, Never>?
+
+    /// Join freshly loaded records onto the cold-cache rows (which start record-less) and surface
+    /// records that have no snapshot yet. No-op once `refresh()` has already reconciled.
+    private func attach(records: [UUID: MatchRecord]) {
+        guard !records.isEmpty else { return }
+        var updated = false
+        var merged = matches.map { summary -> MatchSummary in
+            guard summary.record == nil, let record = records[summary.id] else { return summary }
+            updated = true
+            return MatchSummary(id: summary.id, workout: summary.workout, record: record,
+                                cached: summary.cached)
+        }
+        let knownIDs = Set(matches.map(\.id))
+        let extras = records.values
+            .filter { !knownIDs.contains($0.id) }
+            .map { MatchSummary(id: $0.id, workout: nil, record: $0) }
+        if !extras.isEmpty {
+            merged = (merged + extras).sorted { $0.startDate > $1.startDate }
+            updated = true
+        }
+        guard updated else { return }
+        matches = merged
+        contentVersion &+= 1
     }
 
     func refresh() async {
@@ -141,10 +190,12 @@ final class MatchStore: ObservableObject {
             mark("fetchSoccerWorkouts (\(workouts.count))", workoutsStart)
             let recordsStart = Date()
             #endif
-            let records = loadRecords()
+            let records = await Task.detached(priority: .userInitiated) { Self.loadRecordsFromDisk() }.value
             #if DEBUG
             mark("loadRecords (\(records.count))", recordsStart)
             #endif
+            // Let the init-time attach land first so launch-present records never read as new.
+            await initialRecordsAttach?.value
             let previousIDs = Set(matches.map(\.id))
 
             let workoutSummaries = workouts.map { workout in
@@ -161,7 +212,8 @@ final class MatchStore: ObservableObject {
             matches = (workoutSummaries + orphanSummaries).sorted { $0.startDate > $1.startDate }
             didCompleteInitialLoad = true
             reconcileToken &+= 1
-            persistSummaries()
+            contentVersion &+= 1
+            schedulePersistSummaries()
 
             let newlyArrived = matches.filter { !previousIDs.contains($0.id) && $0.record != nil }
             if !previousIDs.isEmpty || !newlyArrived.isEmpty {
@@ -178,34 +230,46 @@ final class MatchStore: ObservableObject {
 
     // MARK: - Cold-launch summary cache
 
-    private static var summaryCacheURL: URL {
+    nonisolated private static var summaryCacheURL: URL {
         AppGroup.containerURL.appendingPathComponent(summaryCacheFileName)
     }
 
-    /// Rebuild the last-known Matches list synchronously from disk: the persisted row snapshots
-    /// (workout-derived numbers) joined with the on-disk records (score / format / positions).
-    /// Returns [] on a first-ever launch with no cache, where the list shows skeleton rows instead.
-    private static func hydrateFromCache(records: [UUID: MatchRecord]) -> [MatchSummary] {
+    /// Rebuild the last-known Matches list synchronously from the persisted row snapshots (which
+    /// cover every match, orphans included — `schedulePersistSummaries` maps the full array). Rows
+    /// start record-less; `attach(records:)` joins the score / format / positions once the record
+    /// decode lands. Returns [] on a first-ever launch with no cache (skeleton rows show instead).
+    private static func hydrateFromCache() -> [MatchSummary] {
         guard let data = try? Data(contentsOf: summaryCacheURL),
-              let snapshots = try? JSONDecoder().decode([PersistedMatchSummary].self, from: data),
-              !snapshots.isEmpty else { return [] }
-
-        let snapshotIDs = Set(snapshots.map(\.id))
-        var summaries = snapshots.map { snapshot in
-            MatchSummary(id: snapshot.id, workout: nil, record: records[snapshot.id], cached: snapshot)
-        }
-        // A record that arrived since the last persist (no snapshot yet) still surfaces immediately.
-        summaries += records.values
-            .filter { !snapshotIDs.contains($0.id) }
-            .map { MatchSummary(id: $0.id, workout: nil, record: $0, cached: nil) }
-
-        return summaries.sorted { $0.startDate > $1.startDate }
+              let snapshots = try? JSONDecoder().decode([PersistedMatchSummary].self, from: data)
+        else { return [] }
+        // Snapshots are persisted pre-sorted — no re-sort needed.
+        return snapshots.map { MatchSummary(id: $0.id, workout: nil, record: nil, cached: $0) }
     }
 
-    private func persistSummaries() {
-        let snapshots = matches.map(\.persistable)
-        guard let data = try? JSONEncoder().encode(snapshots) else { return }
-        try? data.write(to: Self.summaryCacheURL, options: .atomic)
+    private var pendingSummaryPersist: Task<Void, Never>?
+    private var summaryPersistDirty = false
+
+    /// Debounced, off-main snapshot persist: bursts of refreshes (e.g. several watch-received
+    /// records in a row) coalesce into one encode + atomic write, and the encode — which walks
+    /// `persistable`, doing a HealthKit statistics lookup per row — never runs on the main actor
+    /// (HKWorkout is immutable, safe to read from any thread).
+    private func schedulePersistSummaries() {
+        summaryPersistDirty = true
+        pendingSummaryPersist?.cancel()
+        pendingSummaryPersist = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.summaryPersistDirty = false
+            Self.writeSummaries(self.matches)
+        }
+    }
+
+    private nonisolated static func writeSummaries(_ summaries: [MatchSummary]) {
+        Task.detached(priority: .utility) {
+            let snapshots = summaries.map(\.persistable)
+            guard let data = try? JSONEncoder().encode(snapshots) else { return }
+            try? data.write(to: summaryCacheURL, options: .atomic)
+        }
     }
 
     // MARK: - Row badge cache
@@ -216,27 +280,67 @@ final class MatchStore: ObservableObject {
         badgeCache[id]
     }
 
+    /// `cachedBadge(for:)`, but awaiting the async cache decode first — for callers about to run
+    /// the expensive cold path, so a still-loading cache is never mistaken for a cache miss.
+    func loadedBadge(for id: UUID) async -> MatchBadge? {
+        await badgeCacheLoadTask?.value
+        return badgeCache[id]
+    }
+
     /// Store (or refresh) the badge for a match and persist the cache. Called once per match after
     /// its first analytics load.
     func storeBadge(_ badge: MatchBadge, for id: UUID) {
         guard badgeCache[id] != badge else { return }
         badgeCache[id] = badge
-        persistBadgeCache()
+        schedulePersistBadgeCache()
     }
 
-    private static var badgeCacheURL: URL {
+    nonisolated private static var badgeCacheURL: URL {
         AppGroup.containerURL.appendingPathComponent(badgeCacheFileName)
     }
 
-    private static func loadBadgeCache() -> [UUID: MatchBadge] {
+    nonisolated private static func loadBadgeCache() -> [UUID: MatchBadge] {
         guard let data = try? Data(contentsOf: badgeCacheURL),
               let decoded = try? JSONDecoder().decode([UUID: MatchBadge].self, from: data) else { return [:] }
         return decoded
     }
 
-    private func persistBadgeCache() {
-        guard let data = try? JSONEncoder().encode(badgeCache) else { return }
-        try? data.write(to: Self.badgeCacheURL, options: .atomic)
+    private var pendingBadgePersist: Task<Void, Never>?
+    private var badgePersistDirty = false
+
+    /// Debounced, off-main badge-cache persist: a first full scroll stores a badge per row, so
+    /// writing the whole dict per store would be O(n²) write volume — coalesce into one write.
+    private func schedulePersistBadgeCache() {
+        badgePersistDirty = true
+        pendingBadgePersist?.cancel()
+        pendingBadgePersist = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.badgePersistDirty = false
+            Self.writeBadgeCache(self.badgeCache)
+        }
+    }
+
+    private nonisolated static func writeBadgeCache(_ cache: [UUID: MatchBadge]) {
+        Task.detached(priority: .utility) {
+            guard let data = try? JSONEncoder().encode(cache) else { return }
+            try? data.write(to: badgeCacheURL, options: .atomic)
+        }
+    }
+
+    /// Flush any debounced cache writes immediately (skipping the remaining delay) — called when
+    /// the app backgrounds so a pending persist isn't lost if the process is killed.
+    func flushPendingPersists() {
+        if badgePersistDirty {
+            pendingBadgePersist?.cancel()
+            badgePersistDirty = false
+            Self.writeBadgeCache(badgeCache)
+        }
+        if summaryPersistDirty {
+            pendingSummaryPersist?.cancel()
+            summaryPersistDirty = false
+            Self.writeSummaries(matches)
+        }
     }
 
     /// Cached detail model for a match; call `load()` on it to fetch the track and analytics.
@@ -247,6 +351,22 @@ final class MatchStore: ObservableObject {
         model.persist = { [weak self] record in self?.save(record: record) }
         detailCache[summary.id] = model
         return model
+    }
+
+    /// Memoized venue clustering — O(fields²) to build, so it's cached until the saved fields
+    /// change. Keyed by field ids AND centers, catching geometry edits that keep the same id set
+    /// (e.g. watch-received field updates that bypass `invalidateForFieldChange`).
+    private var venueMapCache: (ids: [UUID], centers: [Coordinate2D], map: VenueMap)?
+
+    private func currentVenueMap() -> VenueMap {
+        let ids = fields.fields.map(\.id)
+        let centers = fields.fields.map(\.rectangle.center)
+        if let cached = venueMapCache, cached.ids == ids, cached.centers == centers {
+            return cached.map
+        }
+        let map = VenueClustering.venueMap(fields: fields.fields)
+        venueMapCache = (ids, centers, map)
+        return map
     }
 
     /// One analyzed match's heatmap plus the metadata the Compare cohort filters on: which venue its
@@ -265,8 +385,9 @@ final class MatchStore: ObservableObject {
     /// only — never triggers a HealthKit load, so the cohort grows lazily as matches are opened
     /// (same as today's season average). Indoor / route-less matches carry an empty grid and are
     /// dropped by the shape filter.
-    func cohortHeatmapEntries(excluding excludedID: UUID, matchingShapeOf template: HeatmapGrid) -> [CohortHeatmapEntry] {
-        let venueMap = VenueClustering.venueMap(fields: fields.fields)
+    func cohortHeatmapEntries(excluding excludedID: UUID, matchingShapeOf template: HeatmapGrid,
+                              venueMap: VenueMap? = nil) -> [CohortHeatmapEntry] {
+        let venueMap = venueMap ?? currentVenueMap()
         return detailCache.compactMap { id, model in
             guard id != excludedID, let analytics = model.analytics else { return nil }
             let heatmap = analytics.heatmap
@@ -292,10 +413,11 @@ final class MatchStore: ObservableObject {
               analytics.heatmap.columns > 0, !analytics.heatmap.cells.isEmpty else { return nil }
 
         let format = detail.matchFormat
-        let entries = cohortHeatmapEntries(excluding: detail.matchIdentifier, matchingShapeOf: analytics.heatmap)
+        let venueMap = currentVenueMap()
+        let entries = cohortHeatmapEntries(excluding: detail.matchIdentifier,
+                                           matchingShapeOf: analytics.heatmap, venueMap: venueMap)
         guard !entries.isEmpty else { return nil }
 
-        let venueMap = VenueClustering.venueMap(fields: fields.fields)
         let currentVenue = analytics.rectangle.corners.count == 4
             ? venueMap.venue(forCenter: analytics.rectangle.center) : nil
         let now = Date()
@@ -377,6 +499,12 @@ final class MatchStore: ObservableObject {
     // MARK: - Match record persistence
 
     func loadRecords() -> [UUID: MatchRecord] {
+        Self.loadRecordsFromDisk()
+    }
+
+    /// Decode every on-disk match record — hundreds of file reads + JSON decodes (records carry
+    /// large `headings` arrays), so this is nonisolated to run off the main actor via Task.detached.
+    nonisolated private static func loadRecordsFromDisk() -> [UUID: MatchRecord] {
         let decoder = MatchTrackerJSON.decoder()
         var result: [UUID: MatchRecord] = [:]
         let urls = (try? FileManager.default.contentsOfDirectory(
@@ -401,12 +529,13 @@ final class MatchStore: ObservableObject {
         // The stored badge (position / field / route) may be stale after an edit — drop it so the
         // row recomputes once from the refreshed detail model.
         if badgeCache.removeValue(forKey: record.id) != nil {
-            persistBadgeCache()
+            schedulePersistBadgeCache()
         }
 
         if let index = matches.firstIndex(where: { $0.id == record.id }) {
             let summary = MatchSummary(id: record.id, workout: matches[index].workout, record: record)
             matches[index] = summary
+            contentVersion &+= 1
             detailCache[record.id]?.updateRecord(record)
         }
     }
@@ -421,14 +550,27 @@ final class MatchStore: ObservableObject {
     /// drop every cached badge (rows recompute lazily on next render) and reproject every cached
     /// detail model (which also refreshes the Compare cohort / `runBaselines`, both derived from it).
     func invalidateForFieldChange() {
+        venueMapCache = nil
         if !badgeCache.isEmpty {
             badgeCache.removeAll()
-            persistBadgeCache()
+            schedulePersistBadgeCache()
         }
-        for model in detailCache.values {
-            model.reanalyze()
+        // Reanalyze incrementally, yielding between models so a big cache never stalls the main
+        // actor in one burst. Restarting on re-entry coalesces the repeated invalidations a single
+        // field save can fire.
+        reanalyzeTask?.cancel()
+        let models = Array(detailCache.values)
+        reanalyzeTask = Task {
+            for model in models {
+                guard !Task.isCancelled else { return }
+                model.reanalyze()
+                await Task.yield()
+            }
         }
     }
+
+    /// The in-flight incremental reanalysis pass from `invalidateForFieldChange`.
+    private var reanalyzeTask: Task<Void, Never>?
 
     static func decodeRecord(from url: URL) -> MatchRecord? {
         guard let data = try? Data(contentsOf: url) else { return nil }

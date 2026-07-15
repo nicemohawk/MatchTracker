@@ -18,8 +18,13 @@ struct MatchTrackerWatchApp: App {
                 .environment(connectivity)
                 .task {
                     connectivity.activate()
-                    await workoutManager.requestAuthorization()
-                    await workoutManager.recoverActiveWorkoutSession()
+                    // Prime the field store (a full fields.json decode) off the main thread so
+                    // StartView's first field detection doesn't pay for it mid-render.
+                    Task.detached(priority: .userInitiated) { _ = AppGroupStorage.fieldStore }
+                    // The HealthKit calls are independent — run them concurrently.
+                    async let authorization: Void = workoutManager.requestAuthorization()
+                    async let recovery: Void = workoutManager.recoverActiveWorkoutSession()
+                    _ = await (authorization, recovery)
                 }
                 .onOpenURL { url in
                     // Widget deep link: jump straight into the pre-match countdown.
