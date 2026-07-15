@@ -101,3 +101,14 @@ social), AllTrails (maps), Apple Fitness/Workout (rings, live metrics, sharing).
   hard assertions prevent wrong-mode captures.
 - Every screen/sheet/mode on both platforms has now had a design pass + live capture review.
   Accepted-manual leftovers: widget gallery visuals, iPad landscape (headless rotation blocked).
+
+## Wave 10 shipped (user-driven Fields redesign)
+
+- Fields tab: custom drawer DELETED. Standard patterns: control column (locate/zoom/style),
+  "N fields" pill -> standard sheet, Add Field + Scan capsules, scan-result banner (never
+  silent), single dismissible empty hint. Light + dark capture-verified.
+- Detector rebuilt: VNDetectRectangles candidates + grass/line-ridge scoring, multi-scale;
+  validated on real complexes (3/3 found, 2 negative controls clean, <1.6s).
+- Add Field: one locate button; opens on the region framed in Fields; adjust phase — after
+  4th corner, draggable numbered handles fine-tune before save (-AddFieldSeedCorners DEBUG
+  hook for deterministic capture).

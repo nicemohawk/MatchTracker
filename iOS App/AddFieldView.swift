@@ -15,8 +15,24 @@ struct AddFieldView: View {
 
     @State private var corners: [CLLocationCoordinate2D] = []
     @State private var name = "New Field"
-    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var cameraPosition: MapCameraPosition
     @State private var visibleRegion: MKCoordinateRegion?
+
+    /// Opens framed on the region the user was already viewing on the Fields map — they've
+    /// usually just centered their pitch there, so re-framing from scratch would be hostile.
+    init(initialRegion: MKCoordinateRegion? = nil) {
+        if let initialRegion {
+            _cameraPosition = State(initialValue: .region(initialRegion))
+            _visibleRegion = State(initialValue: initialRegion)
+        } else {
+            _cameraPosition = State(initialValue: .userLocation(fallback: .automatic))
+        }
+    }
+    /// Bumped continuously while the camera moves so the adjust-phase handle overlay (whose
+    /// positions come from `proxy.convert`) re-renders in lockstep with the map.
+    @State private var cameraTick = 0
+    /// Corner index currently being dragged in the adjust phase (drives the grab affordance).
+    @State private var grabbedCorner: Int?
     /// Owned locally so `MapUserLocationButton` / the locate control have an authorization to work
     /// with; mirrors the Fields map's when-in-use pattern.
     @State private var locationManager = CLLocationManager()
@@ -48,7 +64,12 @@ struct AddFieldView: View {
                         .tint(Theme.bench)
                 }
             }
-            .onAppear(perform: requestLocationIfNeeded)
+            .onAppear {
+                requestLocationIfNeeded()
+#if DEBUG
+                seedCornersIfRequested()
+#endif
+            }
         }
     }
 
@@ -57,12 +78,16 @@ struct AddFieldView: View {
     private var mapSection: some View {
         MapReader { proxy in
             Map(position: $cameraPosition) {
-                ForEach(Array(corners.enumerated()), id: \.offset) { index, coordinate in
-                    Annotation("\(index + 1)", coordinate: coordinate) {
-                        Image(systemName: "\(index + 1).circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white, Theme.turf)
-                            .shadow(radius: 2)
+                // Numbered pins guide placement; in the adjust phase (4 corners down) the
+                // draggable handle overlay replaces them.
+                if corners.count < 4 {
+                    ForEach(Array(corners.enumerated()), id: \.offset) { index, coordinate in
+                        Annotation("\(index + 1)", coordinate: coordinate) {
+                            Image(systemName: "\(index + 1).circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.white, Theme.turf)
+                                .shadow(radius: 2)
+                        }
                     }
                 }
                 if corners.count >= 3 {
@@ -77,9 +102,12 @@ struct AddFieldView: View {
                 }
             }
             .mapStyle(.hybrid(elevation: .flat))
-            .mapControls { MapUserLocationButton() }
-            .onMapCameraChange(frequency: .onEnd) { context in
+            // No MapUserLocationButton: the control column below already has a locate button, and
+            // the system one renders top-right where it collides with the status bar (user report).
+            .mapControls { }
+            .onMapCameraChange(frequency: .continuous) { context in
                 visibleRegion = context.region
+                cameraTick &+= 1
             }
             .onTapGesture { location in
                 guard corners.count < 4,
@@ -87,20 +115,81 @@ struct AddFieldView: View {
                 corners.append(coordinate)
                 Haptics.selection()
             }
+            // The handle overlay is a SIBLING above the Map, not an annotation inside it, so a
+            // handle's drag gesture never fights the map's pan — touches on a handle stop at the
+            // handle; everywhere else falls through to the map.
+            .overlay { adjustHandles(proxy: proxy) }
             .overlay(alignment: .trailing) { controlColumn }
+            .coordinateSpace(name: Self.mapSpace)
         }
+    }
+
+    private static let mapSpace = "addFieldMap"
+
+    /// Adjust phase: once all four corners are down, each becomes a draggable handle so a
+    /// misplaced tap can be fixed before saving (user request). Positions derive from the map
+    /// camera every frame via `proxy.convert`; `cameraTick` keeps them glued during pans/zooms.
+    @ViewBuilder
+    private func adjustHandles(proxy: MapProxy) -> some View {
+        if corners.count == 4 {
+            ZStack {
+                // Reading cameraTick makes this overlay re-evaluate while the camera moves.
+                let _ = cameraTick
+                ForEach(Array(corners.enumerated()), id: \.offset) { index, coordinate in
+                    if let point = proxy.convert(coordinate, to: .local) {
+                        cornerHandle(index: index)
+                            .position(point)
+                            .gesture(
+                                DragGesture(minimumDistance: 0,
+                                            coordinateSpace: .named(Self.mapSpace))
+                                    .onChanged { value in
+                                        if grabbedCorner != index {
+                                            grabbedCorner = index
+                                            Haptics.selection()
+                                        }
+                                        if let moved = proxy.convert(value.location, from: .local) {
+                                            corners[index] = moved
+                                        }
+                                    }
+                                    .onEnded { _ in grabbedCorner = nil }
+                            )
+                    }
+                }
+            }
+            .allowsHitTesting(true)
+        }
+    }
+
+    private func cornerHandle(index: Int) -> some View {
+        ZStack {
+            Circle()
+                .fill(Theme.turf.opacity(grabbedCorner == index ? 0.45 : 0.28))
+            Circle()
+                .strokeBorder(Theme.turf, lineWidth: 2)
+            Text("\(index + 1)")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .shadow(radius: 1)
+        }
+        .frame(width: 34, height: 34)
+        .scaleEffect(grabbedCorner == index ? 1.25 : 1)
+        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+        // A generous grab target beyond the visible circle — corners are fine-motor targets.
+        .contentShape(Circle().inset(by: -12))
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: grabbedCorner)
+        .accessibilityLabel("Corner \(index + 1) — drag to adjust")
     }
 
     private var controlColumn: some View {
         VStack(spacing: 12) {
-            mapControlButton("plus.magnifyingglass", label: "Zoom in") { zoom(by: 0.5) }
-            mapControlButton("minus.magnifyingglass", label: "Zoom out") { zoom(by: 2) }
             mapControlButton("location.fill", label: "Center on my location") {
                 withAnimation(.easeInOut(duration: 0.4)) {
                     cameraPosition = .userLocation(fallback: .automatic)
                 }
                 Haptics.selection()
             }
+            mapControlButton("plus.magnifyingglass", label: "Zoom in") { zoom(by: 0.5) }
+            mapControlButton("minus.magnifyingglass", label: "Zoom out") { zoom(by: 2) }
         }
         .padding(.trailing, 14)
         .padding(.bottom, 16)
@@ -227,7 +316,7 @@ struct AddFieldView: View {
     private var instruction: String {
         switch corners.count {
         case 0: return "Tap the map to place the first corner."
-        case 4: return "All 4 corners placed. Name it, then save."
+        case 4: return "Drag any corner to fine-tune. Name it, then save."
         default: return "Corner \(corners.count + 1) of 4 — tap the next field corner."
         }
     }
@@ -239,6 +328,28 @@ struct AddFieldView: View {
             locationManager.requestWhenInUseAuthorization()
         }
     }
+
+#if DEBUG
+    /// UI-test hook: "-AddFieldSeedCorners" places four corners around the visible center so the
+    /// adjust phase (draggable handles) can be captured deterministically — synthetic XCUI taps
+    /// don't reliably reach the Map's tap gesture. DEBUG builds only.
+    private func seedCornersIfRequested() {
+        guard ProcessInfo.processInfo.arguments.contains("-AddFieldSeedCorners"),
+              corners.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            guard corners.isEmpty, let region = visibleRegion else { return }
+            let latInset = region.span.latitudeDelta * 0.22
+            let lonInset = region.span.longitudeDelta * 0.22
+            let center = region.center
+            corners = [
+                CLLocationCoordinate2D(latitude: center.latitude + latInset, longitude: center.longitude - lonInset),
+                CLLocationCoordinate2D(latitude: center.latitude + latInset, longitude: center.longitude + lonInset),
+                CLLocationCoordinate2D(latitude: center.latitude - latInset, longitude: center.longitude + lonInset),
+                CLLocationCoordinate2D(latitude: center.latitude - latInset, longitude: center.longitude - lonInset),
+            ]
+        }
+    }
+#endif
 
     private func save() {
         guard let rectangle = fittedRectangle else { return }

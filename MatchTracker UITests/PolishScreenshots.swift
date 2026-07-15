@@ -23,7 +23,9 @@ final class PolishScreenshots: XCTestCase {
     // out sideways with a letterbox band. Landscape review needs a manually rotated simulator.
     func testCaptureNewSurfaces() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-hasOnboarded", "YES"]
+        // -AddFieldSeedCorners: DEBUG hook that auto-places 4 corners in Add Field so the
+        // adjust phase (draggable handles) is capturable — synthetic taps don't reach the Map.
+        app.launchArguments += ["-hasOnboarded", "YES", "-AddFieldSeedCorners"]
         app.launch()
         handleHealthKitPrompt(app: app)
 
@@ -71,54 +73,62 @@ final class PolishScreenshots: XCTestCase {
         sleep(2)
         export("31-team-tab", app: app)
 
-        // Fields: the custom drawer must leave the tab bar visible (user-reported regression).
+        // Fields: a full-bleed map with floating standard controls (no custom drawer). The tab bar
+        // stays visible; the trailing control column, bottom-leading list pill, and bottom-trailing
+        // Add Field / Scan actions all float clear of it.
         _ = selectTab("Fields", expectingNavBar: "Fields", in: app)
         dismissLocationPromptIfPresent(timeout: 5)
         sleep(2)
-        export("34-fields-drawer", app: app)
+        export("34-fields-map", app: app)
+
+        // Add Field capsule is always visible in the bottom-trailing action stack.
         let addField = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS[c] 'add field' OR label == 'Add'")).firstMatch
+            NSPredicate(format: "label CONTAINS[c] 'add field'")).firstMatch
         if addField.waitForExistence(timeout: 4) && addField.isHittable {
             addField.tap()
             sleep(2)
             export("35-add-field-sheet", app: app)
+
+            // The -AddFieldSeedCorners DEBUG hook auto-places 4 corners ~1.2s after appear,
+            // entering the ADJUST phase: pins become draggable handles and the instruction flips
+            // to "Drag any corner to fine-tune."
+            let adjustHint = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] 'fine-tune'")).firstMatch
+            _ = adjustHint.waitForExistence(timeout: 8)
+            sleep(1)
+            export("35b-add-field-adjust", app: app)
+
             let cancel = app.buttons["Cancel"]
-            if cancel.exists && cancel.isHittable { cancel.tap() }
+            if cancel.waitForExistence(timeout: 3) && cancel.isHittable { cancel.tap() }
+            sleep(1)
         }
 
-        // Drawer expanded state: the drawer is a custom floating card whose grabber/summary header
-        // is the only drag target (FieldsDrawer.swift). Anchor the drag to the summary text (the
-        // hint line, or the "· nearest …" subtitle) rather than a magic coordinate, since the peek
-        // card floats above the tab bar at a height that varies with the device. Drag it up to the
-        // half snap to reveal the actions row and field list, then drag back down to the peek.
-        let drawerHandle = app.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS[c] 'Swipe up to browse' OR label CONTAINS[c] 'nearest'")).firstMatch
-        if drawerHandle.waitForExistence(timeout: 4) {
-            let raisedTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40))
-            drawerHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                .press(forDuration: 0.2, thenDragTo: raisedTarget)
-            sleep(1)
-            export("36-fields-drawer-expanded", app: app)
+        // List pill → standard fields sheet (detents medium/large). The pill's accessibility label
+        // ends in "Open list."; tapping it presents FieldsListSheet with the place-card rows.
+        let listPill = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'open list'")).firstMatch
+        if listPill.waitForExistence(timeout: 4) && listPill.isHittable {
+            listPill.tap()
+            sleep(2)
+            export("36-fields-list-sheet", app: app)
 
-            // Field detail sheet: with the drawer expanded, tap the demo "Demo Park" field row to
-            // present FieldDetailSheet (the reskinned hero / mini-stats / action-row surface). The
-            // row is a Button whose accessibility label concatenates the field name + badges; match
-            // on the name. `isHittable` can THROW for a row near the drawer's scroll edge, so probe
-            // visibility via frame containment (the video-chip pattern below) and tap by coordinate.
-            let fieldRow = app.buttons
-                .matching(NSPredicate(format: "label CONTAINS[c] 'Demo Park'")).firstMatch
-            let fieldsWindow = app.windows.firstMatch
-            func fieldRowVisible() -> Bool {
-                guard fieldRow.exists else { return false }
-                let frame = fieldRow.frame
+            // Field detail: each row carries a trailing info button labeled "<name> details" that
+            // presents FieldDetailSheet. `isHittable` can THROW for a row near a sheet scroll edge,
+            // so probe visibility via frame containment and tap by coordinate.
+            let detailButton = app.buttons
+                .matching(NSPredicate(format: "label CONTAINS[c] 'Demo Park details'")).firstMatch
+            let window = app.windows.firstMatch
+            func detailButtonVisible() -> Bool {
+                guard detailButton.exists else { return false }
+                let frame = detailButton.frame
                 guard !frame.isEmpty else { return false }
-                return fieldsWindow.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+                return window.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
             }
-            if fieldRow.waitForExistence(timeout: 4) && fieldRowVisible() {
-                fieldRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            if detailButton.waitForExistence(timeout: 4) && detailButtonVisible() {
+                detailButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 sleep(2)
                 export("36b-field-detail", app: app)
-                // Dismiss the sheet: its top-leading Cancel button, else swipe the sheet down.
+                // Dismiss the detail sheet: its top-leading Cancel, else swipe down.
                 let cancel = app.buttons["Cancel"].firstMatch
                 if cancel.waitForExistence(timeout: 3) && cancel.isHittable {
                     cancel.tap()
@@ -130,10 +140,15 @@ final class PolishScreenshots: XCTestCase {
                 sleep(1)
             }
 
-            // Drag the header (now near mid-screen) back down to collapse to the peek snap.
-            drawerHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                .press(forDuration: 0.2,
-                       thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+            // Dismiss the list sheet: its top-trailing Done, else swipe down.
+            let done = app.buttons["Done"].firstMatch
+            if done.waitForExistence(timeout: 3) && done.isHittable {
+                done.tap()
+            } else {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                    .press(forDuration: 0.1,
+                           thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+            }
             sleep(1)
         }
 
