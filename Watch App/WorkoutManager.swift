@@ -319,7 +319,7 @@ final class WorkoutManager: NSObject {
 
     /// A match shorter than this (builder elapsed time) is treated as an accidental start and
     /// discarded rather than saved.
-    private let minimumMatchDuration: TimeInterval = 60
+    private let minimumMatchDuration: TimeInterval = 30
 
     /// End the match: stop location, finish the builder + route, persist and hand back results.
     /// Sessions shorter than `minimumMatchDuration` are discarded without saving or transferring.

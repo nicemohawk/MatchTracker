@@ -308,8 +308,8 @@ final class WatchSmokeTests: XCTestCase {
         usleep(300_000)              // early inside the ~1s flash window
         screenshot("68b-watch-referee-flash")
 
-        // ---- Return to Metrics, then page down to Controls and end the match. Sub-60s sessions
-        // auto-discard, which is fine — we only need the surfaces captured. ----
+        // ---- Return to Metrics, then page down to Controls and end the match. Sub-30s sessions
+        // auto-discard; longer walks land on the summary — both paths are handled below. ----
         var hops = 0
         while !metricsMarker.exists && hops < 5 {
             app.swipeDown()
