@@ -281,7 +281,9 @@ struct FieldsView: View {
 
     private func zoom(by factor: Double) {
         let region = visibleRegion ?? regionFallback()
-        let minSpan = 0.0009
+        // Effectively uncapped zoom-in (~4 m of latitude) — MapKit clamps to the imagery's own
+        // limit. Field UIs need corner-flag-level closeness.
+        let minSpan = 0.00004
         let maxSpan = 1.2
         let latitudeDelta = min(max(region.span.latitudeDelta * factor, minSpan), maxSpan)
         let longitudeDelta = min(max(region.span.longitudeDelta * factor, minSpan), maxSpan)

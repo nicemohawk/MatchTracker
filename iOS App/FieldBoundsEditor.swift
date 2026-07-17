@@ -162,8 +162,9 @@ struct FieldBoundsEditor: View {
 
     private func zoom(by factor: Double) {
         let region = cameraTicker.region ?? field.rectangle.mapRegion
-        // ~44 m of latitude at the floor — close enough to land a corner on the painted line.
-        let minSpan = 0.0004
+        // Effectively uncapped zoom-in (~4 m of latitude) — MapKit clamps to the imagery's own
+        // limit. Placing a corner on the flag needs all the closeness the tiles can give.
+        let minSpan = 0.00004
         let maxSpan = 0.05
         let zoomed = MKCoordinateRegion(
             center: region.center,
