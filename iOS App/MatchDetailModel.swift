@@ -237,12 +237,17 @@ final class MatchDetailModel: ObservableObject {
 
     /// A corner correction from the match screen edits this field. `isDraft` distinguishes the two
     /// cases the caller must handle on save.
-    struct AdjustableField {
+    /// Identifiable so callers can present it via `sheet(item:)` — the payload arrives atomically
+    /// with the presentation, unlike `sheet(isPresented:)` + optional, which can evaluate the
+    /// sheet body before the optional commits and present an empty shell.
+    struct AdjustableField: Identifiable {
         /// The `FieldModel` to hand to `CornerEditorView`.
         var field: FieldModel
         /// True when `field` is a fresh draft synthesized from an inferred / naive projection (no
         /// saved field backed this match). The caller binds it to the record on save via `bindField`.
         var isDraft: Bool
+
+        var id: UUID { field.id }
     }
 
     /// The field a corner correction should edit. When the match resolves to a saved field (explicit

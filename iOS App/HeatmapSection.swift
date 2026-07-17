@@ -30,7 +30,6 @@ struct HeatmapSection: View {
     @State private var routeCoordinates: [Coordinate2D] = []
     /// Field-boundary correction: the corner editor presentation + the field it's editing (carrying
     /// whether it's a draft to bind on save), and a brief post-save "Reprojecting…" acknowledgment.
-    @State private var showFieldEditor = false
     @State private var pendingAdjustment: MatchDetailModel.AdjustableField?
     @State private var isReprojecting = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -92,24 +91,25 @@ struct HeatmapSection: View {
         // fullScreenCover rendered blank until an app-switch (the white-screen report). Presented
         // as a sheet, and with the editor's own first-non-zero-geometry mount gate, it renders on
         // first present.
-        .sheet(isPresented: $showFieldEditor) {
-            if let adjustment = pendingAdjustment {
-                NavigationStack {
-                    FieldBoundsEditor(field: adjustment.field,
-                                      route: detail.track.map(\.coordinate.clCoordinate)) {
-                        handleFieldSaved(adjustment)
-                    }
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Cancel") { showFieldEditor = false }
-                        }
+        // `sheet(item:)`, NOT isPresented + optional: with the latter, the sheet body could
+        // evaluate before `pendingAdjustment` committed and present an empty dark shell (only
+        // recovering on the next forced re-render, e.g. an app switch).
+        .sheet(item: $pendingAdjustment) { adjustment in
+            NavigationStack {
+                FieldBoundsEditor(field: adjustment.field,
+                                  route: detail.track.map(\.coordinate.clCoordinate)) {
+                    handleFieldSaved(adjustment)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancel") { pendingAdjustment = nil }
                     }
                 }
-                .presentationDetents([.large])
-                // Sheets inherit the environment on modern SwiftUI, but pass the fields model
-                // explicitly so the reused editor always resolves its @EnvironmentObject.
-                .environmentObject(fields)
             }
+            .presentationDetents([.large])
+            // Sheets inherit the environment on modern SwiftUI, but pass the fields model
+            // explicitly so the reused editor always resolves its @EnvironmentObject.
+            .environmentObject(fields)
         }
     }
 
@@ -137,14 +137,12 @@ struct HeatmapSection: View {
     private func beginFieldAdjustment() {
         guard let adjustment = detail.adjustableField() else { return }
         pendingAdjustment = adjustment
-        showFieldEditor = true
     }
 
     /// After the corner edit saves: pin a freshly-corrected draft field to the record (a match with
     /// no prior saved field), then surface the "Reprojecting…" acknowledgment and a success haptic.
     /// Reduce Motion drops the transition but keeps the message and haptic.
     private func handleFieldSaved(_ adjustment: MatchDetailModel.AdjustableField) {
-        showFieldEditor = false
         if adjustment.isDraft { detail.bindField(id: adjustment.field.id) }
         pendingAdjustment = nil
         if reduceMotion {
