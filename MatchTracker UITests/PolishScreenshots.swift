@@ -445,6 +445,20 @@ final class PolishScreenshots: XCTestCase {
         app.swipeUp()
         sleep(1)
         export("99b-detail-scrolled", app: app)
+
+        // Optionally tap a comma-separated sequence of chips/buttons on the detail (e.g.
+        // "Satellite,Adjust Field" — later chips may only exist after earlier ones) and capture
+        // what the last one opens.
+        if let chips = ProcessInfo.processInfo.environment["MT_TAP_CHIP"], !chips.isEmpty {
+            for chip in chips.split(separator: ",").map(String.init) {
+                let target = app.buttons[chip].firstMatch
+                XCTAssertTrue(target.waitForExistence(timeout: 10), "Chip '\(chip)' should exist")
+                target.tap()
+                sleep(3)
+            }
+            sleep(2)
+            export("99c-after-chips", app: app)
+        }
     }
 
     /// Deletes one DEMO match end-to-end (context menu → confirmation → gone) and proves the

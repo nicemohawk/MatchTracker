@@ -210,7 +210,9 @@ struct AddFieldView: View {
 
     private func zoom(by factor: Double) {
         let region = visibleRegion ?? regionFallback()
-        let minSpan = 0.0009
+        // ~44 m of latitude at minimum — tight enough to place a corner on the line where the
+        // imagery resolves it, matching the Adjust Field editor.
+        let minSpan = 0.0004
         let maxSpan = 1.2
         let latitudeDelta = min(max(region.span.latitudeDelta * factor, minSpan), maxSpan)
         let longitudeDelta = min(max(region.span.longitudeDelta * factor, minSpan), maxSpan)
@@ -369,7 +371,8 @@ struct AddFieldView: View {
 
 /// Liquid Glass circle on iOS 26; material fallback earlier. Replicated locally to match the
 /// Fields map control column without depending on that file's private modifier.
-private struct AddFieldControlGlass: ViewModifier {
+// Internal (not private): FieldBoundsEditor's zoom controls share this exact chrome.
+struct AddFieldControlGlass: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content.glassEffect(.regular.interactive(), in: Circle())

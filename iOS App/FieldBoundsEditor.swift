@@ -46,6 +46,9 @@ struct FieldBoundsEditor: View {
 
     private final class CameraTicker: ObservableObject {
         @Published var tick = 0
+        /// Latest visible region, tracked for the zoom buttons. Deliberately NOT @Published —
+        /// it updates every camera frame and must not invalidate anything.
+        var region: MKCoordinateRegion?
     }
 
     /// Hosts the corner handles behind the ticker so continuous pan/zoom invalidates only this
@@ -104,7 +107,10 @@ struct FieldBoundsEditor: View {
                 }
                 .mapStyle(.imagery)
                 .mapControls { }
-                .onMapCameraChange(frequency: .continuous) { _ in cameraTicker.tick &+= 1 }
+                .onMapCameraChange(frequency: .continuous) { context in
+                    cameraTicker.region = context.region
+                    cameraTicker.tick &+= 1
+                }
                 // Sibling overlay (not annotations) so a handle drag never fights the map pan.
                 .overlay {
                     CameraTrackedHandles(ticker: cameraTicker, corners: $corners,
@@ -116,10 +122,61 @@ struct FieldBoundsEditor: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .overlay(alignment: .bottom) { guidanceBar }
+        // Zoom + frame controls, matching the Fields/Add Field control-column idiom. Corner
+        // placement is fine motor work — pinch alone (fighting the handle grab targets) isn't
+        // enough to get the imagery close.
+        .overlay(alignment: .topTrailing) { controlColumn }
         .navigationTitle("Adjust Field")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear { if corners.isEmpty { corners = field.rectangle.corners.map(\.clCoordinate) } }
+    }
+
+    private var controlColumn: some View {
+        VStack(spacing: 12) {
+            mapControlButton("square.dashed", label: "Frame the field") {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    cameraPosition = .region(field.rectangle.mapRegion)
+                }
+                Haptics.selection()
+            }
+            mapControlButton("plus.magnifyingglass", label: "Zoom in") { zoom(by: 0.5) }
+            mapControlButton("minus.magnifyingglass", label: "Zoom out") { zoom(by: 2) }
+        }
+        .padding(.trailing, 14)
+        .padding(.top, 12)
+    }
+
+    private func mapControlButton(_ systemImage: String,
+                                  label: String,
+                                  action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 44, height: 44)
+        }
+        .modifier(AddFieldControlGlass())
+        .accessibilityLabel(label)
+    }
+
+    private func zoom(by factor: Double) {
+        let region = cameraTicker.region ?? field.rectangle.mapRegion
+        // ~44 m of latitude at the floor — close enough to land a corner on the painted line.
+        let minSpan = 0.0004
+        let maxSpan = 0.05
+        let zoomed = MKCoordinateRegion(
+            center: region.center,
+            span: MKCoordinateSpan(
+                latitudeDelta: min(max(region.span.latitudeDelta * factor, minSpan), maxSpan),
+                longitudeDelta: min(max(region.span.longitudeDelta * factor, minSpan), maxSpan)
+            )
+        )
+        withAnimation(.easeInOut(duration: 0.3)) {
+            cameraPosition = .region(zoomed)
+        }
+        cameraTicker.region = zoomed
+        Haptics.selection()
     }
 
     /// A dark guidance bar over the imagery: what to do, plus a turf Save capsule.
