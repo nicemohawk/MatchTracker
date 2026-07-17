@@ -56,6 +56,18 @@ final class HealthKitService {
         }
     }
 
+    /// Delete a workout (and its route samples) from HealthKit. Routes go first — they'd be
+    /// orphaned otherwise — and their failures are ignored; only the workout delete itself throws.
+    /// HealthKit only lets an app delete objects it saved, so this fails for workouts recorded by
+    /// another source (callers hide the match instead).
+    func deleteWorkout(_ workout: HKWorkout) async throws {
+        let routes = (try? await fetchRoutes(for: workout)) ?? []
+        if !routes.isEmpty {
+            try? await healthStore.delete(routes)
+        }
+        try await healthStore.delete(workout)
+    }
+
     // MARK: - Route
 
     /// Track points for a workout, ordered by time, converted from the workout's route.
@@ -68,6 +80,10 @@ final class HealthKitService {
     }
 
     private func fetchRoute(for workout: HKWorkout) async throws -> HKWorkoutRoute? {
+        try await fetchRoutes(for: workout).first
+    }
+
+    private func fetchRoutes(for workout: HKWorkout) async throws -> [HKWorkoutRoute] {
         let predicate = HKQuery.predicateForObjects(from: workout)
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKSampleQuery(
@@ -77,7 +93,7 @@ final class HealthKitService {
                 sortDescriptors: nil
             ) { _, results, error in
                 if let error { continuation.resume(throwing: error); return }
-                continuation.resume(returning: (results as? [HKWorkoutRoute])?.first)
+                continuation.resume(returning: (results as? [HKWorkoutRoute]) ?? [])
             }
             healthStore.execute(query)
         }

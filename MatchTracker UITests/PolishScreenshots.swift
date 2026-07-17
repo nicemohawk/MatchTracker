@@ -422,6 +422,78 @@ final class PolishScreenshots: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 8)
     }
 
+    /// Deletes one DEMO match end-to-end (context menu → confirmation → gone) and proves the
+    /// deletion survives a relaunch. Only ever targets a "Demo Park" row so a run against the
+    /// real-history sim can never touch the user's matches; skips where no demo rows exist.
+    func testDeleteMatch() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-hasOnboarded", "YES"]
+        app.launch()
+        handleHealthKitPrompt(app: app)
+        dismissHealthSyncAlertIfPresent(app: app)
+
+        let demoRows = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Demo Park'"))
+        guard demoRows.firstMatch.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No Demo Park rows on this device — nothing safe to delete")
+        }
+        let victim = demoRows.firstMatch
+        // On-screen row counts are useless here — LazyVStack materializes a replacement row as
+        // the list shifts — so assert on the top month section's exact aggregate ("N matches · …").
+        let headerQuery = app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES '^[0-9]+ matches.*'")).firstMatch
+        XCTAssertTrue(headerQuery.waitForExistence(timeout: 10), "Month header aggregate should exist")
+        func headerCount() -> Int {
+            Int(headerQuery.label.split(separator: " ").first.map(String.init) ?? "") ?? -1
+        }
+        let beforeCount = headerCount()
+        XCTAssertGreaterThan(beforeCount, 0, "Header aggregate should parse")
+
+        // Preferred path: the card's context menu. Element-anchored `press` is unreliable against
+        // SwiftUI context menus in ScrollViews, so press a coordinate inside the card instead.
+        victim.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 1.8)
+        var deleteItem = app.buttons["Delete Match"]
+        if !deleteItem.waitForExistence(timeout: 4) {
+            // Automation couldn't summon the menu (a known XCUITest limitation, not a product
+            // signal) — exercise the equally-real detail-menu path instead. The press may have
+            // pushed the detail already; only navigate if we're still on the list.
+            if app.navigationBars["Matches"].exists {
+                victim.tap()
+            }
+            let actionsMenu = app.navigationBars.buttons
+                .matching(NSPredicate(format: "label CONTAINS[c] 'more' OR label CONTAINS[c] 'ellipsis'")).firstMatch
+            let menuButton = actionsMenu.exists
+                ? actionsMenu
+                : app.navigationBars.buttons.element(boundBy: app.navigationBars.buttons.count - 1)
+            XCTAssertTrue(menuButton.waitForExistence(timeout: 10), "Detail actions menu should exist")
+            menuButton.tap()
+            deleteItem = app.buttons["Delete Match"]
+            XCTAssertTrue(deleteItem.waitForExistence(timeout: 5), "Actions menu should offer Delete Match")
+        }
+        deleteItem.tap()
+        // The dialog re-uses the button title, so an unscoped query can re-resolve to the
+        // dismissing menu item and the tap falls outside — cancelling the dialog. Scope to the
+        // sheet the confirmationDialog presents as.
+        let dialog = app.sheets.firstMatch
+        XCTAssertTrue(dialog.waitForExistence(timeout: 5), "Confirmation dialog should appear")
+        dialog.buttons["Delete Match"].tap()
+        sleep(2)
+        // If we deleted from the detail view, we've been popped back to the list by dismiss().
+        _ = app.navigationBars["Matches"].waitForExistence(timeout: 10)
+
+        XCTAssertEqual(headerCount(), beforeCount - 1,
+                       "The month aggregate should drop by one after delete")
+
+        // Relaunch: the deletion must persist (record file removed / workout deleted or hidden).
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(headerQuery.waitForExistence(timeout: 15),
+                      "Month header should be back after relaunch")
+        sleep(2)
+        XCTAssertEqual(headerCount(), beforeCount - 1,
+                       "Deleted match must not resurface after relaunch")
+    }
+
     /// Task-specific walk on the REAL imported-history device (never generates demo data, so the
     /// user's history is untouched): proves the persisted summary cache paints the list on a warm
     /// cold-launch, and captures the Compare venue/format/window cohort caption. Run explicitly

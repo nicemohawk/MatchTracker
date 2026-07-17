@@ -33,7 +33,9 @@ struct MatchDetailView: View {
     /// One-time entrance flag — flips true on the first `onAppear` and never resets, so the
     /// choreography does NOT replay when returning from a push or switching section chips.
     @State private var hasAppeared = false
+    @State private var showingDeleteConfirmation = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dismiss) private var dismiss
 
     /// Indoor play has no GPS route, so the map/route-derived sections don't apply.
     private var isIndoor: Bool { summary.record?.format == .indoor }
@@ -106,10 +108,36 @@ struct MatchDetailView: View {
                     }
 
                     teamTagMenu
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Match", systemImage: "trash")
+                    }
                 } label: {
-                    Image(systemName: "square.and.arrow.up")
+                    // Ellipsis, not the share glyph: the menu carries actions beyond sharing
+                    // (re-upload, team tag, delete), and a destructive item under a "share"
+                    // icon reads wrong.
+                    Image(systemName: "ellipsis.circle")
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete this match?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Match", role: .destructive) {
+                Haptics.impact()
+                Task {
+                    _ = await store.delete(summary)
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("It will be removed from MatchTracker and, when possible, from Apple Health.")
         }
         .task {
             model.attach(store.detailModel(for: summary))

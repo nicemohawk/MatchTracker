@@ -26,6 +26,9 @@ struct MatchesView: View {
     @State private var listData: MatchListData = .empty
     @State private var searchText = ""
     @State private var filter: MatchFilter = .all
+    /// The match a context-menu Delete was invoked on, pending dialog confirmation.
+    @State private var matchPendingDelete: MatchSummary?
+    @State private var showingDeleteConfirmation = false
 
     init(isAtRoot: Binding<Bool> = .constant(true),
          isScrolledDown: Binding<Bool> = .constant(false)) {
@@ -125,6 +128,16 @@ struct MatchesView: View {
                                     MatchRow(summary: item.summary, dateLabel: item.dateLabel)
                                 }
                                 .buttonStyle(PressableCardStyle())
+                                // ScrollView + LazyVStack has no swipeActions — the context menu
+                                // is the delete affordance.
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        matchPendingDelete = item.summary
+                                        showingDeleteConfirmation = true
+                                    } label: {
+                                        Label("Delete Match", systemImage: "trash")
+                                    }
+                                }
                                 .scrollTransition(.interactive(timingCurve: .easeOut),
                                                   axis: .vertical) { content, phase in
                                     content
@@ -149,6 +162,19 @@ struct MatchesView: View {
         // iOS 26: soft Liquid Glass scroll edge — content dissolves under the navigation bar
         // instead of hard-clipping at it.
         .modifier(SoftTopScrollEdge())
+        .confirmationDialog(
+            "Delete this match?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible,
+            presenting: matchPendingDelete
+        ) { summary in
+            Button("Delete Match", role: .destructive) {
+                Haptics.impact()
+                Task { _ = await matches.delete(summary) }
+            }
+        } message: { _ in
+            Text("It will be removed from MatchTracker and, when possible, from Apple Health.")
+        }
     }
 
     /// First-ever cold launch, no persisted cache yet, refresh still running: redacted placeholder

@@ -107,17 +107,26 @@ final class MatchStore: ObservableObject {
     /// last-known rows synchronously on cold launch, before the HK workout query returns.
     private static let summaryCacheFileName = "matchSummaries.json"
 
+    /// Ids of deleted matches whose HKWorkout couldn't be deleted (HealthKit only lets an app
+    /// delete objects it saved itself), persisted so those workouts never resurface on refresh.
+    /// Tiny — loaded synchronously at init.
+    private var hiddenMatchIDs: Set<UUID>
+    private static let hiddenMatchesFileName = "hiddenMatches.json"
+
     /// Invoked with newly seen workout UUIDs so the app can auto-upload them.
     var onNewMatches: (([MatchSummary]) -> Void)?
 
     init(healthKit: HealthKitService = .shared, fields: FieldsModel) {
         self.healthKit = healthKit
         self.fields = fields
+        let hiddenIDs = Self.loadHiddenMatchIDs()
+        hiddenMatchIDs = hiddenIDs
         // Synchronously rehydrate the last-known list from the summary snapshots alone — one small
         // file, no per-record decode — so the first body evaluation renders the full history
         // immediately. Records and badges decode off the main actor and attach post-paint;
-        // `refresh()` then reconciles everything against HealthKit in place.
-        matches = Self.hydrateFromCache()
+        // `refresh()` then reconciles everything against HealthKit in place. Hidden (deleted)
+        // matches are filtered here so a stale snapshot never flashes them back post-delete.
+        matches = Self.hydrateFromCache().filter { !hiddenIDs.contains($0.id) }
 
         badgeCacheLoadTask = Task(priority: .userInitiated) { [weak self] in
             let loaded = await Task.detached(priority: .userInitiated) { Self.loadBadgeCache() }.value
@@ -186,6 +195,7 @@ final class MatchStore: ObservableObject {
             // only unavoidably-async phase — one anchored workout-list query. Per-workout route / HR
             // probes stay deferred to row appearance (MatchRow.loadBadge), never batched up-front here.
             let workouts = try await healthKit.fetchSoccerWorkouts()
+                .filter { !hiddenMatchIDs.contains($0.uuid) }
             #if DEBUG
             mark("fetchSoccerWorkouts (\(workouts.count))", workoutsStart)
             let recordsStart = Date()
@@ -208,7 +218,7 @@ final class MatchStore: ObservableObject {
             }
             // Records with no matching HK workout still surface as record-only matches.
             let orphanSummaries = records.values
-                .filter { !workoutIDs.contains($0.id) }
+                .filter { !workoutIDs.contains($0.id) && !hiddenMatchIDs.contains($0.id) }
                 .map { MatchSummary(id: $0.id, workout: nil, record: $0) }
 
             // Reconcile in place: same ids in the same order as the cold-cache array, so the swap is
@@ -595,6 +605,70 @@ final class MatchStore: ObservableObject {
             contentVersion &+= 1
             detailCache[record.id]?.updateRecord(record)
         }
+    }
+
+    // MARK: - Match deletion
+
+    /// How a delete resolved. Either way the match is gone from the app for good.
+    enum DeleteOutcome {
+        /// Fully removed, including its HKWorkout (or it never had one).
+        case deleted
+        /// Removed from MatchTracker, but the HKWorkout couldn't be deleted (HealthKit only lets
+        /// an app delete objects it saved itself) — the id is persisted as hidden instead.
+        case hiddenOnly
+    }
+
+    /// Delete a match everywhere we can: its on-disk record, its HKWorkout (when HealthKit lets
+    /// us), and every in-memory / persisted cache entry. Idempotent — deleting an already-gone
+    /// match is a harmless no-op pass over the same steps.
+    func delete(_ summary: MatchSummary) async -> DeleteOutcome {
+        MatchLog.info("deleting match \(summary.id)", category: "matchstore")
+        try? FileManager.default.removeItem(at: AppGroup.matchRecordURL(for: summary.id))
+
+        var outcome = DeleteOutcome.deleted
+        if let workout = summary.workout {
+            do {
+                try await healthKit.deleteWorkout(workout)
+            } catch {
+                MatchLog.error("HealthKit delete failed for \(summary.id) — hiding instead",
+                               category: "matchstore")
+                outcome = .hiddenOnly
+            }
+        } else if summary.cached?.hasWorkout == true {
+            // Cold-cache row whose HKWorkout hasn't reconciled yet — no handle to delete it with,
+            // so hide the id to keep the workout from resurfacing on the next refresh.
+            outcome = .hiddenOnly
+        }
+        if outcome == .hiddenOnly {
+            hiddenMatchIDs.insert(summary.id)
+            Self.writeHiddenMatchIDs(hiddenMatchIDs)
+        }
+
+        matches.removeAll { $0.id == summary.id }
+        detailCache.removeValue(forKey: summary.id)
+        if badgeCache.removeValue(forKey: summary.id) != nil {
+            schedulePersistBadgeCache()
+        }
+        contentVersion &+= 1
+        schedulePersistSummaries()
+        return outcome
+    }
+
+    nonisolated private static var hiddenMatchesURL: URL {
+        AppGroup.containerURL.appendingPathComponent(hiddenMatchesFileName)
+    }
+
+    nonisolated private static func loadHiddenMatchIDs() -> Set<UUID> {
+        guard let data = try? Data(contentsOf: hiddenMatchesURL),
+              let ids = try? JSONDecoder().decode(Set<UUID>.self, from: data) else { return [] }
+        return ids
+    }
+
+    /// Written synchronously in `delete` — it's one tiny array, and losing it would resurrect a
+    /// deleted match.
+    nonisolated private static func writeHiddenMatchIDs(_ ids: Set<UUID>) {
+        guard let data = try? JSONEncoder().encode(ids) else { return }
+        try? data.write(to: hiddenMatchesURL, options: .atomic)
     }
 
     // MARK: - Field-edit invalidation
