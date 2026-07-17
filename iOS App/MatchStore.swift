@@ -190,19 +190,23 @@ final class MatchStore: ObservableObject {
             mark("fetchSoccerWorkouts (\(workouts.count))", workoutsStart)
             let recordsStart = Date()
             #endif
-            let records = await Task.detached(priority: .userInitiated) { Self.loadRecordsFromDisk() }.value
+            let loadedRecords = await Task.detached(priority: .userInitiated) { Self.loadRecordsFromDisk() }.value
             #if DEBUG
-            mark("loadRecords (\(records.count))", recordsStart)
+            mark("loadRecords (\(loadedRecords.count))", recordsStart)
             #endif
             // Let the init-time attach land first so launch-present records never read as new.
             await initialRecordsAttach?.value
             let previousIDs = Set(matches.map(\.id))
 
+            let workoutIDs = Set(workouts.map(\.uuid))
+            // Heal records whose id never matched their workout's uuid (failed finishWorkout(),
+            // older watch builds) so they join instead of ghosting as a duplicate row.
+            let records = adoptOrphanRecords(loadedRecords, workouts: workouts, workoutIDs: workoutIDs)
+
             let workoutSummaries = workouts.map { workout in
                 MatchSummary(id: workout.uuid, workout: workout, record: records[workout.uuid])
             }
             // Records with no matching HK workout still surface as record-only matches.
-            let workoutIDs = Set(workouts.map(\.uuid))
             let orphanSummaries = records.values
                 .filter { !workoutIDs.contains($0.id) }
                 .map { MatchSummary(id: $0.id, workout: nil, record: $0) }
@@ -497,6 +501,59 @@ final class MatchStore: ObservableObject {
     }
 
     // MARK: - Match record persistence
+
+    /// Heal on-disk records whose `id` never matched their synced HKWorkout's uuid (a failed
+    /// `finishWorkout()`, an older watch build, or a transfer edge): each such orphan would join
+    /// with nothing and surface as a duplicate ghost row next to its workout forever. Pair each
+    /// orphan with an *unclaimed* workout (no record under its own uuid) starting within ±3 minutes
+    /// whose duration agrees within max(60 s, 10% of the workout's); closest start wins ties.
+    /// Adoption rewrites the record file under the workout's uuid and deletes the old one, so the
+    /// pass is idempotent — the next refresh finds no orphan to adopt.
+    private func adoptOrphanRecords(_ records: [UUID: MatchRecord],
+                                    workouts: [HKWorkout],
+                                    workoutIDs: Set<UUID>) -> [UUID: MatchRecord] {
+        var records = records
+        let orphans = records.values.filter { !workoutIDs.contains($0.id) }
+        guard !orphans.isEmpty else { return records }
+
+        for var record in orphans {
+            guard let recordEnd = record.endDate else { continue }
+            let recordDuration = recordEnd.timeIntervalSince(record.startDate)
+            let candidate = workouts
+                .filter { records[$0.uuid] == nil }
+                .filter { abs($0.startDate.timeIntervalSince(record.startDate)) <= 180 }
+                .filter { abs($0.duration - recordDuration) <= max(60, $0.duration * 0.1) }
+                .filter { workout in
+                    // Never pair across an explicit indoor/outdoor mismatch.
+                    guard let workoutIsIndoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool
+                    else { return true }
+                    return workoutIsIndoor == (record.format == .indoor)
+                }
+                .min { abs($0.startDate.timeIntervalSince(record.startDate)) <
+                       abs($1.startDate.timeIntervalSince(record.startDate)) }
+            guard let workout = candidate else { continue }
+
+            let oldID = record.id
+            record.id = workout.uuid
+            // Persist under the adopted identity, then remove the mismatched file.
+            let encoder = MatchTrackerJSON.encoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(record) {
+                try? data.write(to: AppGroup.matchRecordURL(for: record.id), options: .atomic)
+                try? FileManager.default.removeItem(at: AppGroup.matchRecordURL(for: oldID))
+            }
+            records.removeValue(forKey: oldID)
+            records[record.id] = record
+            // Anything cached under the old id is now stale.
+            detailCache.removeValue(forKey: oldID)
+            if badgeCache.removeValue(forKey: oldID) != nil {
+                schedulePersistBadgeCache()
+            }
+            MatchLog.info("adopted orphan record \(oldID) into workout \(workout.uuid)",
+                          category: "matchstore")
+        }
+        return records
+    }
 
     func loadRecords() -> [UUID: MatchRecord] {
         Self.loadRecordsFromDisk()

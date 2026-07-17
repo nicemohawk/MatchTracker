@@ -55,8 +55,9 @@ struct MatchesView: View {
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Matches")
             // Search over the precomputed haystacks (field, month/year, score, format, GPS).
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic),
-                        prompt: "Search matches")
+            // iOS 26 minimizes it into a compact glass control (system bottom placement); earlier
+            // systems keep the navigation-bar drawer.
+            .modifier(MatchSearchStyle(text: $searchText))
             .navigationDestination(for: UUID.self) { id in
                 if let summary = matches.matches.first(where: { $0.id == id }) {
                     MatchDetailView(summary: summary)
@@ -89,10 +90,11 @@ struct MatchesView: View {
         }
     }
 
-    /// The month-sectioned list. A fixed filter chip row sits under the title; the scroll view below
-    /// carries the backlog teaser, the pre-26 live card, and the pinned-header month sections. Card
-    /// design, press style, scroll transitions, and the badge cache are unchanged — this restructures
-    /// around the existing row, it doesn't redesign it.
+    /// The month-sectioned list. The filter chip row leads the scroll content (App Store/Photos
+    /// pattern — it scrolls away with the list, it isn't pinned chrome), followed by the backlog
+    /// teaser, the pre-26 live card, and the month sections. Card design, press style, scroll
+    /// transitions, and the badge cache are unchanged — this restructures around the existing row,
+    /// it doesn't redesign it.
     private var matchList: some View {
         let sections = listData.sections(filter: filter, query: searchText)
         // ScrollView + LazyVStack (not List) so cards get scroll transitions and a pressed-state
@@ -100,6 +102,10 @@ struct MatchesView: View {
         // MatchSectionHeader) instead of the old full-width opaque "year bars".
         return ScrollView {
             LazyVStack(spacing: 12) {
+                MatchFilterBar(data: listData, selection: $filter)
+                    // Full bleed: cancel the stack's inset so the chip row scrolls edge-to-edge
+                    // (it carries its own 16pt content padding).
+                    .padding(.horizontal, -16)
                 if showBacklogTeaser {
                     backlogTeaser
                 }
@@ -140,14 +146,9 @@ struct MatchesView: View {
         }
         .scrollIndicators(.automatic)
         .modifier(ScrollDownTracker(isScrolledDown: $isScrolledDown))
-        // Pin the filter chip row as a glass overlay; the scroll content insets below it but scrolls
-        // UNDER it (the material blurs the cards passing behind), so there's no hard clip edge.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            MatchFilterBar(data: listData, selection: $filter)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .modifier(GlassListHeader())
-        }
+        // iOS 26: soft Liquid Glass scroll edge — content dissolves under the navigation bar
+        // instead of hard-clipping at it.
+        .modifier(SoftTopScrollEdge())
     }
 
     /// First-ever cold launch, no persisted cache yet, refresh still running: redacted placeholder
@@ -358,22 +359,34 @@ struct MatchesView: View {
 #endif
 }
 
-/// Glass treatment for the pinned filter-chip header: a translucent material so the match cards
-/// remain visible (blurred) as they scroll behind it, with a soft progressive edge below rather
-/// than a hard seam. iOS 26 gets the Liquid Glass bar effect; earlier systems fall back to
-/// `.ultraThinMaterial`, the app's established glass idiom.
-private struct GlassListHeader: ViewModifier {
+/// Version-adaptive search: on iOS 26 the field starts minimized as a compact glass control in the
+/// system placement (bottom-aligned on iPhone, Mail/Messages style) and expands on tap; earlier
+/// systems keep the navigation-bar drawer that collapses with the large title.
+private struct MatchSearchStyle: ViewModifier {
+    @Binding var text: String
+
     func body(content: Content) -> some View {
-        content
-            .background(.ultraThinMaterial)
-            .overlay(alignment: .bottom) {
-                // Progressive edge: a short fade below the bar so content dissolves under it.
-                LinearGradient(colors: [Theme.surfaceStroke.opacity(0.55), .clear],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: 10)
-                    .offset(y: 10)
-                    .allowsHitTesting(false)
-            }
+        if #available(iOS 26.0, *) {
+            content
+                .searchable(text: $text, prompt: "Search matches")
+                .searchToolbarBehavior(.minimize)
+        } else {
+            content
+                .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .automatic),
+                            prompt: "Search matches")
+        }
+    }
+}
+
+/// iOS 26 soft scroll edge under the navigation bar — the system Liquid Glass dissolve instead of
+/// a hard clip. No-op on earlier systems, which keep the standard bar-material edge.
+private struct SoftTopScrollEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            content
+        }
     }
 }
 
