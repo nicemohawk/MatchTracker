@@ -314,9 +314,7 @@ public struct APIClient: Sendable {
         applyHeaders(to: &request)
         let (data, response) = try await session.data(for: request)
         try Self.validate(response)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(TeamStats.self, from: data)
+        return try Self.jsonDecoder().decode(TeamStats.self, from: data)
     }
 
     // MARK: - V2 team & live endpoints
@@ -531,11 +529,38 @@ public struct APIClient: Sendable {
         return encoder
     }
 
-    private static func jsonDecoder() -> JSONDecoder {
+    /// Backend timestamps are ISO-8601 UTC with a trailing `Z`, in two precisions: fractional
+    /// seconds (`recorded_at` → "2026-07-14T12:09:58.558671Z") and whole seconds (`created_at`
+    /// et al. → "2026-07-14T12:09:58Z"). Plain `.iso8601` rejects the fractional form, so the
+    /// strategy tries fractional first and falls back to whole-second. Internal (not private)
+    /// so tests can decode wire samples through the exact production strategy.
+    static func jsonDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let string = try container.decode(String.self)
+            if let date = fractionalSecondsFormatter.date(from: string)
+                ?? wholeSecondsFormatter.date(from: string) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container, debugDescription: "Unrecognized ISO-8601 timestamp: \(string)")
+        }
         return decoder
     }
+
+    // ISO8601DateFormatter is documented thread-safe; both are shared across requests.
+    private static let fractionalSecondsFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let wholeSecondsFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     private static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }

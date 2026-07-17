@@ -49,3 +49,38 @@ final class MatchRecordCodableTests: XCTestCase {
         XCTAssertEqual(decoded.id.uuidString, "6F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0")
     }
 }
+
+// MARK: - Backend timestamp decoding
+
+extension MatchRecordCodableTests {
+    /// The backend normalized every timestamp to ISO-8601 UTC with a trailing `Z`, in two
+    /// precisions. The production decoder (`APIClient.jsonDecoder()`) must accept both.
+    func testBackendDecoderAcceptsBothTimestampPrecisions() throws {
+        struct WireSample: Codable {
+            var recordedAt: Date
+            var createdAt: Date
+            enum CodingKeys: String, CodingKey {
+                case recordedAt = "recorded_at"
+                case createdAt = "created_at"
+            }
+        }
+        let json = Data("""
+        {"recorded_at": "2026-07-14T12:09:58.558671Z", "created_at": "2026-07-14T12:09:58Z"}
+        """.utf8)
+
+        let decoded = try APIClient.jsonDecoder().decode(WireSample.self, from: json)
+
+        let expectedWhole = Date(timeIntervalSince1970: 1_784_030_998)  // 2026-07-14T12:09:58Z
+        XCTAssertEqual(decoded.createdAt.timeIntervalSince1970,
+                       expectedWhole.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertEqual(decoded.recordedAt.timeIntervalSince1970,
+                       expectedWhole.timeIntervalSince1970 + 0.558671, accuracy: 0.001)
+    }
+
+    func testBackendDecoderRejectsGarbageTimestamp() {
+        struct WireSample: Codable { var createdAt: Date
+            enum CodingKeys: String, CodingKey { case createdAt = "created_at" } }
+        let json = Data(#"{"created_at": "yesterday-ish"}"#.utf8)
+        XCTAssertThrowsError(try APIClient.jsonDecoder().decode(WireSample.self, from: json))
+    }
+}
