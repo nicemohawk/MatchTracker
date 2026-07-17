@@ -81,23 +81,51 @@ final class MatchDetailModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        // Record-only match: no HKWorkout, so no track/heart-rate/analytics to fetch. The
-        // events timeline still works and upload proceeds with empty coordinates.
+        // Record-only match: no HKWorkout, so no HealthKit route to fetch. If the watch attached
+        // the redundant track to the record (the workout save failed), run the full pipeline off
+        // it; otherwise the events timeline still works and upload proceeds with empty coordinates.
         guard let workout else {
             loadFailed = false
+            guard let recordTrack = record?.track, !recordTrack.isEmpty else { return }
+            MatchLog.info("match \(matchIdentifier): record-only, using record track fallback",
+                          category: "matchdetail")
+            track = recordTrack
+            let start = matchStart, end = matchEnd
+            async let fetchedHeartRate = healthKit.fetchHeartRate(from: start, to: end)
+            async let fetchedSeries = healthKit.fetchHeartRateSeries(from: start, to: end)
+            heartRate = try? await fetchedHeartRate
+            heartRateSeries = (try? await fetchedSeries) ?? []
+            publishAnalytics(await computeAnalyticsOffMain())
+            loadFailed = analytics == nil && !recordTrack.isEmpty
+            reconcileAutomaticSubs(track: recordTrack)
             return
         }
 
         do {
             // The route fetch and the two heart-rate queries are independent of each other, so the
             // three HealthKit round-trips run concurrently. Error semantics are unchanged: a failed
-            // track fetch fails the load; the heart-rate fetches degrade to nil/empty.
+            // track fetch fails the load (unless the record carries the redundant track); the
+            // heart-rate fetches degrade to nil/empty.
             let start = matchStart, end = matchEnd
             async let fetchedTrack = healthKit.fetchTrack(for: workout)
             async let fetchedHeartRate = healthKit.fetchHeartRate(from: start, to: end)
             async let fetchedSeries = healthKit.fetchHeartRateSeries(from: start, to: end)
 
-            let points = try await fetchedTrack
+            // The HealthKit route is primary; the record's redundant track rescues a workout whose
+            // route fetch returned nothing or threw — e.g. the route save failed on the watch. A
+            // fetch failure with no fallback still fails the load, exactly as before.
+            var points: [TrackPoint]
+            do {
+                points = try await fetchedTrack
+            } catch {
+                guard record?.track?.isEmpty == false else { throw error }
+                points = []
+            }
+            if points.isEmpty, let recordTrack = record?.track, !recordTrack.isEmpty {
+                MatchLog.info("match \(matchIdentifier): HealthKit route missing, using record track fallback",
+                              category: "matchdetail")
+                points = recordTrack
+            }
             track = points
             heartRate = try? await fetchedHeartRate
             heartRateSeries = (try? await fetchedSeries) ?? []

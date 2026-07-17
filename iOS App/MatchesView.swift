@@ -501,6 +501,8 @@ struct MatchRow: View {
     @State private var fieldName: String?
     /// Whether a GPS route was recorded — nil until the lazy detail load resolves it.
     @State private var hasRoute: Bool?
+    /// Route-integrated distance (what the detail shows); nil falls back to the workout total.
+    @State private var routeDistanceMeters: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -535,7 +537,10 @@ struct MatchRow: View {
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 18) {
-                metric(MatchFormat.distance(summary.distanceMeters), "Distance", Theme.pace)
+                // Prefer the route-integrated distance once the badge resolves it — the same
+                // number the detail's hero tile shows — so list and detail never disagree.
+                metric(MatchFormat.distance(routeDistanceMeters ?? summary.distanceMeters),
+                       "Distance", Theme.pace)
                 metric(MatchFormat.shortDuration(summary.duration), "Duration", Theme.signal)
                 Spacer()
                 if score != nil {
@@ -632,10 +637,17 @@ struct MatchRow: View {
         if let badge = await store.loadedBadge(for: summary.id) {
             hasRoute = badge.hasRoute
             fieldName = badge.fieldName
+            if let distance = badge.routeDistanceMeters, distance > 0 {
+                routeDistanceMeters = distance
+            }
             if let role = badge.role, let side = badge.side, let confidence = badge.confidence {
                 position = (role, side, confidence)
             }
-            return
+            // A stale badge (field edited since it was computed) still seeded the row above —
+            // fall through to recompute the field-derived parts and re-store a fresh badge.
+            if badge.stale != true {
+                return
+            }
         }
 
         let detail = store.detailModel(for: summary)
@@ -656,6 +668,10 @@ struct MatchRow: View {
         #endif
 
         hasRoute = !detail.track.isEmpty
+        let resolvedRouteDistance = detail.analytics?.workrate.totalDistanceMeters ?? 0
+        if resolvedRouteDistance > 0 {
+            routeDistanceMeters = resolvedRouteDistance
+        }
         var resolvedFieldName: String?
         var resolvedPosition: (role: PositionRole, side: PositionSide, confidence: Double)?
         if let analytics = detail.analytics {
@@ -679,7 +695,8 @@ struct MatchRow: View {
             store.storeBadge(
                 MatchBadge(role: resolvedPosition?.role, side: resolvedPosition?.side,
                            confidence: resolvedPosition?.confidence, fieldName: resolvedFieldName,
-                           hasRoute: !detail.track.isEmpty),
+                           hasRoute: !detail.track.isEmpty,
+                           routeDistanceMeters: resolvedRouteDistance > 0 ? resolvedRouteDistance : nil),
                 for: summary.id
             )
         }

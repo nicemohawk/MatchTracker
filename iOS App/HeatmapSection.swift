@@ -528,9 +528,19 @@ struct SatelliteHeatmapOverlay: View {
     @State private var outlinePolylines: [[CLLocationCoordinate2D]] = []
 
     /// What the cached geometry was built from, so the task re-fires only when it actually changes.
-    private struct GeometryKey: Equatable {
+    /// Hashable (for `.id`) over the rectangle's scalars — equality stays exact via Equatable.
+    private struct GeometryKey: Equatable, Hashable {
         var rectangle: OrientedRectangle
         var cells: [Double]
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(rectangle.center.latitude)
+            hasher.combine(rectangle.center.longitude)
+            hasher.combine(rectangle.headingDegrees)
+            hasher.combine(rectangle.lengthMeters)
+            hasher.combine(rectangle.widthMeters)
+            hasher.combine(cells.count)
+        }
     }
 
     var body: some View {
@@ -555,6 +565,12 @@ struct SatelliteHeatmapOverlay: View {
             }
         }
         .mapStyle(.imagery)
+        // The camera only reads `initialPosition` at mount, but analytics publish asynchronously —
+        // a rectangle that changes after mount (record attach, field edit reanalysis) would leave
+        // the camera rotated for the OLD field while the heat/outline redraw for the new one,
+        // drawing the pitch diagonally across the screen. Re-keying the map remounts it with a
+        // camera matching the current rectangle; it's non-interactive, so nothing else is lost.
+        .id(GeometryKey(rectangle: rectangle, cells: heatmap.cells))
         .task(id: GeometryKey(rectangle: rectangle, cells: heatmap.cells)) {
             heatCells = buildHeatCells()
             outlinePolylines = buildOutlinePolylines()

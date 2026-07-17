@@ -293,7 +293,14 @@ enum DiagnosticArchive {
             isIndoor: isIndoor,
             hasWorkout: true
         )
-        return DiagnosticMatch(metadata: metadata, route: route, heartRate: heartRate, record: summary.record)
+        // The archive already carries the lossless route; strip the record's redundant track copy
+        // so route bytes don't ship twice per match. (Kept when there's no HK route — then the
+        // record's track IS the only GPS.)
+        var record = summary.record
+        if !route.isEmpty {
+            record?.track = nil
+        }
+        return DiagnosticMatch(metadata: metadata, route: route, heartRate: heartRate, record: record)
     }
 
     /// Raw route CLLocations for a workout (with altitude / accuracy / speed / course intact),

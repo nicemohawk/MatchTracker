@@ -114,10 +114,15 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     /// UI can distinguish "not set" from "set to empty"); synthesized Codable decodes it with
     /// `decodeIfPresent`, keeping records written before this field loading cleanly.
     public var reportedPositions: [ReportedPosition]?
+    /// Redundant copy of the GPS track, attached to the FINAL record at endMatch. HealthKit's
+    /// workout route remains the primary store; this survives a failed `finishWorkout()` so the
+    /// phone can still render the route. Nil on in-progress records and records written before
+    /// this field existed.
+    public var track: [TrackPoint]?
 
     // Synthesized Codable: every added field is optional, so JSON written before they existed
     // still decodes cleanly (the keys are simply absent, `format` nil ≡ .match).
-    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil, reportedPositions: [ReportedPosition]? = nil) {
+    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil, reportedPositions: [ReportedPosition]? = nil, track: [TrackPoint]? = nil) {
         self.id = id
         self.startDate = startDate
         self.endDate = endDate
@@ -128,6 +133,7 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
         self.headings = headings
         self.format = format
         self.reportedPositions = reportedPositions
+        self.track = track
     }
 }
 

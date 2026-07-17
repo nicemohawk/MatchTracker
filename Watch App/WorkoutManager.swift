@@ -363,7 +363,15 @@ final class WorkoutManager: NSObject {
         var workout: HKWorkout?
         do {
             try await builder?.endCollection(at: end)
-            workout = try await builder?.finishWorkout()
+            do {
+                workout = try await builder?.finishWorkout()
+            } catch {
+                // finishWorkout can fail transiently (HealthKit XPC); one immediate retry rescues
+                // the workout + route save. On a second failure the record below still carries the
+                // full track, so the route is never lost with the workout.
+                MatchLog.error("finishWorkout failed, retrying once: \(error.localizedDescription)", category: "workout")
+                workout = try await builder?.finishWorkout()
+            }
             if let workout, let routeBuilder {
                 _ = try? await routeBuilder.finishRoute(with: workout, metadata: nil)
             }
@@ -400,6 +408,10 @@ final class WorkoutManager: NSObject {
         )
         // Set explicitly so a formal match records `.match` rather than relying on the nil default.
         record.format = matchFormat
+        // Redundant route: the final record carries the full-resolution track so the phone can
+        // still render/analyze the match if the HealthKit workout (and thus its route) was lost
+        // above. Only the final record gets it — the per-event crash-safety snapshots stay lean.
+        record.track = track.isEmpty ? nil : track
 
         AppGroupStorage.persistFinished(record)
         clearInProgressBehindPendingWrites()

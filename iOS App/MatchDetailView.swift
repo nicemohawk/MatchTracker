@@ -33,6 +33,8 @@ struct MatchDetailView: View {
     /// One-time entrance flag — flips true on the first `onAppear` and never resets, so the
     /// choreography does NOT replay when returning from a push or switching section chips.
     @State private var hasAppeared = false
+    /// Reverse-geocoded "City, State" for the match location; nil until resolved (or unresolvable).
+    @State private var placeName: String?
     @State private var showingDeleteConfirmation = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
@@ -219,6 +221,45 @@ struct MatchDetailView: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
+    /// When/where metadata under the hero ring: full weekday date + kickoff time, then the
+    /// resolved field name and reverse-geocoded place. Lines render only when known — an indoor
+    /// or route-less match quietly shows just the date line.
+    private var metadataBlock: some View {
+        let fieldName = model.detail?.analytics?.fieldName
+        // Year only when it isn't this year — same convention as the Matches list.
+        let isThisYear = Calendar.current.isDate(summary.startDate, equalTo: .now, toGranularity: .year)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Text(isThisYear
+                     ? summary.startDate.formatted(.dateTime.weekday(.wide).month(.wide).day())
+                     : summary.startDate.formatted(.dateTime.weekday(.wide).month(.wide).day().year()))
+                + Text(" · ") + Text(summary.startDate, format: .dateTime.hour().minute())
+            }
+            if fieldName != nil || placeName != nil {
+                HStack(spacing: 6) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Text([fieldName, placeName].compactMap(\.self).joined(separator: " · "))
+                }
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Keyed on the analytics revision: the field resolution (and thus the coordinate to
+        // geocode) arrives asynchronously after load.
+        .task(id: model.detail?.analyticsRevision ?? 0) {
+            guard placeName == nil,
+                  let center = model.detail?.analytics?.rectangle.center,
+                  abs(center.latitude) > 0.01 || abs(center.longitude) > 0.01 else { return }
+            placeName = await PlaceNameService.placeName(for: center.clCoordinate)
+        }
+    }
+
     private var header: some View {
         let detail = model.detail
         let workrate = detail?.analytics?.workrate.workrateScore ?? 0
@@ -241,6 +282,8 @@ struct MatchDetailView: View {
                 }
                 Spacer(minLength: 0)
             }
+
+            metadataBlock
 
             // Distance/Sprints/Runs are GPS-derived — meaningless without a route — so they read
             // "—" (not a misleading 0) when the match has no track. Duration, Time on Pitch, and

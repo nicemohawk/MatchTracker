@@ -17,6 +17,13 @@ struct MatchBadge: Codable, Equatable {
     var confidence: Double?
     var fieldName: String?
     var hasRoute: Bool
+    /// Route-integrated distance from the analysis — the number the detail view shows. Rows prefer
+    /// it over the HKWorkout total so list and detail never disagree. Optional for back-compat.
+    var routeDistanceMeters: Double?
+    /// Set when a field edit invalidates the field-derived parts (name, position). A stale badge
+    /// still seeds the row instantly — crucially `hasRoute`, which no field edit can change — while
+    /// the row recomputes and re-stores a fresh one.
+    var stale: Bool?
 }
 
 /// The minimum a Matches-list row needs to render its top-line numbers (date, duration, distance)
@@ -593,9 +600,11 @@ final class MatchStore: ObservableObject {
         guard let data = try? encoder.encode(record) else { return }
         try? data.write(to: AppGroup.matchRecordURL(for: record.id), options: .atomic)
 
-        // The stored badge (position / field / route) may be stale after an edit — drop it so the
-        // row recomputes once from the refreshed detail model.
-        if badgeCache.removeValue(forKey: record.id) != nil {
+        // The stored badge (position / field) may be stale after an edit — mark it so the row
+        // recomputes once from the refreshed detail model, while still seeding instantly.
+        if var badge = badgeCache[record.id], badge.stale != true {
+            badge.stale = true
+            badgeCache[record.id] = badge
             schedulePersistBadgeCache()
         }
 
@@ -683,7 +692,14 @@ final class MatchStore: ObservableObject {
     func invalidateForFieldChange() {
         venueMapCache = nil
         if !badgeCache.isEmpty {
-            badgeCache.removeAll()
+            // Mark stale rather than clearing: rows keep painting hasRoute/distance (field-
+            // independent) instantly and recompute the field-derived parts lazily. Clearing
+            // wholesale made every route glyph in a 300-match list blink out after a field edit.
+            for (id, badge) in badgeCache where badge.stale != true {
+                var marked = badge
+                marked.stale = true
+                badgeCache[id] = marked
+            }
             schedulePersistBadgeCache()
         }
         // Reanalyze incrementally, yielding between models so a big cache never stalls the main

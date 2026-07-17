@@ -422,6 +422,31 @@ final class PolishScreenshots: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 8)
     }
 
+    /// Opens the first match whose row label contains `MT_ROW_LABEL` (a coordinator-supplied
+    /// substring) and captures its detail — a generic hook for validating one specific match's
+    /// analysis end-to-end without hand-driving the simulator.
+    func testOpenMatchDetailByLabel() throws {
+        guard let needle = ProcessInfo.processInfo.environment["MT_ROW_LABEL"], !needle.isEmpty else {
+            throw XCTSkip("Set MT_ROW_LABEL to the row-label substring to open")
+        }
+        let app = XCUIApplication()
+        app.launchArguments += ["-hasOnboarded", "YES"]
+        app.launch()
+        handleHealthKitPrompt(app: app)
+        dismissHealthSyncAlertIfPresent(app: app)
+
+        let row = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", needle)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "Row matching '\(needle)' should exist")
+        row.tap()
+        sleep(6)   // let the lazy analytics + reverse geocode land
+        export("99-detail-\(needle.replacingOccurrences(of: " ", with: "-"))", app: app)
+        // The hero + metadata header should be up; scroll once to capture the analysis section.
+        app.swipeUp()
+        sleep(1)
+        export("99b-detail-scrolled", app: app)
+    }
+
     /// Deletes one DEMO match end-to-end (context menu → confirmation → gone) and proves the
     /// deletion survives a relaunch. Only ever targets a "Demo Park" row so a run against the
     /// real-history sim can never touch the user's matches; skips where no demo rows exist.
