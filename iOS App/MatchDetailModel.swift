@@ -447,15 +447,44 @@ final class MatchDetailModel: ObservableObject {
     /// Field-resolution steps that need the main-actor models — run at input capture, before the
     /// pipeline hops off the main actor. The track-fitting fallbacks run inside `resolveField`.
     private func knownField() -> ResolvedField? {
-        // 1. Explicit field id on the record.
-        if let fieldID = record?.fieldID, let field = fields.field(id: fieldID) {
+        // 1. Explicit field id on the record — but VERIFIED against the track. The watch pins
+        //    fieldID from a single kickoff location fix, which can grab a nearby small field
+        //    (e.g. a 37×20 training area) and project the whole match onto it. A field the play
+        //    doesn't actually sit inside is worse than no field.
+        if let fieldID = record?.fieldID, let field = fields.field(id: fieldID),
+           trackMostlyInside(field.rectangle) {
             return ResolvedField(rectangle: field.rectangle, name: field.name, source: field.source)
         }
-        // 2. Best geometric match against saved fields.
-        if let matched = fields.store.bestMatch(for: track.map(\.coordinate)) {
+        // 2. Best geometric match against saved fields, same containment gate.
+        if let matched = fields.store.bestMatch(for: track.map(\.coordinate)),
+           trackMostlyInside(matched.rectangle) {
             return ResolvedField(rectangle: matched.rectangle, name: matched.name, source: matched.source)
         }
         return nil
+    }
+
+    /// Whether the bulk of the (sampled) track lies on the candidate field. Empty tracks accept —
+    /// a route-less match has nothing to contradict the field with. Rejections are logged so a
+    /// mis-pinned fieldID is diagnosable from a device log.
+    private func trackMostlyInside(_ rectangle: OrientedRectangle) -> Bool {
+        guard !track.isEmpty else { return true }
+        let projector = FieldProjector(rectangle: rectangle)
+        // ~300 samples is plenty for a coverage fraction and keeps this capture-time check cheap.
+        let stride = max(1, track.count / 300)
+        var total = 0, inside = 0
+        var index = 0
+        while index < track.count {
+            total += 1
+            if projector.isOnField(track[index].coordinate, marginMeters: 10) { inside += 1 }
+            index += stride
+        }
+        let covered = Double(inside) / Double(max(1, total))
+        if covered < 0.5 {
+            MatchLog.info("match \(matchIdentifier): rejecting resolved field — only \(Int(covered * 100))% of track inside",
+                          category: "matchdetail")
+            return false
+        }
+        return true
     }
 
     private nonisolated static func resolveField(track: [TrackPoint], knownField: ResolvedField?) -> ResolvedField? {
