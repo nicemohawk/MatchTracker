@@ -508,10 +508,15 @@ struct MatchRow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(dateLabel)
-                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                        .monospacedDigit()
-                    // Unknown field → show nothing (no placeholder); keep format / route badges.
+                    // The route glyph rides with the date — the one line every row is guaranteed
+                    // to have — instead of the field line, which may not exist.
+                    HStack(spacing: 6) {
+                        Text(dateLabel)
+                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                            .monospacedDigit()
+                        recordingKindBadge
+                    }
+                    // Unknown field → show nothing (no placeholder); keep the format badge.
                     HStack(spacing: 6) {
                         if let fieldName {
                             Text(fieldName)
@@ -519,7 +524,6 @@ struct MatchRow: View {
                                 .foregroundStyle(.secondary)
                         }
                         formatBadge
-                        recordingKindBadge
                     }
                 }
                 Spacer()
