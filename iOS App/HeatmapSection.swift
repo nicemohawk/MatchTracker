@@ -542,7 +542,9 @@ struct SatelliteHeatmapOverlay: View {
     }
 
     var body: some View {
-        Map(initialPosition: cameraPosition, interactionModes: []) {
+        // Pinch and rotate to inspect the imagery, but no pan: the pitch is the subject and
+        // dragging inside a vertically scrolling analysis page would fight the scroll.
+        Map(initialPosition: cameraPosition, interactionModes: [.zoom, .rotate]) {
             // Heat cells — each grid cell as a quad in real-world coordinates, so it stays welded
             // to the pitch regardless of camera heading/zoom.
             ForEach(heatCells) { cell in
@@ -567,7 +569,8 @@ struct SatelliteHeatmapOverlay: View {
         // a rectangle that changes after mount (record attach, field edit reanalysis) would leave
         // the camera rotated for the OLD field while the heat/outline redraw for the new one,
         // drawing the pitch diagonally across the screen. Re-keying the map remounts it with a
-        // camera matching the current rectangle; it's non-interactive, so nothing else is lost.
+        // camera matching the current rectangle. (This also resets any user pinch/rotate — fine,
+        // it only happens when the field itself changed.)
         .id(GeometryKey(rectangle: rectangle, cells: heatmap.cells))
         .task(id: GeometryKey(rectangle: rectangle, cells: heatmap.cells)) {
             heatCells = buildHeatCells()
