@@ -19,6 +19,14 @@ struct MetricsView: View {
         VStack(alignment: .leading, spacing: 4) {
             ElapsedTimeText()
 
+            // Wedged healthd: the session UI is up but no samples will ever arrive — say so
+            // instead of leaving a mysterious 0:00 / 0 bpm screen.
+            if workoutManager.healthCollectionStalled {
+                Label("Health isn't recording", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(WatchTheme.cardYellow)
+            }
+
             heartRateRow
             distanceRow
             caloriesRow

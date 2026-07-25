@@ -23,6 +23,14 @@ struct StartView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    // A failed start bounces back here — without a reason it reads as "the
+                    // countdown just never switched".
+                    if let failure = workoutManager.startFailureMessage {
+                        Text(failure)
+                            .font(.footnote)
+                            .foregroundStyle(WatchTheme.heart)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     Button {
                         WatchHaptics.click()
                         workoutManager.matchFormat = selectedFormat
@@ -63,6 +71,13 @@ struct StartView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+
+                    // Build stamp: the one-glance answer to "is the new build actually on the
+                    // watch?" — the phone→watch install hop fails silently often enough that
+                    // this has to be visible on-device.
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 4)
             }

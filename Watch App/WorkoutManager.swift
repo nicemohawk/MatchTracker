@@ -77,6 +77,14 @@ final class WorkoutManager: NSObject {
     /// SummaryView reads this instead of re-running the detector in its body.
     var summaryRunCounts: (runs: Int, sprints: Int)?
 
+    /// Why the last start attempt failed, surfaced on the start screen — a silent bounce back
+    /// to idle is indistinguishable from "the countdown just never switched".
+    var startFailureMessage: String?
+    /// True when the live UI is up but HealthKit collection hasn't begun within the watchdog
+    /// window — shown as a banner so a wedged healthd is visible instead of a 0:00 mystery.
+    var healthCollectionStalled = false
+    @ObservationIgnored private var collectionBegan = false
+
     // MARK: Match identity
 
     @ObservationIgnored private var matchID = UUID()
@@ -214,14 +222,17 @@ final class WorkoutManager: NSObject {
 
         let configuration = makeWorkoutConfiguration()
         let session: HKWorkoutSession
+        MatchLog.info("startMatch: creating session (format \(matchFormat.rawValue))", category: "workout")
         do {
             session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
         } catch {
-            // If we can't start, fall back to the start screen.
+            // If we can't start, fall back to the start screen — with a visible reason.
             MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
+            startFailureMessage = "Couldn't start the workout: \(error.localizedDescription)"
             phase = .idle
             return
         }
+        MatchLog.info("startMatch: session created", category: "workout")
         let builder = session.associatedWorkoutBuilder()
         builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
         session.delegate = self
@@ -235,6 +246,7 @@ final class WorkoutManager: NSObject {
         let start = Date()
         matchStartDate = start
         session.startActivity(with: start)
+        MatchLog.info("startMatch: activity started", category: "workout")
 
         // Indoor: no location updates, route, field detection, auto-sub or heading capture.
         // HR/energy still collect; the track stays empty and currentSpeed stays 0.
@@ -246,12 +258,25 @@ final class WorkoutManager: NSObject {
         phase = .active
         log(.matchStart, haptic: false)
 
+        // Watchdog: if collection hasn't begun shortly, say so on the session screen — a wedged
+        // healthd otherwise reads as a mysteriously frozen 0:00 timer.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard let self, self.phase == .active, !self.collectionBegan else { return }
+            MatchLog.error("startMatch: collection has not begun after 10s", category: "workout")
+            self.healthCollectionStalled = true
+        }
+
         do {
             try await builder.beginCollection(at: start)
+            collectionBegan = true
+            healthCollectionStalled = false
+            MatchLog.info("startMatch: collection began", category: "workout")
         } catch {
             // Collection never began: tear down what the optimistic start spun up and fall back
             // to the start screen, the same terminal state as the pre-optimistic failure path.
             MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
+            startFailureMessage = "Couldn't start the workout: \(error.localizedDescription)"
             stopLocationUpdates()
             headingRecorder.stop()
             headingRecorder.reset()
@@ -328,11 +353,18 @@ final class WorkoutManager: NSObject {
         let end = Date()
         stopLocationUpdates()
         headingRecorder.stop()
+        MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan))", category: "workout")
 
         // Discard an accidental / too-short session: no matchEnd event, no HealthKit save, no
         // record persistence, no file transfer, no field learning. Return to the start screen.
-        let elapsed = builder?.elapsedTime(at: end) ?? elapsedAtPause
+        // If HealthKit collection never began (wedged healthd), the builder's elapsed time is a
+        // meaningless 0 — judge by wall clock so a real match isn't discarded as an accident;
+        // the record (with its embedded track) still saves and transfers without HealthKit.
+        let elapsed = collectionBegan
+            ? (builder?.elapsedTime(at: end) ?? elapsedAtPause)
+            : end.timeIntervalSince(matchStartDate)
         if elapsed < minimumMatchDuration {
+            MatchLog.info("endMatch: discarding too-short session (\(Int(elapsed))s)", category: "workout")
             liveStreamer.stop()
             session?.end()
             builder?.discardWorkout()
@@ -495,6 +527,9 @@ final class WorkoutManager: NSObject {
     private func resetForNewMatch(field: FieldModel?) {
         matchID = UUID()
         fieldID = field?.id
+        startFailureMessage = nil
+        healthCollectionStalled = false
+        collectionBegan = false
         // A resolved field gives the detector a touchline to reason about; without one, automatic
         // substitution detection is simply off for this match. Referees are never "subbed", and
         // indoor sessions have no GPS to reason about a touchline.
@@ -636,7 +671,12 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        // Non-fatal: surface nothing, keep the UI responsive.
+        // A dead session means no samples will ever arrive — swallowing this is how a device
+        // failure (e.g. the missing WKBackgroundModes key) stayed invisible for days. Log it
+        // and light both failure surfaces; the UI stays responsive either way.
+        MatchLog.error("workout session failed: \(error.localizedDescription)", category: "workout")
+        startFailureMessage = "Workout session failed: \(error.localizedDescription)"
+        healthCollectionStalled = true
     }
 }
 

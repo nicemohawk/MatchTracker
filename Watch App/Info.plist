@@ -14,10 +14,12 @@
 	<string>MatchTracker uses your location to record your route on the pitch.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>MatchTracker uses your location during a match to record your route on the pitch.</string>
-	<key>UIBackgroundModes</key>
+	<!-- WKBackgroundModes (NOT UIBackgroundModes — that's the iOS key) is what lets a watchOS
+	     HKWorkoutSession actually start on a physical watch. The simulator doesn't enforce it,
+	     so the wrong key passes every sim test while the device refuses the session. -->
+	<key>WKBackgroundModes</key>
 	<array>
 		<string>workout-processing</string>
-		<string>location</string>
 	</array>
 </dict>
 </plist>
