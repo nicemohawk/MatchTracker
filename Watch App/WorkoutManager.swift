@@ -232,34 +232,12 @@ final class WorkoutManager: NSObject {
         }
         resetForNewMatch(field: field)
 
-        let configuration = makeWorkoutConfiguration()
-        let session: HKWorkoutSession
-        MatchLog.info("startMatch: creating session (format \(matchFormat.rawValue))", category: "workout")
-        do {
-            session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
-        } catch {
-            // If we can't start, fall back to the start screen — with a visible reason.
-            MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
-            startFailureMessage = "Couldn't start the workout: \(error.localizedDescription)"
-            phase = .idle
-            return
-        }
-        MatchLog.info("startMatch: session created", category: "workout")
-        let builder = session.associatedWorkoutBuilder()
-        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
-        session.delegate = self
-        builder.delegate = self
-
-        self.session = session
-        self.builder = builder
-        // Indoor sessions have no usable GPS: skip the route builder entirely.
-        self.routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
-
+        // Flip the UI FIRST: the HealthKit setup below takes real time on-device, and running
+        // it before the phase change was the visible beat between "1" and the session screen.
         let start = Date()
         matchStartDate = start
-        session.startActivity(with: start)
-        MatchLog.info("startMatch: activity started", category: "workout")
-
+        phase = .active
+        log(.matchStart, haptic: false)
         // Indoor: no location updates, route, field detection, auto-sub or heading capture.
         // HR/energy still collect; the track stays empty and currentSpeed stays 0.
         if !isIndoor {
@@ -267,8 +245,6 @@ final class WorkoutManager: NSObject {
             headingRecorder.start()
         }
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
-        phase = .active
-        log(.matchStart, haptic: false)
 
         // Watchdog: if collection hasn't begun shortly, say so on the session screen — a wedged
         // healthd otherwise reads as a mysteriously frozen 0:00 timer.
@@ -279,21 +255,44 @@ final class WorkoutManager: NSObject {
             self.healthCollectionStalled = true
         }
 
+        // HealthKit setup off the main actor so the session screen renders instantly. Delegates
+        // are set before startActivity (their callbacks hop to main themselves).
+        let configuration = makeWorkoutConfiguration()
+        let store = healthStore
+        MatchLog.info("startMatch: creating session (format \(matchFormat.rawValue))", category: "workout")
         do {
+            let (session, builder) = try await Task.detached(priority: .userInitiated) { [weak self] in
+                let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
+                let builder = session.associatedWorkoutBuilder()
+                builder.dataSource = HKLiveWorkoutDataSource(healthStore: store,
+                                                             workoutConfiguration: configuration)
+                session.delegate = self
+                builder.delegate = self
+                MatchLog.info("startMatch: session created", category: "workout")
+                session.startActivity(with: start)
+                MatchLog.info("startMatch: activity started", category: "workout")
+                return (session, builder)
+            }.value
+
+            self.session = session
+            self.builder = builder
+            // Indoor sessions have no usable GPS: skip the route builder entirely.
+            self.routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: store, device: .local())
+
             try await builder.beginCollection(at: start)
             collectionBegan = true
             healthCollectionStalled = false
             MatchLog.info("startMatch: collection began", category: "workout")
         } catch {
-            // Collection never began: tear down what the optimistic start spun up and fall back
-            // to the start screen, the same terminal state as the pre-optimistic failure path.
+            // Session creation or collection failed: tear down what the optimistic start spun up
+            // and fall back to the start screen with a visible reason.
             MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
             startFailureMessage = "Couldn't start the workout: \(error.localizedDescription)"
             stopLocationUpdates()
             headingRecorder.stop()
             headingRecorder.reset()
             liveStreamer.stop()
-            session.end()
+            session?.end()
             clearInProgressBehindPendingWrites()
             reset()
         }
