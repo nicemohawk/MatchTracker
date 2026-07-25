@@ -179,6 +179,7 @@ final class WorkoutManager: NSObject {
 
     // MARK: - Authorization
 
+    @MainActor
     func requestAuthorization() async {
         let typesToShare: Set<HKSampleType> = [
             HKQuantityType.workoutType(),
@@ -217,7 +218,18 @@ final class WorkoutManager: NSObject {
     /// The live UI is shown as soon as the session starts — `beginCollection` is a HealthKit XPC
     /// round-trip that can take seconds, so it completes after the transition and metrics simply
     /// read 0 until the first samples arrive.
+    /// @MainActor: `phase` (and every other @Observable property) MUST mutate on the main
+    /// thread — off-main mutations happened to render on the simulator but never re-rendered on
+    /// a physical watch, leaving the countdown frozen on "1" with the session already live.
+    /// The synchronous HealthKit calls here are fast; the awaits suspend without blocking UI.
+    @MainActor
     func startMatch(field: FieldModel?) async {
+        // Re-entry guard: a stuck countdown view could fire this twice, stacking two live
+        // sessions (observed on-device as doubled start breadcrumbs).
+        guard phase != .active else {
+            MatchLog.error("startMatch: ignored — a session is already active", category: "workout")
+            return
+        }
         resetForNewMatch(field: field)
 
         let configuration = makeWorkoutConfiguration()
@@ -349,6 +361,9 @@ final class WorkoutManager: NSObject {
     /// End the match: stop location, finish the builder + route, persist and hand back results.
     /// Sessions shorter than `minimumMatchDuration` are discarded without saving or transferring.
     @discardableResult
+    /// @MainActor for the same reason as `startMatch`: observable mutations (phase, summary
+    /// fields) must land on the main thread to reliably re-render on device.
+    @MainActor
     func endMatch() async -> MatchOutcome {
         let end = Date()
         stopLocationUpdates()
@@ -603,6 +618,7 @@ final class WorkoutManager: NSObject {
     // MARK: - Session recovery
 
     /// Called on launch to reattach to a session that survived the app being suspended/killed.
+    @MainActor
     func recoverActiveWorkoutSession() async {
         guard session == nil else { return }
         let recovered: HKWorkoutSession?
@@ -675,8 +691,10 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
         // failure (e.g. the missing WKBackgroundModes key) stayed invisible for days. Log it
         // and light both failure surfaces; the UI stays responsive either way.
         MatchLog.error("workout session failed: \(error.localizedDescription)", category: "workout")
-        startFailureMessage = "Workout session failed: \(error.localizedDescription)"
-        healthCollectionStalled = true
+        DispatchQueue.main.async {
+            self.startFailureMessage = "Workout session failed: \(error.localizedDescription)"
+            self.healthCollectionStalled = true
+        }
     }
 }
 
