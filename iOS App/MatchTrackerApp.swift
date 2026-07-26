@@ -3,6 +3,7 @@
 
 import SwiftUI
 import BackgroundTasks
+import MatchTrackerKit
 
 @main
 struct MatchTrackerApp: App {
@@ -82,6 +83,11 @@ final class AppEnvironment: ObservableObject {
     let backlogImporter: BacklogImporter
 
     init() {
+        // Persistent lifecycle journal (this device's half; the watch ships its own after each
+        // match) — both ride along in diagnostic exports so sessions can be reconstructed.
+        MatchLog.enableJournal(
+            at: AppGroup.containerURL.appendingPathComponent("journal-phone.jsonl"),
+            deviceTag: "phone")
         let fields = FieldsModel()
         let matches = MatchStore(fields: fields)
         let uploads = UploadService(settings: settings, fields: fields, matches: matches)

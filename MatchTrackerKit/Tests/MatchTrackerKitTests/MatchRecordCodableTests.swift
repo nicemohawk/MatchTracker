@@ -84,3 +84,31 @@ extension MatchRecordCodableTests {
         XCTAssertThrowsError(try APIClient.jsonDecoder().decode(WireSample.self, from: json))
     }
 }
+
+// MARK: - MatchLog journal
+
+extension MatchRecordCodableTests {
+    func testJournalPersistsEntriesAsJSONL() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("journal-test-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        MatchLog.enableJournal(at: url, deviceTag: "test")
+        MatchLog.info("alpha", category: "unit")
+        MatchLog.error("beta", category: "unit")
+        MatchLog.flushJournal()
+
+        let lines = try String(contentsOf: url, encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        // enableJournal itself logs one line; then the two above.
+        XCTAssertGreaterThanOrEqual(lines.count, 3)
+        let last = try XCTUnwrap(lines.last?.data(using: .utf8))
+        let decoded = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: last) as? [String: String])
+        XCTAssertEqual(decoded["d"], "test")
+        XCTAssertEqual(decoded["l"], "error")
+        XCTAssertEqual(decoded["c"], "unit")
+        XCTAssertEqual(decoded["m"], "beta")
+        XCTAssertNotNil(decoded["t"])
+    }
+}

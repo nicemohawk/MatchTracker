@@ -41,6 +41,16 @@ enum DiagnosticRecordKind {
     static let manifest = "manifest"
     static let fields = "fields"
     static let match = "match"
+    static let journal = "journal"
+}
+
+/// One device's lifecycle journal (raw JSONL lines from MatchLog's persistent sink) — the
+/// "what actually happened" timeline that lets a session be reconstructed from an export.
+/// Import ignores this kind; it exists for the humans (and tools) reading the archive.
+struct DiagnosticJournal: Codable {
+    var kind = DiagnosticRecordKind.journal
+    var device: String
+    var entries: [String]
 }
 
 /// First line of the archive: what produced it and the environment it came from.
@@ -243,6 +253,17 @@ enum DiagnosticArchive {
 
         // 2. Fields.
         try writeLine(DiagnosticFields(fields: fields), encoder: encoder, to: filter)
+
+        // 2b. Lifecycle journals — this phone's and the last-received watch snapshot. Capped to
+        // the newest lines so a long-lived journal can't bloat the archive.
+        MatchLog.flushJournal()
+        for (device, fileName) in [("phone", "journal-phone.jsonl"), ("watch", "journal-watch.jsonl")] {
+            let url = AppGroup.containerURL.appendingPathComponent(fileName)
+            guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let entries = contents.split(separator: "\n").suffix(4000).map(String.init)
+            guard !entries.isEmpty else { continue }
+            try writeLine(DiagnosticJournal(device: device, entries: entries), encoder: encoder, to: filter)
+        }
 
         // 3. One line per match.
         for (index, summary) in summaries.enumerated() {

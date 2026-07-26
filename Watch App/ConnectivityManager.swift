@@ -33,6 +33,21 @@ final class ConnectivityManager: NSObject {
         static let key = "type"
         static let field = "field"
         static let matchRecord = "matchRecord"
+        static let journal = "journal"
+    }
+
+    /// Ship the watch's lifecycle journal to the phone (called after each match ends) so a
+    /// phone-side diagnostic export can reconstruct what happened on the watch.
+    func sendJournal() {
+        DispatchQueue.global(qos: .utility).async {
+            MatchLog.flushJournal()
+            let journalURL = AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl")
+            guard let data = try? Data(contentsOf: journalURL), !data.isEmpty else { return }
+            let temp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("journal-\(UUID().uuidString).jsonl")
+            guard (try? data.write(to: temp, options: .atomic)) != nil else { return }
+            WCSession.default.transferFile(temp, metadata: [TransferType.key: TransferType.journal])
+        }
     }
 
     private override init() {

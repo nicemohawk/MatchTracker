@@ -114,6 +114,9 @@ struct SummaryView: View {
     private func finishUp() {
         if let record = workoutManager.finishedRecord {
             connectivity.send(matchRecord: record)
+            // Ship the lifecycle journal alongside, so a phone-side diagnostic export can
+            // reconstruct this session's actual event sequence.
+            connectivity.sendJournal()
         }
         if workoutManager.proposedField != nil {
             showFieldPrompt = true

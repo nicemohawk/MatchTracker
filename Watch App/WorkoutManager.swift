@@ -680,6 +680,7 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
                         didChangeTo toState: HKWorkoutSessionState,
                         from fromState: HKWorkoutSessionState,
                         date: Date) {
+        MatchLog.info("session state \(fromState.rawValue) -> \(toState.rawValue)", category: "workout")
         DispatchQueue.main.async {
             self.sessionState = toState
         }
@@ -745,6 +746,12 @@ extension WorkoutManager: CLLocationManagerDelegate {
 
         let points = filtered.map(Self.trackPoint(from:))
         DispatchQueue.main.async {
+            // First accepted fix: the "GPS is alive" journal breadcrumb (accuracy only — the
+            // MatchLog privacy contract keeps coordinates out of logs).
+            if self.track.isEmpty, let first = filtered.first {
+                MatchLog.info("first GPS fix accepted (accuracy \(Int(first.horizontalAccuracy)) m)",
+                              category: "location")
+            }
             self.track.append(contentsOf: points)
             self.recentLocations.append(contentsOf: filtered)
             if self.recentLocations.count > 10 {

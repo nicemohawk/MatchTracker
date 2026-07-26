@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import MatchTrackerKit
 
 @main
 struct MatchTrackerWatchApp: App {
@@ -17,6 +18,11 @@ struct MatchTrackerWatchApp: App {
                 .environment(workoutManager)
                 .environment(connectivity)
                 .task {
+                    // Persistent lifecycle journal — exported (via the phone) in diagnostics so
+                    // a session can be reconstructed after the fact.
+                    MatchLog.enableJournal(
+                        at: AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl"),
+                        deviceTag: "watch")
                     connectivity.activate()
                     // Prime the field store (a full fields.json decode) off the main thread so
                     // StartView's first field detection doesn't pay for it mid-render.

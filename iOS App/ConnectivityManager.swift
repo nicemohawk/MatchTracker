@@ -96,6 +96,14 @@ extension ConnectivityManager: WCSessionDelegate {
             handleField(data: data)
         case "matchRecord":
             handleMatchRecord(data: data)
+        case "journal":
+            // The watch's lifecycle journal snapshot — stored whole (it's the watch's rotating
+            // window, so replacing avoids duplicate lines) for diagnostic export.
+            if let data {
+                try? data.write(to: AppGroup.containerURL.appendingPathComponent("journal-watch.jsonl"),
+                                options: .atomic)
+                MatchLog.info("received watch journal (\(data.count) bytes)", category: "connectivity")
+            }
         default:
             // Best-effort: try to decode as either.
             handleField(data: data)
