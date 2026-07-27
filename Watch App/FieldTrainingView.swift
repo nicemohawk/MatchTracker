@@ -128,6 +128,15 @@ struct FieldTrainingView: View {
                 walkStat(value: "\(trainer.sampleCount)", caption: "Points", tint: WatchTheme.turf)
             }
 
+            // Live starvation warning: a walk that's collecting nothing must say so AT the
+            // field, not produce a garbage rectangle to discover at home.
+            if trainer.gpsWeak {
+                Label("Weak GPS — points aren't landing", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(WatchTheme.cardYellow)
+                    .frame(maxWidth: .infinity)
+            }
+
             Label("Return to your start to finish", systemImage: "arrow.uturn.backward")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -178,6 +187,31 @@ struct FieldTrainingView: View {
             .padding(.vertical, 14)
             .watchCard()
 
+            // A starved walk fits a guess, not a field — warn before the save, offer a redo.
+            if trainer.walkLooksSparse {
+                VStack(spacing: 6) {
+                    Label("Only \(trainer.sampleCount) GPS points landed", systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(WatchTheme.cardYellow)
+                    Text("The fitted field may be off. Walking again usually fixes it.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button {
+                        WatchHaptics.click()
+                        walkStartedAt = Date()
+                        trainer.start()
+                    } label: {
+                        Label("Walk Again", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.pace, minHeight: 44))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+                .watchTile(tint: WatchTheme.cardYellow)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 Text("Field name")
                     .watchCaptionLabel()
@@ -213,6 +247,7 @@ struct FieldTrainingView: View {
         guard let field = trainer.makeField(named: name) else { return }
         try? AppGroupStorage.fieldStore.save(field)
         connectivity.send(field: field)
+        trainer.logSavedField(field)
         WatchHaptics.success()
         dismiss()
     }
