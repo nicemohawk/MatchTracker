@@ -34,7 +34,10 @@ enum WatchSettings {
 
     static var refereeMode: Bool {
         get { AppGroupStorage.defaults.bool(forKey: Key.refereeMode) }
-        set { AppGroupStorage.defaults.set(newValue, forKey: Key.refereeMode) }
+        set {
+            MatchLog.info("user: referee mode -> \(newValue)", category: "settings")
+            AppGroupStorage.defaults.set(newValue, forKey: Key.refereeMode)
+        }
     }
 
     static var doubleTapAction: DoubleTapAction {
@@ -42,12 +45,18 @@ enum WatchSettings {
             AppGroupStorage.defaults.string(forKey: Key.doubleTapAction)
                 .flatMap(DoubleTapAction.init(rawValue:)) ?? .flag
         }
-        set { AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.doubleTapAction) }
+        set {
+            MatchLog.info("user: double-tap action -> \(newValue.rawValue)", category: "settings")
+            AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.doubleTapAction)
+        }
     }
 
     static var sportID: String {
         get { AppGroupStorage.defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id }
-        set { AppGroupStorage.defaults.set(newValue, forKey: Key.sportID) }
+        set {
+            MatchLog.info("user: sport -> \(newValue)", category: "settings")
+            AppGroupStorage.defaults.set(newValue, forKey: Key.sportID)
+        }
     }
 
     /// Cached per sport id so repeated reads skip the linear scan of `SportProfile.all`.
@@ -67,6 +76,9 @@ enum WatchSettings {
             AppGroupStorage.defaults.string(forKey: Key.matchFormat)
                 .flatMap(MatchFormat.init(rawValue:)) ?? .match
         }
-        set { AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.matchFormat) }
+        set {
+            MatchLog.info("user: format -> \(newValue.rawValue)", category: "settings")
+            AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.matchFormat)
+        }
     }
 }

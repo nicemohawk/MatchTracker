@@ -259,7 +259,8 @@ final class WorkoutManager: NSObject {
         // are set before startActivity (their callbacks hop to main themselves).
         let configuration = makeWorkoutConfiguration()
         let store = healthStore
-        MatchLog.info("startMatch: creating session (format \(matchFormat.rawValue))", category: "workout")
+        MatchLog.info("startMatch: creating session (format \(matchFormat.rawValue), field \(field != nil ? "detected" : "none"), referee \(WatchSettings.refereeMode))",
+                      category: "workout")
         do {
             let (session, builder) = try await Task.detached(priority: .userInitiated) { [weak self] in
                 let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
@@ -346,6 +347,12 @@ final class WorkoutManager: NSObject {
     /// Append an already-built event (preserving its date and source), optionally give a success
     /// haptic, and persist the crash-safe record.
     private func append(_ event: MatchEvent, haptic: Bool) {
+        // The one funnel every match event passes through — manual taps and detectors alike —
+        // so the journal gets a complete event timeline. `haptic` distinguishes a user tap
+        // (true) from system-generated events.
+        let elapsed = Int(event.date.timeIntervalSince(matchStartDate))
+        MatchLog.info("event: \(event.kind.rawValue) at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (\(haptic ? "user" : "system"))",
+                      category: "events")
         events.append(event)
         if haptic {
             WKInterfaceDevice.current().play(.success)

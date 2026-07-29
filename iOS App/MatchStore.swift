@@ -595,6 +595,10 @@ final class MatchStore: ObservableObject {
 
     /// Persist an edited record JSON and refresh the affected summary + detail model.
     func save(record: MatchRecord) {
+        // Phone-side edits funnel through here (position edits, event tweaks, field binding) —
+        // journal what changed shape-wise, never the contents.
+        MatchLog.info("user: saved match record \(record.id) (\(record.events.count) events, positions \(record.reportedPositions?.count ?? 0), field \(record.fieldID != nil ? "bound" : "none"))",
+                      category: "matchstore")
         let encoder = MatchTrackerJSON.encoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(record) else { return }

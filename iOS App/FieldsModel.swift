@@ -34,6 +34,10 @@ final class FieldsModel: ObservableObject {
     private static let placeholderNames: Set<String> = ["", "New Field", "Match Field"]
 
     func save(_ field: FieldModel, pushToWatch: Bool = true) {
+        MatchLog.info(String(format: "field saved: %.0f×%.0f m, source %@, observations %d",
+                             field.rectangle.lengthMeters, field.rectangle.widthMeters,
+                             field.source.rawValue, field.observationCount),
+                      category: "fields")
         try? store.save(field)
         fields = store.fields
         if pushToWatch { onFieldsChanged?() }
@@ -56,6 +60,7 @@ final class FieldsModel: ObservableObject {
     }
 
     func delete(id: UUID) {
+        MatchLog.info("user: deleted field \(id)", category: "fields")
         try? store.delete(id: id)
         fields = store.fields
         onFieldsChanged?()
