@@ -88,10 +88,20 @@ struct SatelliteFieldDetector {
 
     /// Detect candidate pitches in a map region (e.g. the visible viewport).
     func detectFields(in region: MKCoordinateRegion) async -> [OrientedRectangle] {
+        let spanMeters = Int(region.span.latitudeDelta * 111_320)
+        MatchLog.info("scan: starting over ~\(spanMeters) m span", category: "scan")
         let proposals = await analyzeMultiScale(region: region)
-        return nonMaxSuppressed(proposals)
-            .sorted { $0.score > $1.score }
-            .map(\.rectangle)
+        let survivors = nonMaxSuppressed(proposals).sorted { $0.score > $1.score }
+        if let best = survivors.first {
+            MatchLog.info(String(format: "scan: %d raw candidates → %d after NMS; best %.0f×%.0f m score %.2f",
+                                 proposals.count, survivors.count,
+                                 best.rectangle.lengthMeters, best.rectangle.widthMeters, best.score),
+                          category: "scan")
+        } else {
+            MatchLog.info("scan: \(proposals.count) raw candidates, none survived gating/NMS",
+                          category: "scan")
+        }
+        return survivors.map(\.rectangle)
     }
 
     /// Scan around an existing (GPS-inferred) rectangle and return a crisp satellite rectangle
@@ -99,9 +109,19 @@ struct SatelliteFieldDetector {
     func snap(rectangle: OrientedRectangle) async -> OrientedRectangle? {
         let region = scanRegion(around: rectangle)
         let candidates = await analyzeMultiScale(region: region).map(\.rectangle)
-        return candidates
+        let snapped = candidates
             .filter { overlapFraction(between: $0, and: rectangle) >= 0.7 }
             .max { overlapFraction(between: $0, and: rectangle) < overlapFraction(between: $1, and: rectangle) }
+        if let snapped {
+            MatchLog.info(String(format: "scan: snapped GPS fit to satellite rectangle %.0f×%.0f m (overlap %.0f%%)",
+                                 snapped.lengthMeters, snapped.widthMeters,
+                                 overlapFraction(between: snapped, and: rectangle) * 100),
+                          category: "scan")
+        } else {
+            MatchLog.info("scan: snap found no satellite rectangle overlapping the GPS fit (\(candidates.count) candidates)",
+                          category: "scan")
+        }
+        return snapped
     }
 
     // MARK: - Snapshot

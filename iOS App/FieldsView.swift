@@ -339,8 +339,10 @@ struct FieldsView: View {
         isScanning = false
 
         if scanProposals.isEmpty {
+            MatchLog.info("scan: nothing shown to user (no proposals)", category: "scan")
             showBanner(.failure)
         } else {
+            MatchLog.info("scan: showing \(scanProposals.count) proposal(s) to user", category: "scan")
             showBanner(.success(scanProposals.count))
         }
 

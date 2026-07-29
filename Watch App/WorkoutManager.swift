@@ -437,6 +437,11 @@ final class WorkoutManager: NSObject {
                                                            projector: projector,
                                                            configuration: periodConfiguration)
         if !detectedPeriods.isEmpty {
+            let boundaries = detectedPeriods
+                .map { Int($0.date.timeIntervalSince(matchStartDate)) / 60 }
+                .map(String.init).joined(separator: ", ")
+            MatchLog.info("endMatch: detected \(detectedPeriods.count) period events at minutes [\(boundaries)]",
+                          category: "workout")
             events.append(contentsOf: detectedPeriods)
             events.sort { $0.date < $1.date }
         }
@@ -770,6 +775,9 @@ extension WorkoutManager: CLLocationManagerDelegate {
         let latestHeartRate = heartRate > 0 ? heartRate : nil
         for point in points {
             guard let event = detector.process(point: point, heartRate: latestHeartRate) else { continue }
+            let elapsed = Int(point.timestamp.timeIntervalSince(matchStartDate))
+            MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count))",
+                          category: "autosub")
             append(event, haptic: false)
             onPitch = event.kind != .subOut
             WKInterfaceDevice.current().play(.directionUp)
