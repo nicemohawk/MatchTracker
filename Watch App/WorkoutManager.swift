@@ -213,6 +213,51 @@ final class WorkoutManager: NSObject {
 
     // MARK: - Match lifecycle
 
+    /// When the pre-kickoff countdown runs out. Kickoff is driven by this wall-clock deadline
+    /// rather than by counting timer ticks: the watch suspends the app the moment the wrist
+    /// drops, and a swallowed tick used to strand the countdown on "1" forever with no way out.
+    private(set) var countdownDeadline = Date()
+
+    /// Guards against two kickoff triggers (a tick and the deadline task) both getting past the
+    /// phase check before `startMatch` flips it.
+    @ObservationIgnored private var kickoffInFlight = false
+
+    /// Enter the pre-kickoff countdown. Owns the deadline *and* the timer that fires it, so the
+    /// countdown view is only a display of state it can't strand.
+    @MainActor
+    func beginCountdown(field: FieldModel?, format: MatchFormat, seconds: TimeInterval = 3) {
+        guard phase == .idle else { return }
+        matchFormat = format
+        detectedField = field
+        startFailureMessage = nil
+        countdownDeadline = Date().addingTimeInterval(seconds)
+        phase = .countdown
+        MatchLog.info("user: start tapped (format \(format.rawValue), field \(field?.name ?? "none"))",
+                      category: "workout")
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // A sleep can be starved or resume late (the watch's clock doesn't advance while the
+            // CPU sleeps), so this loops on the wall clock instead of trusting a single wait.
+            while phase == .countdown, countdownDeadline.timeIntervalSinceNow > 0 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            await kickoffIfCountdownElapsed(trigger: "deadline")
+        }
+    }
+
+    /// Start the match if the countdown has run out. Safe to call from every redundant trigger —
+    /// the deadline task, a display tick, or the app coming back to the foreground.
+    @MainActor
+    func kickoffIfCountdownElapsed(trigger: String) async {
+        guard phase == .countdown, !kickoffInFlight,
+              countdownDeadline.timeIntervalSinceNow <= 0 else { return }
+        kickoffInFlight = true
+        MatchLog.info("countdown elapsed: kicking off (trigger \(trigger))", category: "workout")
+        await startMatch(field: detectedField)
+        kickoffInFlight = false
+    }
+
     /// Configure and start the workout session for a match on an optional detected field.
     ///
     /// The live UI is shown as soon as the session starts — `beginCollection` is a HealthKit XPC

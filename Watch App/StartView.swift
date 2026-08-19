@@ -33,9 +33,8 @@ struct StartView: View {
                     }
                     Button {
                         WatchHaptics.click()
-                        workoutManager.matchFormat = selectedFormat
-                        workoutManager.detectedField = fieldDetector.matchedField
-                        workoutManager.phase = .countdown
+                        workoutManager.beginCountdown(field: fieldDetector.matchedField,
+                                                      format: selectedFormat)
                     } label: {
                         Label("Start Match", systemImage: "figure.soccer")
                             .font(.headline)
