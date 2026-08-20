@@ -56,6 +56,11 @@ final class WorkoutManager: NSObject {
     var currentSpeed: Double = 0            // m/s, from recent GPS samples
     var elapsedAtPause: TimeInterval = 0    // snapshot for summary
 
+    /// Wall-clock pause accounting. The builder's elapsed time honors pauses by itself, but it
+    /// only exists while HealthKit is collecting — this keeps Pause meaningful when it isn't.
+    @ObservationIgnored private var pausedTotal: TimeInterval = 0
+    @ObservationIgnored private var pauseStarted: Date?
+
     // MARK: Match content
 
     var events: [MatchEvent] = []
@@ -171,10 +176,17 @@ final class WorkoutManager: NSObject {
         }.count
     }
 
-    /// Live elapsed time at a given instant, driven by the builder so pauses are respected.
+    /// Live elapsed time at a given instant.
+    ///
+    /// The builder is the source of truth while HealthKit is collecting (it honors pauses for
+    /// us); without it the wall clock takes over, minus time spent paused. A session that never
+    /// reached `beginCollection` used to read a frozen 0:00 that was indistinguishable from a
+    /// timer that had never started.
     func elapsedTime(at date: Date) -> TimeInterval {
-        guard let builder else { return elapsedAtPause }
-        return builder.elapsedTime(at: date)
+        if collectionBegan, let builder { return builder.elapsedTime(at: date) }
+        guard phase == .active else { return elapsedAtPause }
+        let paused = pausedTotal + (pauseStarted.map { date.timeIntervalSince($0) } ?? 0)
+        return max(0, date.timeIntervalSince(matchStartDate) - paused)
     }
 
     // MARK: - Authorization
@@ -366,12 +378,47 @@ final class WorkoutManager: NSObject {
         )
     }
 
+    /// Pause the match. The visible state flips here rather than waiting for HealthKit's
+    /// delegate callback: a session that failed to start (or a wedged healthd) never sends one,
+    /// and the button then reads as a dead control that only buzzes. The delegate still
+    /// reconciles `sessionState` when it does arrive.
+    @MainActor
     func pause() {
+        guard phase == .active, sessionState != .paused else { return }
+        MatchLog.info("user: pause tapped (session \(session == nil ? "absent" : "live"))",
+                      category: "workout")
+        applySessionState(.paused)
+        // A paused match shouldn't keep drawing track, distance or auto-subs from a player
+        // standing on the sideline.
+        if !isIndoor { stopLocationUpdates() }
         session?.pause()
     }
 
+    /// Resume a paused match. Mirror of `pause()` — optimistic, then forwarded to HealthKit.
+    @MainActor
     func resume() {
+        guard phase == .active, sessionState == .paused else { return }
+        MatchLog.info("user: resume tapped (session \(session == nil ? "absent" : "live"))",
+                      category: "workout")
+        applySessionState(.running)
+        if !isIndoor { startLocationUpdates() }
         session?.resume()
+    }
+
+    /// The one place `sessionState` changes, so the pause clock can't drift from it — whether the
+    /// change came from a button tap or from HealthKit's delegate contradicting one. Main queue
+    /// only, like every other observable mutation here.
+    private func applySessionState(_ state: HKWorkoutSessionState) {
+        sessionState = state
+        switch state {
+        case .paused where pauseStarted == nil:
+            pauseStarted = Date()
+        case .running:
+            if let pauseStarted { pausedTotal += Date().timeIntervalSince(pauseStarted) }
+            pauseStarted = nil
+        default:
+            break
+        }
     }
 
     /// Toggle the wearer's on-pitch state, logging a manual sub event with a strong haptic. Manual
@@ -419,16 +466,15 @@ final class WorkoutManager: NSObject {
         let end = Date()
         stopLocationUpdates()
         headingRecorder.stop()
-        MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan))", category: "workout")
+        MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan), session \(session == nil ? "absent" : "live"))",
+                      category: "workout")
 
         // Discard an accidental / too-short session: no matchEnd event, no HealthKit save, no
         // record persistence, no file transfer, no field learning. Return to the start screen.
-        // If HealthKit collection never began (wedged healthd), the builder's elapsed time is a
-        // meaningless 0 — judge by wall clock so a real match isn't discarded as an accident;
-        // the record (with its embedded track) still saves and transfers without HealthKit.
-        let elapsed = collectionBegan
-            ? (builder?.elapsedTime(at: end) ?? elapsedAtPause)
-            : end.timeIntervalSince(matchStartDate)
+        // `elapsedTime` falls back to the wall clock when HealthKit never began collecting, so a
+        // real match isn't discarded as an accident on the builder's meaningless 0; the record
+        // (with its embedded track) still saves and transfers without HealthKit.
+        let elapsed = elapsedTime(at: end)
         if elapsed < minimumMatchDuration {
             MatchLog.info("endMatch: discarding too-short session (\(Int(elapsed))s)", category: "workout")
             liveStreamer.stop()
@@ -441,22 +487,27 @@ final class WorkoutManager: NSObject {
         }
 
         log(.matchEnd, haptic: false)
-        // One final live delta so the sideline sees matchEnd instead of timing out.
-        await liveStreamer.sendFinalUpdate { [weak self] in self?.makeLiveUpdate() }
-        liveStreamer.stop()
 
         // Capture the workout's average heart rate before finishing.
         if let statistics = builder?.statistics(for: HKQuantityType(.heartRate)) {
             summaryAverageHeartRate = statistics.averageQuantity()?.doubleValue(for: Self.heartRateUnit)
         }
-        elapsedAtPause = builder?.elapsedTime(at: end) ?? elapsedAtPause
+        elapsedAtPause = elapsedTime(at: end)
+        // Built while the match is still `.active`, because that's what `makeLiveUpdate` reports on.
+        let finalUpdate = makeLiveUpdate()
 
         session?.end()
 
-        // Show the summary now: its hero stats (duration, distance, calories, avg HR) are already
-        // known, while the HealthKit finish + analytics pipeline below can take seconds. The
+        // Show the summary now, before anything that can block: its hero stats (duration,
+        // distance, calories, avg HR) are already known, while the HealthKit finish + analytics
+        // pipeline below can take seconds — and a wedged healthd or an unreachable phone must
+        // never be able to strand the user on the live screen with a match that has ended. The
         // record-driven rows fill in when `finishedRecord` publishes at the end.
         phase = .summary
+
+        // One final live delta so the sideline sees matchEnd instead of timing out.
+        liveStreamer.sendFinalUpdate(finalUpdate)
+        liveStreamer.stop()
 
         var workout: HKWorkout?
         do {
@@ -585,6 +636,8 @@ final class WorkoutManager: NSObject {
         distanceMeters = 0
         currentSpeed = 0
         elapsedAtPause = 0
+        pausedTotal = 0
+        pauseStarted = nil
         onPitch = true
         autoSubDetector = nil
         autoSubBanner = nil
@@ -616,6 +669,8 @@ final class WorkoutManager: NSObject {
         distanceMeters = 0
         currentSpeed = 0
         elapsedAtPause = 0
+        pausedTotal = 0
+        pauseStarted = nil
         onPitch = true
         finishedWorkout = nil
         finishedRecord = nil
@@ -739,7 +794,7 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
                         date: Date) {
         MatchLog.info("session state \(fromState.rawValue) -> \(toState.rawValue)", category: "workout")
         DispatchQueue.main.async {
-            self.sessionState = toState
+            self.applySessionState(toState)
         }
     }
 

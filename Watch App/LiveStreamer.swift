@@ -57,27 +57,35 @@ final class LiveStreamer {
         return sequence
     }
 
-    /// One guaranteed final update (e.g. carrying matchEnd) before the streamer stops; forces the
-    /// userInfo fallback so it survives an unreachable phone.
-    func sendFinalUpdate(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) async {
-        await sendOnce(snapshot: snapshot, forceFallback: true)
+    /// One guaranteed final update (e.g. carrying matchEnd) before the streamer stops; skips the
+    /// cadence gate so it survives an unreachable phone. Takes an already-built update rather than
+    /// a snapshot closure: by the time the match ends the caller has left the live phase, and it
+    /// is synchronous so ending a match never waits on WatchConnectivity.
+    func sendFinalUpdate(_ update: LiveMatchUpdate?) {
+        guard let update else { return }
+        transmit(update)
     }
 
-    private func sendOnce(snapshot: @escaping @MainActor () -> LiveMatchUpdate?,
-                          forceFallback: Bool = false) async {
+    private func sendOnce(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) async {
         let session = WCSession.default
         guard session.activationState == .activated else { return }
 
         // Decide whether this tick can transmit at all BEFORE snapshotting: building the update
         // consumes track/event deltas, and a consumed-but-dropped delta never reaches the phone.
-        let reachable = session.isReachable
-        let userInfoDue = forceFallback || Date().timeIntervalSince(lastUserInfoSend) >= userInfoInterval
-        guard reachable || userInfoDue else { return }
+        let userInfoDue = Date().timeIntervalSince(lastUserInfoSend) >= userInfoInterval
+        guard session.isReachable || userInfoDue else { return }
 
         guard let update = await MainActor.run(body: snapshot) else { return }
-        guard let data = try? MatchTrackerJSON.encoder().encode(update) else { return }
+        transmit(update)
+    }
 
-        if reachable {
+    /// Send one update by whichever channel is available: `sendMessage` while the phone is
+    /// reachable, the queued `transferUserInfo` fallback otherwise. Neither call blocks.
+    private func transmit(_ update: LiveMatchUpdate) {
+        let session = WCSession.default
+        guard session.activationState == .activated,
+              let data = try? MatchTrackerJSON.encoder().encode(update) else { return }
+        if session.isReachable {
             session.sendMessage([Self.messageKey: data], replyHandler: nil) { error in
                 MatchLog.error("Live update send failed: \(error.localizedDescription)", category: "live")
             }

@@ -204,6 +204,58 @@ final class WatchSmokeTests: XCTestCase {
         if done.exists && done.isHittable { done.tap() }
     }
 
+    /// Regression cover for controls that buzz but don't act: taps Pause on the live Controls page
+    /// and asserts the tile's caption actually flips to "Resume" (and back), then ends the match
+    /// and asserts we leave the live screen. The pause state used to be published only by
+    /// HealthKit's delegate callback, so a session that never really started left both controls
+    /// looking dead.
+    func testPauseResumeAndEndChangeTheUI() {
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 15)
+        handleWatchLocationPrompt(timeout: 8)
+
+        let startButton = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        let metricsMarker = app.staticTexts.matching(
+            NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        if startButton.waitForExistence(timeout: 45) {
+            startButton.tap()
+        } else if !metricsMarker.waitForExistence(timeout: 8) {
+            XCTFail("Neither Start screen nor an in-game page is reachable")
+            return
+        }
+        _ = metricsMarker.waitForExistence(timeout: 30)
+        sleep(2)
+
+        // Metrics → Controls (see the pager recipe in testWalkInGamePages).
+        app.swipeDown()
+        let pauseCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'Pause'")).firstMatch
+        let resumeCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'Resume'")).firstMatch
+        guard pauseCaption.waitForExistence(timeout: 20) else {
+            XCTFail("Controls page did not render the Pause tile")
+            return
+        }
+
+        // The tiles wrap bare SF Symbols, so their Buttons aren't labelled — tap by position
+        // (Pause is top-right, End top-left), matching the recipe the other tests use.
+        let pauseTile = app.coordinate(withNormalizedOffset: CGVector(dx: 0.73, dy: 0.30))
+        pauseTile.tap()
+        XCTAssertTrue(resumeCaption.waitForExistence(timeout: 10),
+                      "Pause should flip the tile to Resume — a haptic with no state change is the bug")
+
+        pauseTile.tap()
+        XCTAssertTrue(pauseCaption.waitForExistence(timeout: 10),
+                      "Resume should flip the tile back to Pause")
+
+        // End: this session is well under 30s, so it discards and returns to the start screen.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
+        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
+        let leftTheLiveScreen = startButton.waitForExistence(timeout: 30) || done.exists
+        XCTAssertTrue(leftTheLiveScreen, "End should leave the live session screen")
+        if done.exists && done.isHittable { done.tap() }
+    }
+
     /// Opens the touchline-training flow from the start screen, captures its themed idle screen
     /// (`67-watch-train-field`), then backs out. It deliberately never taps "Start Walking", so no
     /// GPS recording is ever started or left running.
