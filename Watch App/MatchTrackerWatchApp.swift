@@ -9,6 +9,7 @@ import MatchTrackerKit
 @main
 struct MatchTrackerWatchApp: App {
     @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @State private var workoutManager = WorkoutManager.shared
     @State private var connectivity = ConnectivityManager.shared
 
@@ -18,19 +19,32 @@ struct MatchTrackerWatchApp: App {
                 .environment(workoutManager)
                 .environment(connectivity)
                 .task {
-                    // Persistent lifecycle journal — exported (via the phone) in diagnostics so
-                    // a session can be reconstructed after the fact.
-                    MatchLog.enableJournal(
-                        at: AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl"),
-                        deviceTag: "watch")
+                    // Records any stretch where the main thread stops answering, so a frozen UI
+                    // is distinguishable from a logic bug in an export.
+                    MainThreadWatchdog.shared.start()
                     connectivity.activate()
-                    // Prime the field store (a full fields.json decode) off the main thread so
-                    // StartView's first field detection doesn't pay for it mid-render.
-                    Task.detached(priority: .userInitiated) { _ = AppGroupStorage.fieldStore }
+                    // Resolve the shared container and preferences off the main thread — both are
+                    // system round-trips — and prime the field store (a full fields.json decode)
+                    // while we're here, so StartView's first detection doesn't pay for it. The
+                    // journal lives in that container, so enabling it belongs in the same hop.
+                    Task.detached(priority: .userInitiated) {
+                        // Persistent lifecycle journal — exported (via the phone) in diagnostics
+                        // so a session can be reconstructed after the fact.
+                        MatchLog.enableJournal(
+                            at: AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl"),
+                            deviceTag: "watch")
+                        _ = AppGroupStorage.defaults
+                        _ = AppGroupStorage.fieldStore
+                    }
                     // The HealthKit calls are independent — run them concurrently.
                     async let authorization: Void = workoutManager.requestAuthorization()
                     async let recovery: Void = workoutManager.recoverActiveWorkoutSession()
                     _ = await (authorization, recovery)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    // Suspension and a wedged main thread look identical from the outside; only
+                    // the journal can separate them, and only if it records this.
+                    MatchLog.info("scene phase -> \(String(describing: phase))", category: "lifecycle")
                 }
                 .onOpenURL { url in
                     // Widget deep link: jump straight into the pre-match countdown.

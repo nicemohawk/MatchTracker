@@ -63,7 +63,9 @@ final class LiveStreamer {
     /// is synchronous so ending a match never waits on WatchConnectivity.
     func sendFinalUpdate(_ update: LiveMatchUpdate?) {
         guard let update else { return }
-        transmit(update)
+        // Off the caller's thread: this is called while ending a match, from the main actor, and
+        // WatchConnectivity is a daemon round-trip that has no business on the main thread.
+        Task.detached(priority: .utility) { [self] in transmit(update) }
     }
 
     private func sendOnce(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) async {

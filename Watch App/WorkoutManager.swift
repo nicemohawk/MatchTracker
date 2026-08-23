@@ -464,6 +464,7 @@ final class WorkoutManager: NSObject {
     @MainActor
     func endMatch() async -> MatchOutcome {
         let end = Date()
+        let heartRateUnit = Self.heartRateUnit
         stopLocationUpdates()
         headingRecorder.stop()
         MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan), session \(session == nil ? "absent" : "live"))",
@@ -478,36 +479,45 @@ final class WorkoutManager: NSObject {
         if elapsed < minimumMatchDuration {
             MatchLog.info("endMatch: discarding too-short session (\(Int(elapsed))s)", category: "workout")
             liveStreamer.stop()
-            session?.end()
-            builder?.discardWorkout()
             headingRecorder.reset()
             clearInProgressBehindPendingWrites()
+            let endingSession = session
+            let endingBuilder = builder
             reset()
+            // Back on the start screen before HealthKit is touched — see `endMatch`'s teardown.
+            await Task.detached(priority: .userInitiated) {
+                endingSession?.end()
+                endingBuilder?.discardWorkout()
+            }.value
             return .discardedTooShort
         }
 
         log(.matchEnd, haptic: false)
-
-        // Capture the workout's average heart rate before finishing.
-        if let statistics = builder?.statistics(for: HKQuantityType(.heartRate)) {
-            summaryAverageHeartRate = statistics.averageQuantity()?.doubleValue(for: Self.heartRateUnit)
-        }
         elapsedAtPause = elapsedTime(at: end)
         // Built while the match is still `.active`, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
 
-        session?.end()
-
-        // Show the summary now, before anything that can block: its hero stats (duration,
-        // distance, calories, avg HR) are already known, while the HealthKit finish + analytics
-        // pipeline below can take seconds — and a wedged healthd or an unreachable phone must
-        // never be able to strand the user on the live screen with a match that has ended. The
-        // record-driven rows fill in when `finishedRecord` publishes at the end.
+        // Show the summary now, before anything else: its hero stats (duration, distance,
+        // calories) are already known, and everything below is teardown. The record-driven rows
+        // fill in when `finishedRecord` publishes at the end.
         phase = .summary
 
         // One final live delta so the sideline sees matchEnd instead of timing out.
         liveStreamer.sendFinalUpdate(finalUpdate)
         liveStreamer.stop()
+
+        // HealthKit teardown off the main thread. `session.end()` and the builder's statistics are
+        // round-trips to healthd, and a synchronous one on the main thread freezes the whole watch
+        // UI — the End button buzzes and then nothing ever redraws. Awaiting a detached task hands
+        // the main thread back, so SwiftUI renders the summary whether or not healthd answers.
+        let endingSession = session
+        let endingBuilder = builder
+        summaryAverageHeartRate = await Task.detached(priority: .userInitiated) { () -> Double? in
+            let average = endingBuilder?.statistics(for: HKQuantityType(.heartRate))?
+                .averageQuantity()?.doubleValue(for: heartRateUnit)
+            endingSession?.end()
+            return average
+        }.value
 
         var workout: HKWorkout?
         do {
@@ -536,9 +546,15 @@ final class WorkoutManager: NSObject {
             .map { FieldProjector(rectangle: $0.rectangle) }
         var periodConfiguration = PeriodDetectorConfiguration()
         periodConfiguration.expectedPeriods = matchFormat == .match ? 2 : 0
-        let detectedPeriods = PeriodDetector.detectPeriods(track: track, events: events,
-                                                           projector: projector,
-                                                           configuration: periodConfiguration)
+        // Off the main actor: the detectors sweep the whole track, which on a 90-minute match is
+        // real work — enough to freeze the summary the moment it appears. Awaiting a detached task
+        // hands the main thread back to SwiftUI while they run.
+        let loggedEvents = events
+        let recordedTrack = track
+        let detectedPeriods = await Task.detached(priority: .userInitiated) {
+            PeriodDetector.detectPeriods(track: recordedTrack, events: loggedEvents,
+                                         projector: projector, configuration: periodConfiguration)
+        }.value
         if !detectedPeriods.isEmpty {
             let boundaries = detectedPeriods
                 .map { Int($0.date.timeIntervalSince(matchStartDate)) / 60 }
@@ -567,13 +583,18 @@ final class WorkoutManager: NSObject {
         // above. Only the final record gets it — the per-event crash-safety snapshots stay lean.
         record.track = track.isEmpty ? nil : track
 
-        AppGroupStorage.persistFinished(record)
         clearInProgressBehindPendingWrites()
 
-        // Detect runs once, feeding both the summary rows and the widget snapshot.
-        let runs = RunDetector.detectRuns(in: track, configuration: .scaled(for: matchContext))
-        let runCounts = (runs: runs.filter { $0.intensity == .run }.count,
-                         sprints: runs.filter { $0.intensity == .sprint }.count)
+        // Detect runs once, feeding both the summary rows and the widget snapshot. Same hop as the
+        // period detection above, together with the record's encode + disk write.
+        let finalRecord = record
+        let runConfiguration = RunDetectorConfiguration.scaled(for: matchContext)
+        let runCounts = await Task.detached(priority: .userInitiated) { () -> (runs: Int, sprints: Int) in
+            AppGroupStorage.persistFinished(finalRecord)
+            let runs = RunDetector.detectRuns(in: recordedTrack, configuration: runConfiguration)
+            return (runs: runs.filter { $0.intensity == .run }.count,
+                    sprints: runs.filter { $0.intensity == .sprint }.count)
+        }.value
         summaryRunCounts = runCounts
         writeLastMatchSnapshot(record: record, end: end, sprintCount: runCounts.sprints)
 
@@ -680,18 +701,25 @@ final class WorkoutManager: NSObject {
     }
 
     private func persistInProgress() {
-        var record = MatchRecord(
-            id: matchID,
-            startDate: matchStartDate,
-            endDate: nil,
-            fieldID: fieldID,
-            events: events,
-            teamCode: AppGroupStorage.teamCode
-        )
-        record.format = matchFormat
-        // The record snapshot above is cheap; the encode + disk write is not, so it happens on
-        // the serial persist queue (ordered, so a later snapshot can never be clobbered).
+        // Snapshot the observable state here (cheap); build, encode and write on the serial
+        // persist queue (ordered, so a later snapshot can never be clobbered). `teamCode` reads
+        // shared preferences, which is a system round-trip and belongs off the event path with
+        // the rest of it — this runs after every logged event, match start and match end included.
+        let id = matchID
+        let start = matchStartDate
+        let field = fieldID
+        let loggedEvents = events
+        let format = matchFormat
         persistQueue.async {
+            var record = MatchRecord(
+                id: id,
+                startDate: start,
+                endDate: nil,
+                fieldID: field,
+                events: loggedEvents,
+                teamCode: AppGroupStorage.teamCode
+            )
+            record.format = format
             AppGroupStorage.persistInProgress(record)
         }
     }

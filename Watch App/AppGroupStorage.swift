@@ -16,7 +16,11 @@ enum AppGroupStorage {
 
     /// App-group container directory. Falls back to the app's own documents directory when the
     /// group container is unavailable (e.g. previews / unit hosts) so nothing crashes.
-    static var containerURL: URL {
+    ///
+    /// Resolved once. `containerURL(forSecurityApplicationGroupIdentifier:)` is a containermanagerd
+    /// XPC round-trip, and this was being re-resolved on every access — including from the match
+    /// start/end paths on the main thread, where a slow daemon freezes the whole UI.
+    static let containerURL: URL = {
         if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
             return url
         }
@@ -24,7 +28,7 @@ enum AppGroupStorage {
         MatchLog.error("App group \(identifier) unavailable on watch — falling back to Documents. Field DB / match records won't be shared with the phone. Check the app group is enabled on the watch App ID and provisioning profile.", category: "appgroup")
         #endif
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    }
+    }()
 
     static var inProgressMatchURL: URL {
         containerURL.appendingPathComponent("inProgressMatch.json")
@@ -34,7 +38,10 @@ enum AppGroupStorage {
         containerURL.appendingPathComponent("matches", isDirectory: true)
     }
 
-    static var defaults: UserDefaults {
+    /// Shared preferences, opened once for the same reason as `containerURL`: `UserDefaults(
+    /// suiteName:)` talks to cfprefsd, and SwiftUI view bodies read these settings on every
+    /// render (referee mode, double-tap action, sport). Once open, reads are in-memory.
+    static let defaults: UserDefaults = {
         if let defaults = UserDefaults(suiteName: identifier) {
             return defaults
         }
@@ -42,7 +49,7 @@ enum AppGroupStorage {
         MatchLog.error("UserDefaults(suiteName: \(identifier)) is nil on watch — falling back to .standard; team/player metadata won't match the phone.", category: "appgroup")
         #endif
         return .standard
-    }
+    }()
 
     enum DefaultsKey {
         static let teamCode = "teamCode"
