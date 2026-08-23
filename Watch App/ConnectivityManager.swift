@@ -39,6 +39,7 @@ final class ConnectivityManager: NSObject {
     /// Ship the watch's lifecycle journal to the phone (called after each match ends) so a
     /// phone-side diagnostic export can reconstruct what happened on the watch.
     func sendJournal() {
+        guard WCSession.default.activationState == .activated else { return }
         DispatchQueue.global(qos: .utility).async {
             MatchLog.flushJournal()
             let journalURL = AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl")
@@ -130,6 +131,10 @@ extension ConnectivityManager: WCSessionDelegate {
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
                  error: Error?) {
+        // Ship the journal on every launch, not just after a match. A session that ended badly —
+        // a freeze cleared with a force quit — never reaches the summary, so the journal worth
+        // reading is exactly the one that used to stay stranded on the watch.
+        if activationState == .activated { sendJournal() }
         let context = session.receivedApplicationContext
         guard !context.isEmpty else { return }
         apply(context: context)
