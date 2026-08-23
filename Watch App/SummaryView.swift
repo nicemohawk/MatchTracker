@@ -79,6 +79,10 @@ struct SummaryView: View {
         // The post-match pipeline publishes the record after the summary appears; finish up again
         // when it lands (the transfer/prompt parts were no-ops while it was still nil).
         .onChange(of: workoutManager.finishedRecord?.id) { _, _ in finishUp() }
+        // Field learning finishes after the record publishes, so the prompt waits for it.
+        .onChange(of: workoutManager.proposedField?.id) { _, field in
+            if field != nil { showFieldPrompt = true }
+        }
         .sheet(isPresented: $showFieldPrompt) {
             ProposedFieldSheet()
         }
@@ -112,12 +116,9 @@ struct SummaryView: View {
     // MARK: Actions
 
     private func finishUp() {
-        if let record = workoutManager.finishedRecord {
-            connectivity.send(matchRecord: record)
-            // Ship the lifecycle journal alongside, so a phone-side diagnostic export can
-            // reconstruct this session's actual event sequence.
-            connectivity.sendJournal()
-        }
+        // The record and journal are sent by WorkoutManager as the match ends — a view's lifecycle
+        // is the wrong thing to hang a transfer on, since the screen it belongs to may never
+        // appear. This is only the celebration and the field prompt.
         if workoutManager.proposedField != nil {
             showFieldPrompt = true
         }

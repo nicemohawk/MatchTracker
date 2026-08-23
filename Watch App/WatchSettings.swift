@@ -24,6 +24,13 @@ enum DoubleTapAction: String, CaseIterable, Identifiable {
 }
 
 /// Watch-local preferences, stored in the app group so widgets and recovery paths see them too.
+///
+/// Every read comes from an in-memory mirror rather than from `UserDefaults` directly. SwiftUI view
+/// bodies read these on every render, and the match start and end paths read them too — while the
+/// first touch of an app-group preferences suite is a cfprefsd round trip that has been measured
+/// taking seconds on device, freezing the whole UI (the countdown stuck on "1", End buzzing with no
+/// redraw). `prime()` fills the mirror off the main thread at launch; until it lands, reads return
+/// the same defaults a fresh install would, and writes go straight through.
 enum WatchSettings {
     private enum Key {
         static let refereeMode = "refereeMode"
@@ -32,35 +39,84 @@ enum WatchSettings {
         static let matchFormat = "matchFormat"
     }
 
+    /// The mirrored values. Guarded by `lock` — read from the main thread, written from whichever
+    /// thread primes or changes a setting.
+    private struct Snapshot {
+        var refereeMode = false
+        var doubleTapAction = DoubleTapAction.flag
+        var sportID = SportProfile.soccer.id
+        var matchFormat = MatchFormat.match
+    }
+
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var snapshot = Snapshot()
+
+    private static func read<Value>(_ keyPath: KeyPath<Snapshot, Value>) -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return snapshot[keyPath: keyPath]
+    }
+
+    private static func write<Value>(_ keyPath: WritableKeyPath<Snapshot, Value>, _ value: Value) {
+        lock.lock()
+        snapshot[keyPath: keyPath] = value
+        lock.unlock()
+    }
+
+    /// Load the stored values into the mirror. Call once at launch, OFF the main thread.
+    static func prime() {
+        let defaults = AppGroupStorage.defaults
+        var loaded = Snapshot()
+        loaded.refereeMode = defaults.bool(forKey: Key.refereeMode)
+        loaded.doubleTapAction = defaults.string(forKey: Key.doubleTapAction)
+            .flatMap(DoubleTapAction.init(rawValue:)) ?? .flag
+        loaded.sportID = defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id
+        loaded.matchFormat = defaults.string(forKey: Key.matchFormat)
+            .flatMap(MatchFormat.init(rawValue:)) ?? .match
+        lock.lock()
+        snapshot = loaded
+        lock.unlock()
+        MatchLog.info("settings primed (referee \(loaded.refereeMode), sport \(loaded.sportID), format \(loaded.matchFormat.rawValue))",
+                      category: "settings")
+    }
+
+    /// Mirror first, then persist off the main thread — a setting change is a user action, and the
+    /// UI shouldn't wait on cfprefsd to reflect it.
+    private static func store(_ value: Any, forKey key: String) {
+        DispatchQueue.global(qos: .utility).async {
+            AppGroupStorage.defaults.set(value, forKey: key)
+        }
+    }
+
     static var refereeMode: Bool {
-        get { AppGroupStorage.defaults.bool(forKey: Key.refereeMode) }
+        get { read(\.refereeMode) }
         set {
             MatchLog.info("user: referee mode -> \(newValue)", category: "settings")
-            AppGroupStorage.defaults.set(newValue, forKey: Key.refereeMode)
+            write(\.refereeMode, newValue)
+            store(newValue, forKey: Key.refereeMode)
         }
     }
 
     static var doubleTapAction: DoubleTapAction {
-        get {
-            AppGroupStorage.defaults.string(forKey: Key.doubleTapAction)
-                .flatMap(DoubleTapAction.init(rawValue:)) ?? .flag
-        }
+        get { read(\.doubleTapAction) }
         set {
             MatchLog.info("user: double-tap action -> \(newValue.rawValue)", category: "settings")
-            AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.doubleTapAction)
+            write(\.doubleTapAction, newValue)
+            store(newValue.rawValue, forKey: Key.doubleTapAction)
         }
     }
 
     static var sportID: String {
-        get { AppGroupStorage.defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id }
+        get { read(\.sportID) }
         set {
             MatchLog.info("user: sport -> \(newValue)", category: "settings")
-            AppGroupStorage.defaults.set(newValue, forKey: Key.sportID)
+            write(\.sportID, newValue)
+            store(newValue, forKey: Key.sportID)
         }
     }
 
     /// Cached per sport id so repeated reads skip the linear scan of `SportProfile.all`.
-    private static var cachedSportProfile: (id: String, profile: SportProfile)?
+    private nonisolated(unsafe) static var cachedSportProfile: (id: String, profile: SportProfile)?
 
     static var sportProfile: SportProfile {
         let id = sportID
@@ -72,13 +128,11 @@ enum WatchSettings {
 
     /// Last-chosen match format for the start-screen quick pick (Match / Pickup / Indoor).
     static var matchFormat: MatchFormat {
-        get {
-            AppGroupStorage.defaults.string(forKey: Key.matchFormat)
-                .flatMap(MatchFormat.init(rawValue:)) ?? .match
-        }
+        get { read(\.matchFormat) }
         set {
             MatchLog.info("user: format -> \(newValue.rawValue)", category: "settings")
-            AppGroupStorage.defaults.set(newValue.rawValue, forKey: Key.matchFormat)
+            write(\.matchFormat, newValue)
+            store(newValue.rawValue, forKey: Key.matchFormat)
         }
     }
 }

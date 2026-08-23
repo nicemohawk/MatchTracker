@@ -34,6 +34,9 @@ final class ConnectivityManager: NSObject {
         static let field = "field"
         static let matchRecord = "matchRecord"
         static let journal = "journal"
+        /// Rides along with a match-record transfer so the queued copy on disk can be cleared
+        /// once the phone actually has it.
+        static let recordID = "recordID"
     }
 
     /// Ship the watch's lifecycle journal to the phone (called after each match ends) so a
@@ -70,11 +73,45 @@ final class ConnectivityManager: NSObject {
     }
 
     func send(matchRecord: MatchRecord) {
-        // Encode + temp-file write off the main queue: this fires from the summary's onAppear,
-        // right as its celebration animates in. transferFile itself just enqueues.
+        guard WCSession.default.activationState == .activated else { return }
+        // Encode + temp-file write off the main queue: this fires as the match ends, right as the
+        // summary's celebration animates in. transferFile itself just enqueues.
         DispatchQueue.global(qos: .utility).async {
             guard let url = self.writeTemporaryJSON(matchRecord, prefix: "match") else { return }
-            WCSession.default.transferFile(url, metadata: [TransferType.key: TransferType.matchRecord])
+            WCSession.default.transferFile(url, metadata: [TransferType.key: TransferType.matchRecord,
+                                                           TransferType.recordID: matchRecord.id.uuidString])
+        }
+    }
+
+    /// Re-send finished records the phone never acknowledged.
+    ///
+    /// A record used to leave the watch only from the summary screen, so a match whose ending
+    /// didn't finish cleanly kept its record — events, format, field and the redundant track —
+    /// stranded on the watch forever, even though the HealthKit workout saved fine. Records are
+    /// deleted from the app group only once their transfer lands, so whatever is still sitting
+    /// in that directory is by definition unsent.
+    func resendPendingMatchRecords(limit: Int = 10) {
+        guard WCSession.default.activationState == .activated else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let manager = FileManager.default
+            guard let urls = try? manager.contentsOfDirectory(
+                at: AppGroupStorage.finishedMatchesDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+
+            func modified(_ url: URL) -> Date {
+                (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            }
+            let pending = urls.filter { $0.pathExtension == "json" }
+                .sorted { modified($0) > modified($1) }
+                .prefix(limit)
+            guard !pending.isEmpty else { return }
+
+            MatchLog.info("resending \(pending.count) unsent match record(s)", category: "connectivity")
+            for url in pending {
+                let id = url.deletingPathExtension().lastPathComponent
+                WCSession.default.transferFile(url, metadata: [TransferType.key: TransferType.matchRecord,
+                                                               TransferType.recordID: id])
+            }
         }
     }
 
@@ -134,7 +171,10 @@ extension ConnectivityManager: WCSessionDelegate {
         // Ship the journal on every launch, not just after a match. A session that ended badly —
         // a freeze cleared with a force quit — never reaches the summary, so the journal worth
         // reading is exactly the one that used to stay stranded on the watch.
-        if activationState == .activated { sendJournal() }
+        if activationState == .activated {
+            sendJournal()
+            resendPendingMatchRecords()
+        }
         let context = session.receivedApplicationContext
         guard !context.isEmpty else { return }
         apply(context: context)
@@ -147,8 +187,13 @@ extension ConnectivityManager: WCSessionDelegate {
     /// Clean up the temporary JSON file backing a completed transfer. On success the file has
     /// been delivered and can be removed; on failure it is left in place so WCSession can retry.
     func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
-        if error == nil {
-            try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
+        guard error == nil else { return }
+        try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
+        // The copy in the app group is the retry source for a record the phone hasn't got yet, so
+        // it goes only now that this transfer has actually landed.
+        if let id = fileTransfer.file.metadata?[TransferType.recordID] as? String {
+            try? FileManager.default.removeItem(
+                at: AppGroupStorage.finishedMatchesDirectory.appendingPathComponent("\(id).json"))
         }
     }
 }

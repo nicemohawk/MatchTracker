@@ -33,7 +33,7 @@ struct MatchTrackerWatchApp: App {
                         MatchLog.enableJournal(
                             at: AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl"),
                             deviceTag: "watch")
-                        _ = AppGroupStorage.defaults
+                        WatchSettings.prime()
                         _ = AppGroupStorage.fieldStore
                     }
                     // The HealthKit calls are independent — run them concurrently.

@@ -598,7 +598,20 @@ final class WorkoutManager: NSObject {
         summaryRunCounts = runCounts
         writeLastMatchSnapshot(record: record, end: end, sprintCount: runCounts.sprints)
 
-        // Post-match field learning: refine a known field or propose a newly inferred one.
+        finishedWorkout = workout
+        // Published before field learning: SummaryView refreshes off the record, and run counts
+        // are already in place. The proposed field arrives on its own and the summary picks it up.
+        finishedRecord = record
+
+        // The record goes to the phone from here, not from the summary screen. It used to be sent
+        // by SummaryView.onAppear, so a match whose ending didn't finish cleanly kept its events,
+        // format, field and track on the watch — the workout saved to HealthKit either way, which
+        // is why those matches arrive on the phone stripped of everything the app adds.
+        ConnectivityManager.shared.send(matchRecord: record)
+        ConnectivityManager.shared.sendJournal()
+
+        // Post-match field learning last: it sweeps the whole track through the fitter, and
+        // nothing above should wait on it — least of all the record's trip to the phone.
         // Skipped indoors — there is no GPS track to learn a field from.
         if isIndoor {
             proposedField = nil
@@ -610,11 +623,6 @@ final class WorkoutManager: NSObject {
                 proposedField = nil
             }
         }
-
-        finishedWorkout = workout
-        // Published last: SummaryView refreshes off the record, so run counts and the proposed
-        // field must already be in place when it lands.
-        finishedRecord = record
         return .finished(workout: workout, record: record)
     }
 
