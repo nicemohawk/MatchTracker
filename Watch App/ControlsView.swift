@@ -5,6 +5,7 @@
 
 import SwiftUI
 import WatchKit
+import MatchTrackerKit
 
 /// Page 1 of the live session: End, Pause/Resume, Water Lock and the Sub Out/In toggle.
 struct ControlsView: View {
@@ -18,12 +19,14 @@ struct ControlsView: View {
                 HStack(spacing: 14) {
                     controlTile(title: "End", systemImage: "xmark", tint: WatchTheme.loss) {
                         WatchHaptics.stop()
+                        logTap("End")
                         Task { await endMatch() }
                     }
                     controlTile(title: isPaused ? "Resume" : "Pause",
                                 systemImage: isPaused ? "play.fill" : "pause",
                                 tint: WatchTheme.sprint) {
                         WatchHaptics.notify()
+                        logTap(isPaused ? "Resume" : "Pause")
                         if isPaused { workoutManager.resume() } else { workoutManager.pause() }
                     }
                 }
@@ -95,5 +98,13 @@ struct ControlsView: View {
 
     private func endMatch() async {
         await workoutManager.endMatch()
+    }
+
+    /// Journal the tap before the manager sees it, with the state the button was rendered from.
+    /// A control that buzzes and changes nothing is either not reaching the manager, not changing
+    /// the state, or not redrawing — and only the device can say which.
+    private func logTap(_ name: String) {
+        MatchLog.info("user: tapped \(name) (phase \(workoutManager.phase), sessionState \(workoutManager.sessionState.rawValue))",
+                      category: "ui")
     }
 }

@@ -69,15 +69,21 @@ struct RootView: View {
     @Environment(WorkoutManager.self) private var workoutManager
 
     var body: some View {
-        switch workoutManager.phase {
-        case .idle:
-            StartView()
-        case .countdown:
-            CountdownView()
-        case .active:
-            SessionView()
-        case .summary:
-            SummaryView()
+        // Journaled on every evaluation: the phase changing without this line following it means
+        // the state moved and SwiftUI never re-rendered — a different bug from the state not moving.
+        let phase = workoutManager.phase
+        MatchLog.info("render: phase \(phase)", category: "ui")
+        return Group {
+            switch phase {
+            case .idle:
+                StartView()
+            case .countdown:
+                CountdownView()
+            case .active:
+                SessionView()
+            case .summary:
+                SummaryView()
+            }
         }
     }
 }

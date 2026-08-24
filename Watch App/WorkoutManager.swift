@@ -294,6 +294,7 @@ final class WorkoutManager: NSObject {
         let start = Date()
         matchStartDate = start
         phase = .active
+        MatchLog.info("startMatch: phase -> active", category: "workout")
         log(.matchStart, haptic: false)
         // Indoor: no location updates, route, field detection, auto-sub or heading capture.
         // HR/energy still collect; the track stays empty and currentSpeed stays 0.
@@ -384,9 +385,12 @@ final class WorkoutManager: NSObject {
     /// reconciles `sessionState` when it does arrive.
     @MainActor
     func pause() {
-        guard phase == .active, sessionState != .paused else { return }
-        MatchLog.info("user: pause tapped (session \(session == nil ? "absent" : "live"))",
+        MatchLog.info("pause: entered (phase \(phase), sessionState \(sessionState.rawValue), session \(session == nil ? "absent" : "live"))",
                       category: "workout")
+        guard phase == .active, sessionState != .paused else {
+            MatchLog.error("pause: ignored — guard rejected the tap", category: "workout")
+            return
+        }
         applySessionState(.paused)
         // A paused match shouldn't keep drawing track, distance or auto-subs from a player
         // standing on the sideline.
@@ -397,9 +401,12 @@ final class WorkoutManager: NSObject {
     /// Resume a paused match. Mirror of `pause()` — optimistic, then forwarded to HealthKit.
     @MainActor
     func resume() {
-        guard phase == .active, sessionState == .paused else { return }
-        MatchLog.info("user: resume tapped (session \(session == nil ? "absent" : "live"))",
+        MatchLog.info("resume: entered (phase \(phase), sessionState \(sessionState.rawValue), session \(session == nil ? "absent" : "live"))",
                       category: "workout")
+        guard phase == .active, sessionState == .paused else {
+            MatchLog.error("resume: ignored — guard rejected the tap", category: "workout")
+            return
+        }
         applySessionState(.running)
         if !isIndoor { startLocationUpdates() }
         session?.resume()
@@ -501,6 +508,7 @@ final class WorkoutManager: NSObject {
         // calories) are already known, and everything below is teardown. The record-driven rows
         // fill in when `finishedRecord` publishes at the end.
         phase = .summary
+        MatchLog.info("endMatch: phase -> summary", category: "workout")
 
         // One final live delta so the sideline sees matchEnd instead of timing out.
         liveStreamer.sendFinalUpdate(finalUpdate)
