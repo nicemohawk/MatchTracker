@@ -23,7 +23,7 @@ final class LiveStreamer {
     private let userInfoInterval: TimeInterval = 30
 
     /// Starts the send loop. The closure snapshots current match state on the main actor.
-    func start(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) {
+    func start(snapshot: @escaping @MainActor @Sendable () -> LiveMatchUpdate?) {
         stop()
         sequence = 0
         sentTrackCount = 0
@@ -68,7 +68,7 @@ final class LiveStreamer {
         Task.detached(priority: .utility) { [self] in transmit(update) }
     }
 
-    private func sendOnce(snapshot: @escaping @MainActor () -> LiveMatchUpdate?) async {
+    private func sendOnce(snapshot: @escaping @MainActor @Sendable () -> LiveMatchUpdate?) async {
         let session = WCSession.default
         guard session.activationState == .activated else { return }
 

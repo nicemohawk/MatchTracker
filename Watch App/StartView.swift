@@ -74,7 +74,7 @@ struct StartView: View {
                     // Build stamp: the one-glance answer to "is the new build actually on the
                     // watch?" — the phone→watch install hop fails silently often enough that
                     // this has to be visible on-device.
-                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
+                    Text("v\(AppVersion.current)")
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }

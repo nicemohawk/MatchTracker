@@ -10,7 +10,10 @@ enum AppGroup {
 
     /// Root shared container. Falls back to Application Support if the app group is
     /// unavailable (e.g. running without provisioning) so the app still functions.
-    static var containerURL: URL {
+    ///
+    /// Resolved once: `containerURL(forSecurityApplicationGroupIdentifier:)` is a containermanagerd
+    /// round-trip, and this is read on every cache path and every record write.
+    static let containerURL: URL = {
         if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
             return url
         }
@@ -25,6 +28,14 @@ enum AppGroup {
             .appendingPathComponent("MatchTracker", isDirectory: true)
         try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
         return fallback
+    }()
+
+    /// Shared preferences, opened once (cfprefsd round-trip on first use).
+    static let defaults: UserDefaults = UserDefaults(suiteName: identifier) ?? .standard
+
+    enum DefaultsKey {
+        /// Build string the watch last reported, e.g. "1.0 (7)".
+        static let watchVersion = "watchVersion"
     }
 
     /// Directory the Kit `FieldStore` reads/writes `fields.json` in.

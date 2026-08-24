@@ -109,16 +109,16 @@ final class MatchStore: ObservableObject {
     /// The in-flight badge-cache decode; `loadedBadge(for:)` awaits it so the expensive per-row
     /// cold path never fires just because the cache "looks empty" while still loading.
     private var badgeCacheLoadTask: Task<Void, Never>?
-    private static let badgeCacheFileName = "matchBadges.json"
+    private nonisolated static let badgeCacheFileName = "matchBadges.json"
     /// Persisted lightweight row snapshots (see `PersistedMatchSummary`) so the list paints the
     /// last-known rows synchronously on cold launch, before the HK workout query returns.
-    private static let summaryCacheFileName = "matchSummaries.json"
+    private nonisolated static let summaryCacheFileName = "matchSummaries.json"
 
     /// Ids of deleted matches whose HKWorkout couldn't be deleted (HealthKit only lets an app
     /// delete objects it saved itself), persisted so those workouts never resurface on refresh.
     /// Tiny — loaded synchronously at init.
     private var hiddenMatchIDs: Set<UUID>
-    private static let hiddenMatchesFileName = "hiddenMatches.json"
+    private nonisolated static let hiddenMatchesFileName = "hiddenMatches.json"
 
     /// Invoked with newly seen workout UUIDs so the app can auto-upload them.
     var onNewMatches: (([MatchSummary]) -> Void)?

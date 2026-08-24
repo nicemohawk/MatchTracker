@@ -34,6 +34,8 @@ final class ConnectivityManager: NSObject {
         static let field = "field"
         static let matchRecord = "matchRecord"
         static let journal = "journal"
+        /// Key for the watch's own build report (userInfo, not a file transfer).
+        static let watchVersion = "watchVersion"
         /// Rides along with a match-record transfer so the queued copy on disk can be cleared
         /// once the phone actually has it.
         static let recordID = "recordID"
@@ -52,6 +54,16 @@ final class ConnectivityManager: NSObject {
             guard (try? data.write(to: temp, options: .atomic)) != nil else { return }
             WCSession.default.transferFile(temp, metadata: [TransferType.key: TransferType.journal])
         }
+    }
+
+    /// Tell the phone which build is actually on the watch.
+    ///
+    /// Queued rather than sent, so it survives an unreachable phone. The phone shows it beside its
+    /// own build: the install hop from phone to watch fails quietly often enough that "which build
+    /// am I actually testing?" has cost real debugging time.
+    func reportVersion() {
+        guard WCSession.default.activationState == .activated else { return }
+        WCSession.default.transferUserInfo([TransferType.watchVersion: AppVersion.current])
     }
 
     private override init() {
@@ -172,6 +184,7 @@ extension ConnectivityManager: WCSessionDelegate {
         // a freeze cleared with a force quit — never reaches the summary, so the journal worth
         // reading is exactly the one that used to stay stranded on the watch.
         if activationState == .activated {
+            reportVersion()
             sendJournal()
             resendPendingMatchRecords()
         }

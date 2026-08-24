@@ -230,7 +230,7 @@ struct SatelliteFieldDetector {
     /// candidates it produced and, for the strongest few, the fit + gate breakdown. Lets the
     /// validation harness show WHY a worn pitch did/didn't survive without a rebuild-per-guess loop.
     func ridgeSearchDiagnostics(snapshot: Snapshot) -> String {
-        guard let ciImage = CIImage(image: snapshot.mkSnapshot.image) else { return "no-ci" }
+        guard CIImage(image: snapshot.mkSnapshot.image) != nil else { return "no-ci" }
         let imageSize = snapshot.mkSnapshot.image.size
         let maps = RidgeMaps(sampler: snapshot.sampler, imageSize: imageSize)
         let orientationDegrees = dominantOrientations(maps: maps).map { Int(($0 * 180 / .pi).rounded()) % 180 }
@@ -257,7 +257,7 @@ struct SatelliteFieldDetector {
     /// DEBUG-only: the fitted rectangles for the ridge search's refined candidates BEFORE gating, so
     /// the harness can draw where the model-driven search actually landed (pass or fail).
     func ridgeSearchDebugRectangles(snapshot: Snapshot) -> [OrientedRectangle] {
-        guard let ciImage = CIImage(image: snapshot.mkSnapshot.image) else { return [] }
+        guard CIImage(image: snapshot.mkSnapshot.image) != nil else { return [] }
         let imageSize = snapshot.mkSnapshot.image.size
         let maps = RidgeMaps(sampler: snapshot.sampler, imageSize: imageSize)
         return ridgeSearchHypotheses(maps: maps, imageSize: imageSize).compactMap { hypothesis in

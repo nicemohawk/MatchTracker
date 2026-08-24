@@ -377,7 +377,7 @@ struct MatchesView: View {
                 fields: fields,
                 teamCode: SettingsStore.shared.teamCode.isEmpty ? "TEST01" : SettingsStore.shared.teamCode
             )
-            try? await factory.generateMatch(daysAgo: 1)
+            _ = try? await factory.generateMatch(daysAgo: 1)
             await matches.refresh()
             isGeneratingDemo = false
         }

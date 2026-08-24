@@ -11,6 +11,20 @@ public enum AppGroup {
     public static let identifier = "group.com.nicemohawk.MatchTracker"
 }
 
+/// The running app's marketing version and build, e.g. "1.0 (7)".
+///
+/// Shown on both apps' own screens, and reported watch → phone: a build number that doesn't match
+/// what was just installed is the one-glance answer to "did this actually land?", and the
+/// phone→watch install hop fails silently often enough to need one.
+public enum AppVersion {
+    public static var current: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
+}
+
 /// Canonical JSON coders for MatchTracker's on-disk and over-the-wire value types. ISO-8601
 /// dates match the backend contract and the WatchConnectivity payloads.
 public enum MatchTrackerJSON {

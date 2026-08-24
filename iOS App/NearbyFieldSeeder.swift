@@ -249,7 +249,7 @@ final class NearbyFieldSeeder: NSObject {
 
 // MARK: - CLLocationManagerDelegate
 
-extension NearbyFieldSeeder: CLLocationManagerDelegate {
+extension NearbyFieldSeeder: @MainActor CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         guard wantsLocation else { return }
         switch manager.authorizationStatus {

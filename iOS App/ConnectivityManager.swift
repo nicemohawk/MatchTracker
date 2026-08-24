@@ -129,8 +129,8 @@ extension ConnectivityManager: WCSessionDelegate {
         guard field.source == .inferred else { return }
         Task { [weak self] in
             guard let snapped = await SatelliteFieldDetector().snap(rectangle: field.rectangle) else { return }
+            guard let self else { return }
             await MainActor.run {
-                guard let self else { return }
                 var updated = field
                 updated.rectangle = snapped
                 updated.source = .satellite
@@ -147,6 +147,10 @@ extension ConnectivityManager: WCSessionDelegate {
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         handleLiveUpdate(userInfo["liveUpdate"] as? Data)
+        if let watchVersion = userInfo["watchVersion"] as? String {
+            MatchLog.info("watch reports build \(watchVersion)", category: "connectivity")
+            AppGroup.defaults.set(watchVersion, forKey: AppGroup.DefaultsKey.watchVersion)
+        }
     }
 
     private func handleLiveUpdate(_ data: Data?) {

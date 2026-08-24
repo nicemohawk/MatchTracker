@@ -222,7 +222,6 @@ enum MatchFilter: Hashable {
 
 // The Kit enum has a String raw value but doesn't declare Hashable; the list's filter model needs
 // it (it's a `MatchFilter` associated value), so conform it here.
-extension MatchTrackerKit.MatchFormat: @retroactive Hashable {}
 
 extension MatchTrackerKit.MatchFormat {
     /// Chip label in the app idiom: pickup, not "small-sided".

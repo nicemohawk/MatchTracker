@@ -2,6 +2,7 @@
 // MatchTracker
 
 import SwiftUI
+import MatchTrackerKit
 
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
@@ -16,6 +17,8 @@ struct SettingsView: View {
     @State private var serverOverride = ""
     @State private var contributeDetectedFields = true
     @State private var healthKitMessage: String?
+    /// Build the watch last reported over WatchConnectivity; empty until it does.
+    @AppStorage(AppGroup.DefaultsKey.watchVersion, store: AppGroup.defaults) private var watchVersion = ""
     @State private var showingConsentSheet = false
     @State private var showingDeletionConfirmation = false
     @State private var privacyMessage: String?
@@ -125,6 +128,23 @@ struct SettingsView: View {
 
                 Section("About") {
                     LabeledContent("App", value: "MatchTracker")
+                    LabeledContent("iPhone build", value: AppVersion.current)
+                    LabeledContent("Watch build") {
+                        // A watch build behind the phone's means the install hop didn't land —
+                        // the thing that has repeatedly made a fix look like it didn't work.
+                        if watchVersion.isEmpty {
+                            Text("Not reported yet").foregroundStyle(.secondary)
+                        } else if watchVersion == AppVersion.current {
+                            Text(watchVersion)
+                        } else {
+                            Text(watchVersion).foregroundStyle(Theme.cardYellow)
+                        }
+                    }
+                    if !watchVersion.isEmpty, watchVersion != AppVersion.current {
+                        Text("The watch is running a different build than this phone. Reinstall the watch app before testing a fix.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     LabeledContent("Records", value: "Soccer matches from Apple Watch")
                 }
 
