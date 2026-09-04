@@ -1,0 +1,45 @@
+{
+  "identifier" : "B31A4E62-0000-4000-8000-6D617463680A",
+  "nonRenewingSubscriptions" : [ ],
+  "products" : [ ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [ ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21500000",
+      "localizations" : [ ],
+      "name" : "Team",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [ ],
+          "codeOffers" : [ ],
+          "displayPrice" : "3.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6743210001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Team stats, live dashboard, chat, formations",
+              "displayName" : "MatchTracker Team",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.nicemohawk.MatchTracker.team.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Team Monthly",
+          "subscriptionGroupID" : "21500000",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

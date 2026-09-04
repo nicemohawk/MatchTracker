@@ -2,32 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>MatchTracker</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
+	<key>WKApplication</key>
+	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>com.nicemohawk.MatchTracker</string>
-	<key>WKWatchKitApp</key>
-	<true/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>MatchTracker reads your heart rate and workout data during a match.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>MatchTracker saves your match as a workout in Health.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>MatchTracker uses your location to record your route on the pitch.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>MatchTracker uses your location during a match to record your route on the pitch.</string>
+	<!-- BOTH keys are required, for different frameworks. WKBackgroundModes/workout-processing
+	     lets HKWorkoutSession start on a physical watch (sim doesn't enforce it). CoreLocation
+	     separately checks UIBackgroundModes/location before allowsBackgroundLocationUpdates —
+	     without it, startLocationUpdates crashes with NSInternalInconsistencyException. -->
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>

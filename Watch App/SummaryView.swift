@@ -1,0 +1,275 @@
+//
+//  SummaryView.swift
+//  MatchTracker
+//
+
+import SwiftUI
+import MatchTrackerKit
+
+/// Post-match summary, styled after Apple's workout summary. Shows duration, time on pitch,
+/// distance, average heart rate, calories, run/sprint counts and the score/event recap. Sends
+/// the finished record to the phone and, if a new field was inferred, offers to save it.
+struct SummaryView: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(ConnectivityManager.self) private var connectivity
+    @State private var showFieldPrompt = false
+    @State private var celebrated = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                celebrationHeader
+
+                VStack(spacing: 0) {
+                    // Secondary rows are muted to white so they don't compete with the duration
+                    // hero; heart rate keeps its accent, and referee card colors stay because the
+                    // color IS the datum (a yellow card is yellow).
+                    if WatchSettings.refereeMode {
+                        // Officiating summary: the referee's own athletic stats are noise here.
+                        statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                        statRow("Yellow Cards", value: "\(count(of: .yellowCard))", tint: WatchTheme.cardYellow)
+                        statRow("Red Cards", value: "\(count(of: .redCard))", tint: WatchTheme.loss)
+                        statRow("Fouls", value: "\(count(of: .foul))", tint: .primary)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
+                    } else if isIndoor {
+                        // Indoor: GPS-derived distance/runs/sprints are unavailable; effort is HR-driven.
+                        statRow("Time on Pitch", value: timeOnPitchString, tint: .primary)
+                        statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
+                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .primary)
+                        statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
+                    } else {
+                        statRow("Time on Pitch", value: timeOnPitchString, tint: .primary)
+                        statRow("Distance", value: distanceString, tint: .primary)
+                        statRow("Avg Heart Rate", value: averageHeartRateString, tint: WatchTheme.heart)
+                        statRow("Active Calories", value: "\(Int(workoutManager.activeCalories)) CAL", tint: .primary)
+                        statRow("Runs", value: runCounts.map { "\($0.runs)" } ?? "--", tint: .primary)
+                        statRow("Sprints", value: runCounts.map { "\($0.sprints)" } ?? "--", tint: .primary)
+                        statRow("Score", value: "\(workoutManager.score.us)–\(workoutManager.score.them)", tint: .primary)
+                        statRow("Events", value: "\(workoutManager.loggedEventCount)", tint: .primary, isLast: true)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .watchCard()
+
+                if isIndoor {
+                    Label("Indoor session — effort from heart rate", systemImage: "house")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if autoDetectedSubCount > 0 {
+                    Label("\(autoDetectedSubCount) auto sub\(autoDetectedSubCount == 1 ? "" : "s")",
+                          systemImage: "wand.and.stars")
+                        .font(.caption2)
+                        .foregroundStyle(WatchTheme.signal)
+                }
+
+                Button("Done") {
+                    WatchHaptics.click()
+                    workoutManager.reset()
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 44, prominent: true))
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, 4)
+        }
+        .onAppear(perform: finishUp)
+        // The post-match pipeline publishes the record after the summary appears; finish up again
+        // when it lands (the transfer/prompt parts were no-ops while it was still nil).
+        .onChange(of: workoutManager.finishedRecord?.id) { _, _ in finishUp() }
+        // Field learning finishes after the record publishes, so the prompt waits for it.
+        .onChange(of: workoutManager.proposedField?.id) { _, field in
+            if field != nil { showFieldPrompt = true }
+        }
+        .sheet(isPresented: $showFieldPrompt) {
+            ProposedFieldSheet()
+        }
+    }
+
+    /// Duration hero with the field name, styled after Apple's workout summary. Springs in on
+    /// appear as a small celebration.
+    private var celebrationHeader: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Match Complete")
+                .watchCaptionLabel()
+                .foregroundStyle(WatchTheme.turf)
+            Text(summarySubtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(durationString)
+                .watchHeroNumeral()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+            if let fieldName {
+                Label(fieldName, systemImage: "mappin.and.ellipse")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .scaleEffect(celebrated ? 1.0 : 0.9)
+        .opacity(celebrated ? 1.0 : 0.0)
+    }
+
+    // MARK: Actions
+
+    private func finishUp() {
+        // The record and journal are sent by WorkoutManager as the match ends — a view's lifecycle
+        // is the wrong thing to hang a transfer on, since the screen it belongs to may never
+        // appear. This is only the celebration and the field prompt.
+        if workoutManager.proposedField != nil {
+            showFieldPrompt = true
+        }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            celebrated = true
+        }
+    }
+
+    // MARK: Derived stats
+
+    /// Indoor sessions hide the GPS-derived athletic rows in favor of an HR-effort summary.
+    private var isIndoor: Bool {
+        (workoutManager.finishedRecord?.format ?? workoutManager.matchFormat) == .indoor
+    }
+
+    private var interval: DateInterval? {
+        guard let record = workoutManager.finishedRecord, let end = record.endDate else { return nil }
+        return DateInterval(start: record.startDate, end: end)
+    }
+
+    private var playingIntervals: [DateInterval] {
+        guard let interval, let record = workoutManager.finishedRecord else { return [] }
+        return SubstitutionTracker.playingIntervals(events: record.events,
+                                                    matchStart: interval.start,
+                                                    matchEnd: interval.end)
+    }
+
+    /// Computed once by the post-match pipeline; nil (shown as "--") while still computing.
+    private var runCounts: (runs: Int, sprints: Int)? {
+        workoutManager.summaryRunCounts
+    }
+
+    private var fieldName: String? {
+        guard let fieldID = workoutManager.finishedRecord?.fieldID else { return nil }
+        return AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID })?.name
+    }
+
+    private func count(of kind: MatchEventKind) -> Int {
+        (workoutManager.finishedRecord?.events ?? workoutManager.events)
+            .filter { $0.kind == kind }.count
+    }
+
+    /// Substitutions the detector logged automatically during this match.
+    private var autoDetectedSubCount: Int {
+        (workoutManager.finishedRecord?.events ?? workoutManager.events).filter {
+            $0.source == .automatic && ($0.kind == .subIn || $0.kind == .subOut)
+        }.count
+    }
+
+    // MARK: Formatting
+
+    private var durationString: String {
+        MatchTrackerFormat.hoursMinutesSeconds(interval?.duration ?? workoutManager.elapsedAtPause)
+    }
+
+    /// Small "format · date" subtitle under the header, e.g. "Match · Jul 14". Format comes from
+    /// the finished record (falling back to the live format); the date from the session start.
+    /// Degrades to just the format name when no start date is available.
+    private var summarySubtitle: String {
+        let format = workoutManager.finishedRecord?.format ?? workoutManager.matchFormat
+        let name = formatDisplayName(format)
+        guard let start = workoutManager.finishedRecord?.startDate else { return name }
+        return "\(name) · \(start.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    private func formatDisplayName(_ format: MatchFormat) -> String {
+        switch format {
+        case .match: return "Match"
+        case .smallSided: return "Small-Sided"
+        case .indoor: return "Indoor"
+        }
+    }
+
+    private var timeOnPitchString: String {
+        guard let interval, let record = workoutManager.finishedRecord else { return "--" }
+        let onPitch = SubstitutionTracker.timeOnPitch(events: record.events,
+                                                      matchStart: interval.start,
+                                                      matchEnd: interval.end)
+        return MatchTrackerFormat.hoursMinutesSeconds(onPitch)
+    }
+
+    // Metric to match the iOS app (MatchFormat.distance renders km everywhere).
+    private var distanceString: String {
+        String(format: "%.2f km", workoutManager.distanceMeters / 1000)
+    }
+
+    private var averageHeartRateString: String {
+        guard let bpm = workoutManager.summaryAverageHeartRate, bpm > 0 else { return "--" }
+        return "\(Int(bpm)) BPM"
+    }
+
+    /// One labeled stat row: uppercase caption on the left, a colored monospaced value on the
+    /// right, with a hairline divider beneath (suppressed on the final row).
+    private func statRow(_ title: String, value: String, tint: Color, isLast: Bool = false) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+            }
+            .padding(.vertical, 7)
+            if !isLast {
+                Divider().overlay(WatchTheme.surfaceStroke)
+            }
+        }
+    }
+}
+
+/// Confirmation sheet for a newly inferred field, offering to save and share it.
+private struct ProposedFieldSheet: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(ConnectivityManager.self) private var connectivity
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = "New Field"
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(WatchTheme.turf)
+                Text("New field detected — save?")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+
+                TextField("Field name", text: $name)
+
+                Button("Save Field") {
+                    WatchHaptics.success()
+                    saveProposedField()
+                    dismiss()
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 44, prominent: true))
+
+                Button("Not Now") { dismiss() }
+                    .tint(.secondary)
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private func saveProposedField() {
+        guard var field = workoutManager.proposedField else { return }
+        field.name = name.isEmpty ? "New Field" : name
+        try? AppGroupStorage.fieldStore.save(field)
+        connectivity.send(field: field)
+        workoutManager.proposedField = nil
+    }
+}

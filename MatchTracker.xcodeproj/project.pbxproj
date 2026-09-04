@@ -3,216 +3,147 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 51;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B51189012194A9AB0067B25E /* FieldTrainingInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */; };
-		B5118903219549860067B25E /* FieldsTableViewConrtoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */; };
-		B51189062195DFCB0067B25E /* Field.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51189052195DFCB0067B25E /* Field.swift */; };
-		B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86BC2165BF0E0034810C /* CloudKit.framework */; };
-		B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B52D86C92165CFD10034810C /* Locksmith.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7B2145C3B80035914D /* Interface.storyboard */; };
-		B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F7E2145C3BB0035914D /* Assets.xcassets */; };
-		B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		B53B0F8B2145C3BC0035914D /* StartMatchInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */; };
-		B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */; };
-		B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53B0F8E2145C3BC0035914D /* NotificationController.swift */; };
-		B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B53B0F902145C3BC0035914D /* Assets.xcassets */; };
-		B53B0F962145C3BC0035914D /* MatchTracker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = B53B0F792145C3B80035914D /* MatchTracker Watch App.app */; };
-		B53B0FA42145C4110035914D /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B53B0FA32145C4110035914D /* HealthKit.framework */; };
-		B57FDAA6216422CB00EFBDB5 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */; };
-		B58B3EF7215BF43900F73281 /* Packages.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F341FBA16EF00B884AE /* Packages.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D65C1FAAF00D006EAABC /* AppDelegate.swift */; };
-		B599D6621FAAF00D006EAABC /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6601FAAF00D006EAABC /* Main.storyboard */; };
-		B599D6641FAAF00D006EAABC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B599D6631FAAF00D006EAABC /* Assets.xcassets */; };
-		B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */; };
-		B599D6721FAAF00E006EAABC /* MatchTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */; };
-		B599D67D1FAAF00E006EAABC /* MatchTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */; };
-		B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F361FBA16EF00B884AE /* Alamofire.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		B5A6E70C215E73A60055EDF0 /* WorkoutInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */; };
-		B5AB2B16215214A6003CC1AC /* Packages.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B5357F341FBA16EF00B884AE /* Packages.framework */; };
-		B5D65F4A2328AEB600DF7425 /* WorkoutControlsInterfaceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */; };
-		B5D65F4C2328AF3F00DF7425 /* WorkoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */; };
-		B5F99B7F219A83760054A379 /* Mappable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F99B7E219A83760054A379 /* Mappable.swift */; };
-		C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42706281FCCA34A00A745A9 /* DataSource.swift */; };
-		C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43B69221FB678BC009DF4E9 /* MapViewController.swift */; };
-		C45DDE511FB27F44006322C7 /* MatchesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */; };
-		C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4CB05111FB642CC00E15074 /* MappableWorkout.swift */; };
-		C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F5BC941FD74BB300EEC216 /* APIRouter.swift */; };
+		0A0000000000000000000023 /* MatchTrackerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0A0000000000000000000021 /* MatchTrackerKit */; };
+		0A0000000000000000000024 /* MatchTrackerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0A0000000000000000000022 /* MatchTrackerKit */; };
+		0A0000000000000000000039 /* MatchTracker Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 0A0000000000000000000041 /* MatchTracker Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0B0000000000000000000A00 /* MatchTrackerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0B0000000000000000000909 /* MatchTrackerKit */; };
+		0B0000000000000000000E00 /* MatchTracker Widgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0B0000000000000000000808 /* MatchTracker Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		B52D86C82165CFD10034810C /* PBXContainerItemProxy */ = {
+		0A000000000000000000003B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
-			proxyType = 2;
-			remoteGlobalIDString = "Locksmith::Locksmith::Product";
-			remoteInfo = Locksmith;
-		};
-		B5357F331FBA16EF00B884AE /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
-			proxyType = 2;
-			remoteGlobalIDString = "Packages::Packages::Product";
-			remoteInfo = Packages;
-		};
-		B5357F351FBA16EF00B884AE /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
-			proxyType = 2;
-			remoteGlobalIDString = "Alamofire::Alamofire::Product";
-			remoteInfo = Alamofire;
-		};
-		B53B0F872145C3BC0035914D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
+			containerPortal = 0A0000000000000000000001 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = B53B0F842145C3BC0035914D;
-			remoteInfo = "Match Tracker Extension";
+			remoteGlobalIDString = 0A0000000000000000000040;
+			remoteInfo = "MatchTracker Watch App";
 		};
-		B53B0F942145C3BC0035914D /* PBXContainerItemProxy */ = {
+		0B0000000000000000001010 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
+			containerPortal = 0A0000000000000000000001 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = B53B0F782145C3B80035914D;
-			remoteInfo = "Match Tracker";
+			remoteGlobalIDString = 0B0000000000000000000101;
+			remoteInfo = "MatchTracker Widgets";
 		};
-		B599D66E1FAAF00E006EAABC /* PBXContainerItemProxy */ = {
+		0C0000000000000000001010 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
+			containerPortal = 0A0000000000000000000001 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = B599D6581FAAF00D006EAABC;
+			remoteGlobalIDString = 0A0000000000000000000030;
 			remoteInfo = MatchTracker;
 		};
-		B599D6791FAAF00E006EAABC /* PBXContainerItemProxy */ = {
+		0D0000000000000000001010 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = B599D6511FAAF00D006EAABC /* Project object */;
+			containerPortal = 0A0000000000000000000001 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = B599D6581FAAF00D006EAABC;
-			remoteInfo = MatchTracker;
-		};
-		B5AB2B142152148E003CC1AC /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
-			proxyType = 1;
-			remoteGlobalIDString = "Alamofire::Alamofire";
-			remoteInfo = Alamofire;
+			remoteGlobalIDString = 0A0000000000000000000040;
+			remoteInfo = "MatchTracker Watch App";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		B53B0F9F2145C3BC0035914D /* Embed App Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				B53B0F862145C3BC0035914D /* Match Tracker Extension.appex in Embed App Extensions */,
-			);
-			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B53B0FA12145C3BC0035914D /* Embed Watch Content */ = {
+		0A0000000000000000000038 /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				B53B0F962145C3BC0035914D /* MatchTracker Watch App.app in Embed Watch Content */,
+				0A0000000000000000000039 /* MatchTracker Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B5A1728E1FBE30CD003E71EC /* Embed Frameworks */ = {
+		0B0000000000000000000D0D /* Embed App Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 10;
+			dstSubfolderSpec = 13;
 			files = (
-				B52D86CA2165DCE90034810C /* Locksmith.framework in Embed Frameworks */,
-				B58B3EF7215BF43900F73281 /* Packages.framework in Embed Frameworks */,
-				B5A172901FBE30F3003E71EC /* Alamofire.framework in Embed Frameworks */,
+				0B0000000000000000000E00 /* MatchTracker Widgets.appex in Embed App Extensions */,
 			);
-			name = "Embed Frameworks";
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldTrainingInterfaceController.swift; sourceTree = "<group>"; };
-		B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldsTableViewConrtoller.swift; sourceTree = "<group>"; };
-		B51189052195DFCB0067B25E /* Field.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Field.swift; sourceTree = "<group>"; };
-		B52D86B8216558430034810C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
-		B52D86BC2165BF0E0034810C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
-		B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Packages.xcodeproj; sourceTree = SOURCE_ROOT; };
-		B53B0F792145C3B80035914D /* MatchTracker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "MatchTracker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		B53B0F7C2145C3B80035914D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Interface.storyboard; sourceTree = "<group>"; };
-		B53B0F7E2145C3BB0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		B53B0F802145C3BB0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Match Tracker Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartMatchInterfaceController.swift; sourceTree = "<group>"; };
-		B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDelegate.swift; sourceTree = "<group>"; };
-		B53B0F8E2145C3BC0035914D /* NotificationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationController.swift; sourceTree = "<group>"; };
-		B53B0F902145C3BC0035914D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		B53B0F922145C3BC0035914D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B53B0F932145C3BC0035914D /* PushNotificationPayload.apns */ = {isa = PBXFileReference; lastKnownFileType = text; path = PushNotificationPayload.apns; sourceTree = "<group>"; };
-		B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Match Tracker Extension.entitlements"; sourceTree = "<group>"; };
-		B53B0FA32145C4110035914D /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS4.3.sdk/System/Library/Frameworks/HealthKit.framework; sourceTree = DEVELOPER_DIR; };
-		B55AE22C2175A42E004E14CF /* update_build_number.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = update_build_number.sh; sourceTree = "<group>"; };
-		B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatchTracker.entitlements; sourceTree = "<group>"; };
-		B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
-		B599D6591FAAF00D006EAABC /* MatchTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatchTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B599D65C1FAAF00D006EAABC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		B599D6611FAAF00D006EAABC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
-		B599D6631FAAF00D006EAABC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		B599D6661FAAF00D006EAABC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		B599D6681FAAF00D006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatchTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTrackerTests.swift; sourceTree = "<group>"; };
-		B599D6731FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatchTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchTrackerUITests.swift; sourceTree = "<group>"; };
-		B599D67E1FAAF00E006EAABC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInterfaceController.swift; sourceTree = "<group>"; };
-		B5A8B5C81FB817F9005E7C2E /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
-		B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutControlsInterfaceController.swift; sourceTree = "<group>"; };
-		B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WorkoutController.swift; sourceTree = "<group>"; };
-		B5F99B7E219A83760054A379 /* Mappable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mappable.swift; sourceTree = "<group>"; };
-		C42706281FCCA34A00A745A9 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
-		C43B69221FB678BC009DF4E9 /* MapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewController.swift; sourceTree = "<group>"; };
-		C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchesTableViewController.swift; sourceTree = "<group>"; };
-		C4CB05111FB642CC00E15074 /* MappableWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MappableWorkout.swift; sourceTree = "<group>"; };
-		C4F5BC941FD74BB300EEC216 /* APIRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRouter.swift; sourceTree = "<group>"; };
+		0A0000000000000000000031 /* MatchTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatchTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A0000000000000000000041 /* MatchTracker Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "MatchTracker Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B0000000000000000000808 /* MatchTracker Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "MatchTracker Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0C0000000000000000000808 /* MatchTracker UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "MatchTracker UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D0000000000000000000808 /* MatchTracker Watch UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "MatchTracker Watch UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0A0000000000000000000012 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Info-Debug.plist",
+				Info.plist,
+			);
+			target = 0A0000000000000000000030 /* MatchTracker */;
+		};
+		0A0000000000000000000013 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0A0000000000000000000040 /* MatchTracker Watch App */;
+		};
+		0B0000000000000000000C0C /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0B0000000000000000000101 /* MatchTracker Widgets */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0A0000000000000000000010 /* iOS App */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (0A0000000000000000000012 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "iOS App"; sourceTree = "<group>"; };
+		0A0000000000000000000011 /* Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (0A0000000000000000000013 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Watch App"; sourceTree = "<group>"; };
+		0B0000000000000000000B0B /* Watch Widgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (0B0000000000000000000C0C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Watch Widgets"; sourceTree = "<group>"; };
+		0C0000000000000000000B0B /* MatchTracker UITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "MatchTracker UITests"; sourceTree = "<group>"; };
+		0D0000000000000000000B0B /* MatchTracker Watch UITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "MatchTracker Watch UITests"; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
-		B53B0F822145C3BC0035914D /* Frameworks */ = {
+		0A0000000000000000000036 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B53B0FA42145C4110035914D /* HealthKit.framework in Frameworks */,
+				0A0000000000000000000023 /* MatchTrackerKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D6561FAAF00D006EAABC /* Frameworks */ = {
+		0A0000000000000000000046 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B52D86BD2165BF0E0034810C /* CloudKit.framework in Frameworks */,
-				B5AB2B16215214A6003CC1AC /* Packages.framework in Frameworks */,
-				B57FDAA6216422CB00EFBDB5 /* HealthKit.framework in Frameworks */,
+				0A0000000000000000000024 /* MatchTrackerKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D66A1FAAF00E006EAABC /* Frameworks */ = {
+		0B0000000000000000000606 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0B0000000000000000000A00 /* MatchTrackerKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0C0000000000000000000606 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D6751FAAF00E006EAABC /* Frameworks */ = {
+		0D0000000000000000000606 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -222,386 +153,237 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		B51189042195DF320067B25E /* Data Model */ = {
+		0A0000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				C42706281FCCA34A00A745A9 /* DataSource.swift */,
-				C4CB05111FB642CC00E15074 /* MappableWorkout.swift */,
-				B51189052195DFCB0067B25E /* Field.swift */,
-				B5F99B7E219A83760054A379 /* Mappable.swift */,
+				0A0000000000000000000010 /* iOS App */,
+				0A0000000000000000000011 /* Watch App */,
+				0B0000000000000000000B0B /* Watch Widgets */,
+				0C0000000000000000000B0B /* MatchTracker UITests */,
+				0D0000000000000000000B0B /* MatchTracker Watch UITests */,
+				0A0000000000000000000003 /* Products */,
 			);
-			path = "Data Model";
 			sourceTree = "<group>";
 		};
-		B5357F2A1FBA16C000B884AE /* Packages */ = {
+		0A0000000000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				B5A8B5C81FB817F9005E7C2E /* Package.swift */,
-				B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */,
-			);
-			name = Packages;
-			sourceTree = "<group>";
-		};
-		B5357F2D1FBA16EF00B884AE /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				B5357F361FBA16EF00B884AE /* Alamofire.framework */,
-				B52D86C92165CFD10034810C /* Locksmith.framework */,
-				B5357F341FBA16EF00B884AE /* Packages.framework */,
+				0A0000000000000000000031 /* MatchTracker.app */,
+				0A0000000000000000000041 /* MatchTracker Watch App.app */,
+				0B0000000000000000000808 /* MatchTracker Widgets.appex */,
+				0C0000000000000000000808 /* MatchTracker UITests.xctest */,
+				0D0000000000000000000808 /* MatchTracker Watch UITests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		B53B0F7A2145C3B80035914D /* Watch App */ = {
-			isa = PBXGroup;
-			children = (
-				B53B0F7B2145C3B80035914D /* Interface.storyboard */,
-				B53B0F7E2145C3BB0035914D /* Assets.xcassets */,
-				B53B0F802145C3BB0035914D /* Info.plist */,
-			);
-			path = "Watch App";
-			sourceTree = "<group>";
-		};
-		B53B0F892145C3BC0035914D /* Watch Extension */ = {
-			isa = PBXGroup;
-			children = (
-				B53B0FA22145C4110035914D /* Match Tracker Extension.entitlements */,
-				B53B0F8A2145C3BC0035914D /* StartMatchInterfaceController.swift */,
-				B51188FF21940B1B0067B25E /* FieldTrainingInterfaceController.swift */,
-				B5D65F4B2328AF3F00DF7425 /* WorkoutController.swift */,
-				B5A6E70B215E73A60055EDF0 /* WorkoutInterfaceController.swift */,
-				B5D65F492328AEB600DF7425 /* WorkoutControlsInterfaceController.swift */,
-				B53B0F8C2145C3BC0035914D /* ExtensionDelegate.swift */,
-				B53B0F8E2145C3BC0035914D /* NotificationController.swift */,
-				B53B0F902145C3BC0035914D /* Assets.xcassets */,
-				B53B0F922145C3BC0035914D /* Info.plist */,
-				B53B0F932145C3BC0035914D /* PushNotificationPayload.apns */,
-			);
-			path = "Watch Extension";
-			sourceTree = "<group>";
-		};
-		B599D6501FAAF00D006EAABC = {
-			isa = PBXGroup;
-			children = (
-				B52D86B8216558430034810C /* README.md */,
-				B57FDAA4216422CB00EFBDB5 /* MatchTracker.entitlements */,
-				B55AE22C2175A42E004E14CF /* update_build_number.sh */,
-				B599D65B1FAAF00D006EAABC /* MatchTracker */,
-				B53B0F7A2145C3B80035914D /* Watch App */,
-				B53B0F892145C3BC0035914D /* Watch Extension */,
-				B599D6701FAAF00E006EAABC /* MatchTracker Tests */,
-				B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */,
-				B599D65A1FAAF00D006EAABC /* Products */,
-				B5357F2A1FBA16C000B884AE /* Packages */,
-				B5A707B51FAAF23400622F5E /* Frameworks */,
-			);
-			sourceTree = "<group>";
-		};
-		B599D65A1FAAF00D006EAABC /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				B599D6591FAAF00D006EAABC /* MatchTracker.app */,
-				B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */,
-				B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */,
-				B53B0F792145C3B80035914D /* MatchTracker Watch App.app */,
-				B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		B599D65B1FAAF00D006EAABC /* MatchTracker */ = {
-			isa = PBXGroup;
-			children = (
-				B599D65C1FAAF00D006EAABC /* AppDelegate.swift */,
-				C4F5BC941FD74BB300EEC216 /* APIRouter.swift */,
-				C45DDE501FB27F44006322C7 /* MatchesTableViewController.swift */,
-				B5118902219549860067B25E /* FieldsTableViewConrtoller.swift */,
-				C43B69221FB678BC009DF4E9 /* MapViewController.swift */,
-				B51189042195DF320067B25E /* Data Model */,
-				B599D6601FAAF00D006EAABC /* Main.storyboard */,
-				B599D6631FAAF00D006EAABC /* Assets.xcassets */,
-				B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */,
-				B599D6681FAAF00D006EAABC /* Info.plist */,
-			);
-			path = MatchTracker;
-			sourceTree = "<group>";
-		};
-		B599D6701FAAF00E006EAABC /* MatchTracker Tests */ = {
-			isa = PBXGroup;
-			children = (
-				B599D6711FAAF00E006EAABC /* MatchTrackerTests.swift */,
-				B599D6731FAAF00E006EAABC /* Info.plist */,
-			);
-			path = "MatchTracker Tests";
-			sourceTree = "<group>";
-		};
-		B599D67B1FAAF00E006EAABC /* MatchTracker UI Tests */ = {
-			isa = PBXGroup;
-			children = (
-				B599D67C1FAAF00E006EAABC /* MatchTrackerUITests.swift */,
-				B599D67E1FAAF00E006EAABC /* Info.plist */,
-			);
-			path = "MatchTracker UI Tests";
-			sourceTree = "<group>";
-		};
-		B5A707B51FAAF23400622F5E /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				B52D86BC2165BF0E0034810C /* CloudKit.framework */,
-				B57FDAA5216422CB00EFBDB5 /* HealthKit.framework */,
-				B53B0FA32145C4110035914D /* HealthKit.framework */,
-			);
-			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B53B0F782145C3B80035914D /* MatchTracker Watch App */ = {
+		0A0000000000000000000030 /* MatchTracker */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */;
+			buildConfigurationList = 0A0000000000000000000032 /* Build configuration list for PBXNativeTarget "MatchTracker" */;
 			buildPhases = (
-				B53B0F772145C3B80035914D /* Resources */,
-				B53B0F9F2145C3BC0035914D /* Embed App Extensions */,
-				B55AE2332175A478004E14CF /* Update Build Number */,
+				0A0000000000000000000035 /* Sources */,
+				0A0000000000000000000036 /* Frameworks */,
+				0A0000000000000000000037 /* Resources */,
+				0A0000000000000000000038 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				B53B0F882145C3BC0035914D /* PBXTargetDependency */,
+				0A000000000000000000003A /* PBXTargetDependency */,
 			);
-			name = "MatchTracker Watch App";
-			productName = "Match Tracker";
-			productReference = B53B0F792145C3B80035914D /* MatchTracker Watch App.app */;
-			productType = "com.apple.product-type.application.watchapp2";
-		};
-		B53B0F842145C3BC0035914D /* Match Tracker Extension */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker Extension" */;
-			buildPhases = (
-				B53B0F812145C3BC0035914D /* Sources */,
-				B53B0F822145C3BC0035914D /* Frameworks */,
-				B53B0F832145C3BC0035914D /* Resources */,
-				B5D27CB7217680F600B79CF1 /* Update Build Number */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "Match Tracker Extension";
-			productName = "Match Tracker Extension";
-			productReference = B53B0F852145C3BC0035914D /* Match Tracker Extension.appex */;
-			productType = "com.apple.product-type.watchkit2-extension";
-		};
-		B599D6581FAAF00D006EAABC /* MatchTracker */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTracker" */;
-			buildPhases = (
-				B599D6551FAAF00D006EAABC /* Sources */,
-				B599D6561FAAF00D006EAABC /* Frameworks */,
-				B599D6571FAAF00D006EAABC /* Resources */,
-				B55AE2322175A450004E14CF /* Update Build Number */,
-				B5A1728E1FBE30CD003E71EC /* Embed Frameworks */,
-				B53B0FA12145C3BC0035914D /* Embed Watch Content */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				B5AB2B152152148E003CC1AC /* PBXTargetDependency */,
-				B53B0F952145C3BC0035914D /* PBXTargetDependency */,
+			fileSystemSynchronizedGroups = (
+				0A0000000000000000000010 /* iOS App */,
 			);
 			name = MatchTracker;
+			packageProductDependencies = (
+				0A0000000000000000000021 /* MatchTrackerKit */,
+			);
 			productName = MatchTracker;
-			productReference = B599D6591FAAF00D006EAABC /* MatchTracker.app */;
+			productReference = 0A0000000000000000000031 /* MatchTracker.app */;
 			productType = "com.apple.product-type.application";
 		};
-		B599D66C1FAAF00E006EAABC /* MatchTrackerTests */ = {
+		0A0000000000000000000040 /* MatchTracker Watch App */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B599D6841FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerTests" */;
+			buildConfigurationList = 0A0000000000000000000042 /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */;
 			buildPhases = (
-				B599D6691FAAF00E006EAABC /* Sources */,
-				B599D66A1FAAF00E006EAABC /* Frameworks */,
-				B599D66B1FAAF00E006EAABC /* Resources */,
+				0A0000000000000000000045 /* Sources */,
+				0A0000000000000000000046 /* Frameworks */,
+				0A0000000000000000000047 /* Resources */,
+				0B0000000000000000000D0D /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				B599D66F1FAAF00E006EAABC /* PBXTargetDependency */,
+				0B0000000000000000000F0F /* PBXTargetDependency */,
 			);
-			name = MatchTrackerTests;
-			productName = MatchTrackerTests;
-			productReference = B599D66D1FAAF00E006EAABC /* MatchTrackerTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
+			fileSystemSynchronizedGroups = (
+				0A0000000000000000000011 /* Watch App */,
+			);
+			name = "MatchTracker Watch App";
+			packageProductDependencies = (
+				0A0000000000000000000022 /* MatchTrackerKit */,
+			);
+			productName = "MatchTracker Watch App";
+			productReference = 0A0000000000000000000041 /* MatchTracker Watch App.app */;
+			productType = "com.apple.product-type.application";
 		};
-		B599D6771FAAF00E006EAABC /* MatchTrackerUITests */ = {
+		0B0000000000000000000101 /* MatchTracker Widgets */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B599D6871FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerUITests" */;
+			buildConfigurationList = 0B0000000000000000000202 /* Build configuration list for PBXNativeTarget "MatchTracker Widgets" */;
 			buildPhases = (
-				B599D6741FAAF00E006EAABC /* Sources */,
-				B599D6751FAAF00E006EAABC /* Frameworks */,
-				B599D6761FAAF00E006EAABC /* Resources */,
+				0B0000000000000000000505 /* Sources */,
+				0B0000000000000000000606 /* Frameworks */,
+				0B0000000000000000000707 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				B599D67A1FAAF00E006EAABC /* PBXTargetDependency */,
 			);
-			name = MatchTrackerUITests;
-			productName = MatchTrackerUITests;
-			productReference = B599D6781FAAF00E006EAABC /* MatchTrackerUITests.xctest */;
+			fileSystemSynchronizedGroups = (
+				0B0000000000000000000B0B /* Watch Widgets */,
+			);
+			name = "MatchTracker Widgets";
+			packageProductDependencies = (
+				0B0000000000000000000909 /* MatchTrackerKit */,
+			);
+			productName = "MatchTracker Widgets";
+			productReference = 0B0000000000000000000808 /* MatchTracker Widgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		0C0000000000000000000101 /* MatchTracker UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0C0000000000000000000202 /* Build configuration list for PBXNativeTarget "MatchTracker UITests" */;
+			buildPhases = (
+				0C0000000000000000000505 /* Sources */,
+				0C0000000000000000000606 /* Frameworks */,
+				0C0000000000000000000707 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0C0000000000000000000F0F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0C0000000000000000000B0B /* MatchTracker UITests */,
+			);
+			name = "MatchTracker UITests";
+			packageProductDependencies = (
+			);
+			productName = "MatchTracker UITests";
+			productReference = 0C0000000000000000000808 /* MatchTracker UITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		0D0000000000000000000101 /* MatchTracker Watch UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D0000000000000000000202 /* Build configuration list for PBXNativeTarget "MatchTracker Watch UITests" */;
+			buildPhases = (
+				0D0000000000000000000505 /* Sources */,
+				0D0000000000000000000606 /* Frameworks */,
+				0D0000000000000000000707 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0D0000000000000000000F0F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0D0000000000000000000B0B /* MatchTracker Watch UITests */,
+			);
+			name = "MatchTracker Watch UITests";
+			packageProductDependencies = (
+			);
+			productName = "MatchTracker Watch UITests";
+			productReference = 0D0000000000000000000808 /* MatchTracker Watch UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		B599D6511FAAF00D006EAABC /* Project object */ = {
+		0A0000000000000000000001 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 0940;
-				LastUpgradeCheck = 0940;
-				ORGANIZATIONNAME = "Nice Mohawk Limited";
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
-					B53B0F782145C3B80035914D = {
-						CreatedOnToolsVersion = 9.4.1;
-						ProvisioningStyle = Automatic;
+					0A0000000000000000000030 = {
+						CreatedOnToolsVersion = 16.0;
 					};
-					B53B0F842145C3BC0035914D = {
-						CreatedOnToolsVersion = 9.4.1;
-						LastSwiftMigration = 1000;
-						ProvisioningStyle = Automatic;
-						SystemCapabilities = {
-							com.apple.BackgroundModes.watchos.extension = {
-								enabled = 1;
-							};
-							com.apple.HealthKit.watchos = {
-								enabled = 1;
-							};
-						};
+					0A0000000000000000000040 = {
+						CreatedOnToolsVersion = 16.0;
 					};
-					B599D6581FAAF00D006EAABC = {
-						CreatedOnToolsVersion = 9.1;
-						LastSwiftMigration = 1000;
-						ProvisioningStyle = Automatic;
-						SystemCapabilities = {
-							com.apple.ApplicationGroups.iOS = {
-								enabled = 0;
-							};
-							com.apple.HealthKit = {
-								enabled = 1;
-							};
-							com.apple.Keychain = {
-								enabled = 0;
-							};
-							com.apple.Push = {
-								enabled = 1;
-							};
-							com.apple.iCloud = {
-								enabled = 1;
-							};
-						};
+					0B0000000000000000000101 = {
+						CreatedOnToolsVersion = 16.0;
 					};
-					B599D66C1FAAF00E006EAABC = {
-						CreatedOnToolsVersion = 9.1;
-						LastSwiftMigration = 1000;
-						ProvisioningStyle = Automatic;
-						TestTargetID = B599D6581FAAF00D006EAABC;
+					0C0000000000000000000101 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 0A0000000000000000000030;
 					};
-					B599D6771FAAF00E006EAABC = {
-						CreatedOnToolsVersion = 9.1;
-						LastSwiftMigration = 1000;
-						ProvisioningStyle = Automatic;
-						TestTargetID = B599D6581FAAF00D006EAABC;
+					0D0000000000000000000101 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 0A0000000000000000000040;
 					};
 				};
 			};
-			buildConfigurationList = B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "MatchTracker" */;
-			compatibilityVersion = "Xcode 10.0";
+			buildConfigurationList = 0A0000000000000000000004 /* Build configuration list for PBXProject "MatchTracker" */;
+			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = B599D6501FAAF00D006EAABC;
-			productRefGroup = B599D65A1FAAF00D006EAABC /* Products */;
-			projectDirPath = "";
-			projectReferences = (
-				{
-					ProductGroup = B5357F2D1FBA16EF00B884AE /* Products */;
-					ProjectRef = B5357F2C1FBA16EF00B884AE /* Packages.xcodeproj */;
-				},
+			mainGroup = 0A0000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0A0000000000000000000020 /* XCLocalSwiftPackageReference "MatchTrackerKit" */,
 			);
+			productRefGroup = 0A0000000000000000000003 /* Products */;
+			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				B599D6581FAAF00D006EAABC /* MatchTracker */,
-				B599D66C1FAAF00E006EAABC /* MatchTrackerTests */,
-				B599D6771FAAF00E006EAABC /* MatchTrackerUITests */,
-				B53B0F782145C3B80035914D /* MatchTracker Watch App */,
-				B53B0F842145C3BC0035914D /* Match Tracker Extension */,
+				0A0000000000000000000030 /* MatchTracker */,
+				0A0000000000000000000040 /* MatchTracker Watch App */,
+				0B0000000000000000000101 /* MatchTracker Widgets */,
+				0C0000000000000000000101 /* MatchTracker UITests */,
+				0D0000000000000000000101 /* MatchTracker Watch UITests */,
 			);
 		};
 /* End PBXProject section */
 
-/* Begin PBXReferenceProxy section */
-		B52D86C92165CFD10034810C /* Locksmith.framework */ = {
-			isa = PBXReferenceProxy;
-			fileType = wrapper.framework;
-			path = Locksmith.framework;
-			remoteRef = B52D86C82165CFD10034810C /* PBXContainerItemProxy */;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		B5357F341FBA16EF00B884AE /* Packages.framework */ = {
-			isa = PBXReferenceProxy;
-			fileType = wrapper.framework;
-			path = Packages.framework;
-			remoteRef = B5357F331FBA16EF00B884AE /* PBXContainerItemProxy */;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		B5357F361FBA16EF00B884AE /* Alamofire.framework */ = {
-			isa = PBXReferenceProxy;
-			fileType = wrapper.framework;
-			path = Alamofire.framework;
-			remoteRef = B5357F351FBA16EF00B884AE /* PBXContainerItemProxy */;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-/* End PBXReferenceProxy section */
-
 /* Begin PBXResourcesBuildPhase section */
-		B53B0F772145C3B80035914D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B53B0F7F2145C3BB0035914D /* Assets.xcassets in Resources */,
-				B53B0F7D2145C3B80035914D /* Interface.storyboard in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B53B0F832145C3BC0035914D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B53B0F912145C3BC0035914D /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B599D6571FAAF00D006EAABC /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B599D6671FAAF00D006EAABC /* LaunchScreen.storyboard in Resources */,
-				B599D6641FAAF00D006EAABC /* Assets.xcassets in Resources */,
-				B599D6621FAAF00D006EAABC /* Main.storyboard in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B599D66B1FAAF00E006EAABC /* Resources */ = {
+		0A0000000000000000000037 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D6761FAAF00E006EAABC /* Resources */ = {
+		0A0000000000000000000047 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0B0000000000000000000707 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0C0000000000000000000707 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0000000000000000000707 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -610,268 +392,79 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		B55AE2322175A450004E14CF /* Update Build Number */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Update Build Number";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
-		};
-		B55AE2332175A478004E14CF /* Update Build Number */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Update Build Number";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
-		};
-		B5D27CB7217680F600B79CF1 /* Update Build Number */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Update Build Number";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${SRCROOT}/update_build_number.sh\" master\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXSourcesBuildPhase section */
-		B53B0F812145C3BC0035914D /* Sources */ = {
+		0A0000000000000000000035 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B5A6E70C215E73A60055EDF0 /* WorkoutInterfaceController.swift in Sources */,
-				B51189012194A9AB0067B25E /* FieldTrainingInterfaceController.swift in Sources */,
-				B53B0F8F2145C3BC0035914D /* NotificationController.swift in Sources */,
-				B53B0F8D2145C3BC0035914D /* ExtensionDelegate.swift in Sources */,
-				B5D65F4C2328AF3F00DF7425 /* WorkoutController.swift in Sources */,
-				B5D65F4A2328AEB600DF7425 /* WorkoutControlsInterfaceController.swift in Sources */,
-				B53B0F8B2145C3BC0035914D /* StartMatchInterfaceController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D6551FAAF00D006EAABC /* Sources */ = {
+		0A0000000000000000000045 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C45DDE511FB27F44006322C7 /* MatchesTableViewController.swift in Sources */,
-				C4F5BC951FD74BB300EEC216 /* APIRouter.swift in Sources */,
-				B5118903219549860067B25E /* FieldsTableViewConrtoller.swift in Sources */,
-				B599D65D1FAAF00D006EAABC /* AppDelegate.swift in Sources */,
-				C4CB05121FB642CC00E15074 /* MappableWorkout.swift in Sources */,
-				B51189062195DFCB0067B25E /* Field.swift in Sources */,
-				C42706291FCCA34A00A745A9 /* DataSource.swift in Sources */,
-				B5F99B7F219A83760054A379 /* Mappable.swift in Sources */,
-				C43B69231FB678BC009DF4E9 /* MapViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D6691FAAF00E006EAABC /* Sources */ = {
+		0B0000000000000000000505 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B599D6721FAAF00E006EAABC /* MatchTrackerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B599D6741FAAF00E006EAABC /* Sources */ = {
+		0C0000000000000000000505 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B599D67D1FAAF00E006EAABC /* MatchTrackerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0000000000000000000505 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		B53B0F882145C3BC0035914D /* PBXTargetDependency */ = {
+		0A000000000000000000003A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B53B0F842145C3BC0035914D /* Match Tracker Extension */;
-			targetProxy = B53B0F872145C3BC0035914D /* PBXContainerItemProxy */;
+			target = 0A0000000000000000000040 /* MatchTracker Watch App */;
+			targetProxy = 0A000000000000000000003B /* PBXContainerItemProxy */;
 		};
-		B53B0F952145C3BC0035914D /* PBXTargetDependency */ = {
+		0B0000000000000000000F0F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B53B0F782145C3B80035914D /* MatchTracker Watch App */;
-			targetProxy = B53B0F942145C3BC0035914D /* PBXContainerItemProxy */;
+			target = 0B0000000000000000000101 /* MatchTracker Widgets */;
+			targetProxy = 0B0000000000000000001010 /* PBXContainerItemProxy */;
 		};
-		B599D66F1FAAF00E006EAABC /* PBXTargetDependency */ = {
+		0C0000000000000000000F0F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B599D6581FAAF00D006EAABC /* MatchTracker */;
-			targetProxy = B599D66E1FAAF00E006EAABC /* PBXContainerItemProxy */;
+			target = 0A0000000000000000000030 /* MatchTracker */;
+			targetProxy = 0C0000000000000000001010 /* PBXContainerItemProxy */;
 		};
-		B599D67A1FAAF00E006EAABC /* PBXTargetDependency */ = {
+		0D0000000000000000000F0F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B599D6581FAAF00D006EAABC /* MatchTracker */;
-			targetProxy = B599D6791FAAF00E006EAABC /* PBXContainerItemProxy */;
-		};
-		B5AB2B152152148E003CC1AC /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = Alamofire;
-			targetProxy = B5AB2B142152148E003CC1AC /* PBXContainerItemProxy */;
+			target = 0A0000000000000000000040 /* MatchTracker Watch App */;
+			targetProxy = 0D0000000000000000001010 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
-/* Begin PBXVariantGroup section */
-		B53B0F7B2145C3B80035914D /* Interface.storyboard */ = {
-			isa = PBXVariantGroup;
-			children = (
-				B53B0F7C2145C3B80035914D /* Base */,
-			);
-			name = Interface.storyboard;
-			sourceTree = "<group>";
-		};
-		B599D6601FAAF00D006EAABC /* Main.storyboard */ = {
-			isa = PBXVariantGroup;
-			children = (
-				B599D6611FAAF00D006EAABC /* Base */,
-			);
-			name = Main.storyboard;
-			sourceTree = "<group>";
-		};
-		B599D6651FAAF00D006EAABC /* LaunchScreen.storyboard */ = {
-			isa = PBXVariantGroup;
-			children = (
-				B599D6661FAAF00D006EAABC /* Base */,
-			);
-			name = LaunchScreen.storyboard;
-			sourceTree = "<group>";
-		};
-/* End PBXVariantGroup section */
-
 /* Begin XCBuildConfiguration section */
-		B53B0F972145C3BC0035914D /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = GYV9U8338K;
-				IBSC_MODULE = Match_Tracker_Extension;
-				INFOPLIST_FILE = "$(SRCROOT)/Watch App/Info.plist";
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 4.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
-			};
-			name = Debug;
-		};
-		B53B0F982145C3BC0035914D /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = GYV9U8338K;
-				IBSC_MODULE = Match_Tracker_Extension;
-				INFOPLIST_FILE = "$(SRCROOT)/Watch App/Info.plist";
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 4.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
-			};
-			name = Release;
-		};
-		B53B0F992145C3BC0035914D /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_ENTITLEMENTS = "Watch Extension/Match Tracker Extension.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "$(SRCROOT)/Watch Extension/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp.watchkitextension;
-				PRODUCT_NAME = "${TARGET_NAME}";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
-			};
-			name = Debug;
-		};
-		B53B0F9A2145C3BC0035914D /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_ENTITLEMENTS = "Watch Extension/Match Tracker Extension.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "$(SRCROOT)/Watch Extension/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp.watchkitextension;
-				PRODUCT_NAME = "${TARGET_NAME}";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
-			};
-			name = Release;
-		};
-		B599D67F1FAAF00E006EAABC /* Debug */ = {
+		0A0000000000000000000005 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
@@ -887,18 +480,19 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
@@ -912,26 +506,27 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.4;
-				MTL_ENABLE_DEBUG_INFO = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 3.0;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		B599D6801FAAF00E006EAABC /* Release */ = {
+		0A0000000000000000000006 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
@@ -947,18 +542,19 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
@@ -966,200 +562,360 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 12.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
-				SDKROOT = iphoneos;
+				MTL_FAST_MATH = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 3.0;
-				VALIDATE_PRODUCT = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
-		B599D6821FAAF00E006EAABC /* Debug */ = {
+		0A0000000000000000000033 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MatchTracker.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = "iOS App/MatchTracker.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "$(SRCROOT)/MatchTracker/Info.plist";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iOS App/Info-Debug.plist";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "MatchTracker reads your soccer workouts to show routes, heatmaps, and workrate.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "MatchTracker saves your recorded matches as workouts in Health.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MatchTracker uses your location during a match to record your position and movement on the pitch.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MatchTracker uses your location to record your route on the pitch.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = 1;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		B599D6831FAAF00E006EAABC /* Release */ = {
+		0A0000000000000000000034 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MatchTracker.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = "iOS App/MatchTracker.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "$(SRCROOT)/MatchTracker/Info.plist";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "iOS App/Info.plist";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "MatchTracker reads your soccer workouts to show routes, heatmaps, and workrate.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "MatchTracker saves your recorded matches as workouts in Health.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MatchTracker uses your location during a match to record your position and movement on the pitch.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MatchTracker uses your location to record your route on the pitch.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = 1;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
-		B599D6851FAAF00E006EAABC /* Debug */ = {
+		0A0000000000000000000043 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Watch App/MatchTracker Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker Tests/Info.plist";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Watch App/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = MatchTracker;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.nicemohawk.MatchTracker;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerTests;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MatchTracker.app/MatchTracker";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
 		};
-		B599D6861FAAF00E006EAABC /* Release */ = {
+		0A0000000000000000000044 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Watch App/MatchTracker Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker Tests/Info.plist";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Watch App/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = MatchTracker;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.nicemohawk.MatchTracker;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerTests;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MatchTracker.app/MatchTracker";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};
-		B599D6881FAAF00E006EAABC /* Debug */ = {
+		0B0000000000000000000303 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Watch Widgets/MatchTracker Widgets.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Watch Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "MatchTracker Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		0B0000000000000000000404 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Watch Widgets/MatchTracker Widgets.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Watch Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "MatchTracker Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		0C0000000000000000000303 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker UI Tests/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerUITests;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = MatchTracker;
 			};
 			name = Debug;
 		};
-		B599D6891FAAF00E006EAABC /* Release */ = {
+		0C0000000000000000000404 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = GYV9U8338K;
-				INFOPLIST_FILE = "Match Tracker UI Tests/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTrackerUITests;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 4.2;
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = MatchTracker;
+			};
+			name = Release;
+		};
+		0D0000000000000000000303 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watch.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "MatchTracker Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		0D0000000000000000000404 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = GYV9U8338K;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nicemohawk.MatchTracker.watch.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "MatchTracker Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		B53B0F9E2145C3BC0035914D /* Build configuration list for PBXNativeTarget "Match Tracker Extension" */ = {
+		0A0000000000000000000004 /* Build configuration list for PBXProject "MatchTracker" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B53B0F992145C3BC0035914D /* Debug */,
-				B53B0F9A2145C3BC0035914D /* Release */,
+				0A0000000000000000000005 /* Debug */,
+				0A0000000000000000000006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B53B0FA02145C3BC0035914D /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */ = {
+		0A0000000000000000000032 /* Build configuration list for PBXNativeTarget "MatchTracker" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B53B0F972145C3BC0035914D /* Debug */,
-				B53B0F982145C3BC0035914D /* Release */,
+				0A0000000000000000000033 /* Debug */,
+				0A0000000000000000000034 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6541FAAF00D006EAABC /* Build configuration list for PBXProject "MatchTracker" */ = {
+		0A0000000000000000000042 /* Build configuration list for PBXNativeTarget "MatchTracker Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B599D67F1FAAF00E006EAABC /* Debug */,
-				B599D6801FAAF00E006EAABC /* Release */,
+				0A0000000000000000000043 /* Debug */,
+				0A0000000000000000000044 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6811FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTracker" */ = {
+		0B0000000000000000000202 /* Build configuration list for PBXNativeTarget "MatchTracker Widgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B599D6821FAAF00E006EAABC /* Debug */,
-				B599D6831FAAF00E006EAABC /* Release */,
+				0B0000000000000000000303 /* Debug */,
+				0B0000000000000000000404 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6841FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerTests" */ = {
+		0C0000000000000000000202 /* Build configuration list for PBXNativeTarget "MatchTracker UITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B599D6851FAAF00E006EAABC /* Debug */,
-				B599D6861FAAF00E006EAABC /* Release */,
+				0C0000000000000000000303 /* Debug */,
+				0C0000000000000000000404 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B599D6871FAAF00E006EAABC /* Build configuration list for PBXNativeTarget "MatchTrackerUITests" */ = {
+		0D0000000000000000000202 /* Build configuration list for PBXNativeTarget "MatchTracker Watch UITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B599D6881FAAF00E006EAABC /* Debug */,
-				B599D6891FAAF00E006EAABC /* Release */,
+				0D0000000000000000000303 /* Debug */,
+				0D0000000000000000000404 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0A0000000000000000000020 /* XCLocalSwiftPackageReference "MatchTrackerKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = MatchTrackerKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0A0000000000000000000021 /* MatchTrackerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatchTrackerKit;
+		};
+		0A0000000000000000000022 /* MatchTrackerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatchTrackerKit;
+		};
+		0B0000000000000000000909 /* MatchTrackerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatchTrackerKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = B599D6511FAAF00D006EAABC /* Project object */;
+	rootObject = 0A0000000000000000000001 /* Project object */;
 }
