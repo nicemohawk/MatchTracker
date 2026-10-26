@@ -23,13 +23,8 @@ struct StartView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    // A failed start bounces back here — without a reason it reads as "the
-                    // countdown just never switched".
-                    if let failure = workoutManager.startFailureMessage {
-                        Text(failure)
-                            .font(.footnote)
-                            .foregroundStyle(WatchTheme.heart)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    if let failure = workoutManager.startFailure {
+                        startFailureCard(failure)
                     }
                     Button {
                         WatchHaptics.click()
@@ -93,6 +88,52 @@ struct StartView: View {
                 selectedFormat = .smallSided
             }
         }
+    }
+
+    /// A failed start bounces back here — without a reason it reads as "the countdown just never
+    /// switched". A card, not a wall of red text shoving the Start button off screen: what went
+    /// wrong in the player's terms, HealthKit's own wording kept underneath for the log, and a
+    /// dismiss so the screen returns to normal.
+    private func startFailureCard(_ failure: WorkoutManager.StartFailure) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text("Couldn't start")
+                    .font(.footnote.weight(.semibold))
+                Spacer(minLength: 0)
+                Button {
+                    WatchHaptics.click()
+                    workoutManager.startFailure = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .foregroundStyle(WatchTheme.cardYellow)
+
+            Text(failure.message)
+                .font(.caption2)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let detail = failure.detail {
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(3)
+            }
+        }
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            shape.fill(WatchTheme.chipFill(WatchTheme.cardYellow))
+            shape.strokeBorder(WatchTheme.chipStroke(WatchTheme.cardYellow), lineWidth: 1)
+        }
+        .transition(.scale(scale: 0.95).combined(with: .opacity))
     }
 
     /// Compact Match / Pickup / Indoor selector under the Start button.

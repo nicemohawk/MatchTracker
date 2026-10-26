@@ -84,7 +84,39 @@ final class WorkoutManager: NSObject {
 
     /// Why the last start attempt failed, surfaced on the start screen — a silent bounce back
     /// to idle is indistinguishable from "the countdown just never switched".
-    var startFailureMessage: String?
+    var startFailure: StartFailure?
+
+    /// A failed start in words that say what to do about it, with the raw error kept for the
+    /// developer underneath. HealthKit's own text ("Client application cannot start a workout
+    /// session while in the background") describes its rule, not the player's situation.
+    struct StartFailure: Equatable {
+        var message: String
+        var detail: String?
+
+        init(_ error: Error) {
+            detail = error.localizedDescription
+            let nsError = error as NSError
+            guard nsError.domain == HKError.errorDomain,
+                  let code = HKError.Code(rawValue: nsError.code) else {
+                message = "Couldn't start the match."
+                return
+            }
+            switch code {
+            case .errorBackgroundWorkoutSessionNotAllowed:
+                message = "The watch screen went dark before kickoff. Start again and keep your wrist up until the timer appears."
+            case .errorAnotherWorkoutSessionStarted:
+                message = "Another app is already recording a workout. End that one, then start again."
+            case .errorAuthorizationDenied, .errorAuthorizationNotDetermined, .errorRequiredAuthorizationDenied:
+                message = "MatchTracker needs permission to record workouts. Allow it under Health in the Watch app."
+            case .errorDatabaseInaccessible:
+                message = "Health data is locked. Unlock the watch and start again."
+            case .errorHealthDataUnavailable, .errorHealthDataRestricted:
+                message = "This watch can't record workouts."
+            default:
+                message = "Couldn't start the match."
+            }
+        }
+    }
     /// True when the live UI is up but HealthKit collection hasn't begun within the watchdog
     /// window — shown as a banner so a wedged healthd is visible instead of a 0:00 mystery.
     var healthCollectionStalled = false
@@ -234,6 +266,10 @@ final class WorkoutManager: NSObject {
     /// phase check before `startMatch` flips it.
     @ObservationIgnored private var kickoffInFlight = false
 
+    /// The session + builder created and moved to `.prepared` while the Start tap still has us
+    /// frontmost. `startMatch` awaits this rather than building its own.
+    @ObservationIgnored private var preparedSession: Task<(HKWorkoutSession, HKLiveWorkoutBuilder), Error>?
+
     /// Enter the pre-kickoff countdown. Owns the deadline *and* the timer that fires it, so the
     /// countdown view is only a display of state it can't strand.
     @MainActor
@@ -241,11 +277,19 @@ final class WorkoutManager: NSObject {
         guard phase == .idle else { return }
         matchFormat = format
         detectedField = field
-        startFailureMessage = nil
+        startFailure = nil
         countdownDeadline = Date().addingTimeInterval(seconds)
         phase = .countdown
         MatchLog.info("user: start tapped (format \(format.rawValue), field \(field?.name ?? "none"))",
                       category: "workout")
+
+        // Prepare HealthKit NOW, while the tap guarantees the app is frontmost. HealthKit refuses
+        // to start a workout session from the background, and the watch backgrounds the app the
+        // moment the wrist drops — which is exactly what someone does after tapping Start, so the
+        // kickoff three seconds later was failing with
+        // `errorBackgroundWorkoutSessionNotAllowed`. A prepared session keeps the app running in
+        // the background without collecting data yet, so kickoff succeeds wherever the wrist is.
+        preparedSession = makePreparedSession()
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -255,6 +299,25 @@ final class WorkoutManager: NSObject {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
             await kickoffIfCountdownElapsed(trigger: "deadline")
+        }
+    }
+
+    /// Create the workout session and move it to `.prepared`: sensors warm, background execution
+    /// granted, no data collected until `startActivity`.
+    @MainActor
+    private func makePreparedSession() -> Task<(HKWorkoutSession, HKLiveWorkoutBuilder), Error> {
+        let configuration = makeWorkoutConfiguration()
+        let store = healthStore
+        return Task.detached(priority: .userInitiated) { [weak self] in
+            let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: store,
+                                                         workoutConfiguration: configuration)
+            session.delegate = self
+            builder.delegate = self
+            session.prepare()
+            MatchLog.info("prepared session (sensors warm, background granted)", category: "workout")
+            return (session, builder)
         }
     }
 
@@ -315,23 +378,16 @@ final class WorkoutManager: NSObject {
 
         // HealthKit setup off the main actor so the session screen renders instantly. Delegates
         // are set before startActivity (their callbacks hop to main themselves).
-        let configuration = makeWorkoutConfiguration()
         let store = healthStore
-        MatchLog.info("startMatch: creating session (format \(matchFormat.rawValue), field \(field != nil ? "detected" : "none"), referee \(WatchSettings.refereeMode))",
+        MatchLog.info("startMatch: starting activity (format \(matchFormat.rawValue), field \(field != nil ? "detected" : "none"), referee \(WatchSettings.refereeMode))",
                       category: "workout")
         do {
-            let (session, builder) = try await Task.detached(priority: .userInitiated) { [weak self] in
-                let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
-                let builder = session.associatedWorkoutBuilder()
-                builder.dataSource = HKLiveWorkoutDataSource(healthStore: store,
-                                                             workoutConfiguration: configuration)
-                session.delegate = self
-                builder.delegate = self
-                MatchLog.info("startMatch: session created", category: "workout")
-                session.startActivity(with: start)
-                MatchLog.info("startMatch: activity started", category: "workout")
-                return (session, builder)
-            }.value
+            // Prepared at the Start tap; only built here if something skipped the countdown.
+            let pending = preparedSession ?? makePreparedSession()
+            preparedSession = nil
+            let (session, builder) = try await pending.value
+            await Task.detached(priority: .userInitiated) { session.startActivity(with: start) }.value
+            MatchLog.info("startMatch: activity started", category: "workout")
 
             self.session = session
             self.builder = builder
@@ -346,7 +402,7 @@ final class WorkoutManager: NSObject {
             // Session creation or collection failed: tear down what the optimistic start spun up
             // and fall back to the start screen with a visible reason.
             MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
-            startFailureMessage = "Couldn't start the workout: \(error.localizedDescription)"
+            startFailure = StartFailure(error)
             stopLocationUpdates()
             headingRecorder.stop()
             headingRecorder.reset()
@@ -678,6 +734,11 @@ final class WorkoutManager: NSObject {
         onPitch = true
         autoSubDetector = nil
         autoSubBanner = nil
+        // A session prepared at the Start tap holds background execution until it ends.
+        if let pending = preparedSession {
+            preparedSession = nil
+            Task.detached { if let (prepared, _) = try? await pending.value { prepared.end() } }
+        }
         session = nil
         builder = nil
         routeBuilder = nil
@@ -688,7 +749,7 @@ final class WorkoutManager: NSObject {
     private func resetForNewMatch(field: FieldModel?) {
         matchID = UUID()
         fieldID = field?.id
-        startFailureMessage = nil
+        startFailure = nil
         healthCollectionStalled = false
         collectionBegan = false
         // A resolved field gives the detector a touchline to reason about; without one, automatic
@@ -848,7 +909,7 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
         // and light both failure surfaces; the UI stays responsive either way.
         MatchLog.error("workout session failed: \(error.localizedDescription)", category: "workout")
         DispatchQueue.main.async {
-            self.startFailureMessage = "Workout session failed: \(error.localizedDescription)"
+            self.startFailure = StartFailure(error)
             self.healthCollectionStalled = true
         }
     }
