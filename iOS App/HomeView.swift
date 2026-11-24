@@ -270,9 +270,9 @@ struct DigestNumbers: View {
             stack
         } else {
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
                     ForEach(numbers, id: \.spoken) { number in
-                        view(number).frame(maxWidth: .infinity, alignment: .leading)
+                        view(number).fixedSize().frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 stack
@@ -305,10 +305,14 @@ struct DigestNumbers: View {
 
 private struct RecordLine: View {
     let summary: SeasonSummary
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 24) {
-            piece(summary.won, "Won", .green)
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 24))
+        layout {
+            piece(summary.won, "Won", Theme.turf)
             piece(summary.drawn, "Drew", .secondary)
             piece(summary.lost, "Lost", .red)
         }
@@ -386,7 +390,7 @@ private struct SeasonChart: View {
 
     private func color(_ digest: MatchDigest) -> Color {
         switch digest.result {
-        case .won: return .green
+        case .won: return Theme.turf
         case .lost: return .red
         case .drawn, nil: return Color(.systemGray3)
         }

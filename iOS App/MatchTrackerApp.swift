@@ -178,7 +178,7 @@ struct RootTabView: View {
 
     var body: some View {
         tabs
-            .tint(.green)
+            .tint(Theme.turf)
             .systemLinks(showingLive: $showingLive,
                          openMatch: { id in
                              selectedTab = .summary

@@ -70,7 +70,7 @@ enum Theme {
     // Semantic accents — anchored to Apple system hues so the palette reads premium, not arcade.
     /// Emerald (#30D158) — the app's primary tint / turf energy.
     static let turf = dynamic(dark: (0.188, 0.820, 0.345),
-                              light: (0.024, 0.588, 0.239))
+                              light: (0.0, 0.50, 0.21))
     /// Quiet teal-mint (#66D4CF) signal.
     static let signal = dynamic(dark: (0.400, 0.831, 0.812),
                                 light: (0.0, 0.478, 0.463))

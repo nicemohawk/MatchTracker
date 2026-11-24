@@ -231,7 +231,7 @@ private struct MatchScoreline: View {
 
     private func color(_ result: MatchDigest.Result) -> Color {
         switch result {
-        case .won: return .green
+        case .won: return Theme.turf
         case .drawn: return .secondary
         case .lost: return .red
         }

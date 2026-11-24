@@ -217,7 +217,7 @@ struct ResultMark: View {
 
     private var color: Color {
         switch result {
-        case .won: return .green
+        case .won: return Theme.turf
         case .drawn: return .secondary
         case .lost: return .red
         }

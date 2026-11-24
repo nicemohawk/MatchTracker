@@ -159,6 +159,7 @@ extension MatchEventKind {
 
 struct BestRunsChapter: View {
     let runs: [KeyRun]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -167,22 +168,26 @@ struct BestRunsChapter: View {
                 ForEach(runs) { run in
                     let speed = UnitSystem.current.speed(run.peakSpeed)
                     let distance = UnitSystem.current.shortDistance(run.distanceMeters)
-                    HStack(spacing: 14) {
+                    let layout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                        : AnyLayout(HStackLayout(spacing: 14))
+                    layout {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(run.title).font(.body)
                             Text(["\(Int(run.fromT / 60) + 1)′", run.detail].compactMap { $0 }.joined(separator: " · "))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
-                        VStack(alignment: .trailing, spacing: 2) {
+                        if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
+                        VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 2) {
                             Text(speed.text)
                                 .font(.system(.title3, design: .rounded, weight: .semibold))
                                 .monospacedDigit()
                             Text(distance.text).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
-                    .frame(minHeight: 56)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(run.title), \(speed.spoken) over \(distance.spoken), minute \(Int(run.fromT / 60) + 1)")
                 }

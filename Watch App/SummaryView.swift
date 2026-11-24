@@ -158,7 +158,7 @@ private struct EffortButton: View {
         Button { isRating = true } label: {
             VStack(spacing: 0) {
                 Text(score.map { "\(EffortRating.word(for: $0)), \($0)" } ?? "Rate Effort").font(.headline)
-                if score == nil { Text("For Training Load").font(.footnote).foregroundStyle(.secondary) }
+                if score == nil { Text("For Training Load").font(.footnote) }
             }
         }
         .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.sprint, minHeight: 52))
