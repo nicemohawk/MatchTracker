@@ -3,15 +3,18 @@ import Foundation
 // MARK: - Who played how much
 
 /// Minutes each player was on the pitch in one team match, worked out from everyone's events.
-public struct TeamMatchMinutes: Equatable, Sendable {
+public struct TeamMatchMinutes: Codable, Equatable, Sendable {
     public let kickoff: Date
     public let lengthMinutes: Double
     public let minutesByPlayer: [String: Double]
+    /// Goals players logged as their own; nobody with none.
+    public let goalsByPlayer: [String: Int]
 
-    public init(kickoff: Date, lengthMinutes: Double, minutesByPlayer: [String: Double]) {
+    public init(kickoff: Date, lengthMinutes: Double, minutesByPlayer: [String: Double], goalsByPlayer: [String: Int] = [:]) {
         self.kickoff = kickoff
         self.lengthMinutes = lengthMinutes
         self.minutesByPlayer = minutesByPlayer
+        self.goalsByPlayer = goalsByPlayer
     }
 }
 
@@ -35,7 +38,8 @@ public enum TeamMinutes {
             TeamMatchMinutes(
                 kickoff: group[0].start,
                 lengthMinutes: group.map(\.lengthMinutes).max() ?? 0,
-                minutesByPlayer: Dictionary(group.map { ($0.player, $0.playedMinutes) }, uniquingKeysWith: max))
+                minutesByPlayer: Dictionary(group.map { ($0.player, $0.playedMinutes) }, uniquingKeysWith: max),
+                goalsByPlayer: Dictionary(group.filter { $0.goals > 0 }.map { ($0.player, $0.goals) }, uniquingKeysWith: max))
         }
     }
 
@@ -45,6 +49,7 @@ public enum TeamMinutes {
         /// Playing time available: breaks between halves don't count.
         let lengthMinutes: Double
         let playedMinutes: Double
+        let goals: Int
     }
 
     private static func recording(_ events: [TeamEvent]) -> Recording? {
@@ -79,11 +84,12 @@ public enum TeamMinutes {
         let remaining = end.timeIntervalSince(clock)
         if isInPlay { available += remaining }
         if isInPlay && !isBenched { played += remaining }
-        return Recording(player: first.playerName, start: start, lengthMinutes: available / 60, playedMinutes: played / 60)
+        return Recording(player: first.playerName, start: start, lengthMinutes: available / 60, playedMinutes: played / 60,
+                         goals: ordered.filter { $0.kind == .goalMine }.count)
     }
 }
 
-/// A player's share of recent team matches, in words a coach would use.
+/// A player's share of recent team matches, in words.
 public struct RecentLoad: Equatable, Sendable {
     public enum Level: Sendable { case none, light, shared, heavy }
 
@@ -126,34 +132,75 @@ public struct RecentLoad: Equatable, Sendable {
 
 // MARK: - Invites
 
-/// The message one teammate sends another. The whole message works wherever a code does.
-public struct TeamInvite: Equatable, Sendable {
+/// What one teammate sends another: a link that opens the join screen, in a message that works
+/// wherever the link doesn't.
+public struct TeamInvite: Hashable, Identifiable, Sendable {
+    /// Nothing but joining goes by this scheme, so nothing else can be opened from outside the app.
+    public static let scheme = "matchtracker-join"
+
     public let code: String
     public let name: String?
+    public let captain: String?
+    public var id: String { code }
 
-    public init(code: String, name: String?) {
+    public init(code: String, name: String?, captain: String? = nil) {
         self.code = code
         self.name = name
+        self.captain = captain
+    }
+
+    public var link: URL {
+        var components = URLComponents()
+        components.scheme = Self.scheme
+        components.host = code
+        let items = [("team", name), ("captain", captain)].compactMap { key, value in
+            value.map { URLQueryItem(name: key, value: $0) }
+        }
+        if !items.isEmpty { components.queryItems = items }
+        return components.url!
     }
 
     public var message: String {
-        "Join \(name ?? "my team") on MatchTracker. In the Team tab, choose Join a Team and paste this message.\nTeam code: \(code)"
+        """
+        Join \(name ?? "my team") on MatchTracker.\(captain.map { " \($0) is the captain." } ?? "")
+        \(link.absoluteString)
+        If the link doesn't open, choose Join a Team in the Team tab and paste this whole message.
+        Team code: \(code)
+        """
     }
 
-    /// Accepts a bare code or a pasted invite message.
+    public init?(link: URL) {
+        guard link.scheme?.lowercased() == Self.scheme, let host = link.host(), Self.isCode(host) else { return nil }
+        let items = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        // Anyone can write a link, so what it calls things is kept short and on one line.
+        func text(_ key: String) -> String? {
+            guard let value = items.first(where: { $0.name == key })?.value else { return nil }
+            let line = value.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            return line.isEmpty ? nil : String(line.prefix(60))
+        }
+        self.init(code: host.uppercased(), name: text("team"), captain: text("captain"))
+    }
+
+    /// Accepts a bare code, a link, or a pasted invite message.
     public init?(pasted text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let range = trimmed.range(of: #"(?<=code:)\s*[A-Za-z0-9][A-Za-z0-9-]{2,23}"#, options: [.regularExpression, .caseInsensitive]) {
-            code = trimmed[range].trimmingCharacters(in: .whitespaces).uppercased()
+        if let range = trimmed.range(of: "\(Self.scheme)://\\S+", options: [.regularExpression, .caseInsensitive]),
+           let link = URL(string: String(trimmed[range])), let invite = TeamInvite(link: link) {
+            self = invite
+        } else if let range = trimmed.range(of: #"(?<=code:)\s*[A-Za-z0-9][A-Za-z0-9-]{2,23}"#, options: [.regularExpression, .caseInsensitive]) {
             let sentName = trimmed.range(of: #"(?<=^Join ).+?(?= on MatchTracker)"#, options: .regularExpression)
                 .map { String(trimmed[$0]) }
-            name = sentName == "my team" ? nil : sentName
-        } else if trimmed.range(of: #"^[A-Za-z0-9][A-Za-z0-9-]{2,23}$"#, options: .regularExpression) != nil {
-            code = trimmed.uppercased()
-            name = nil
+            self.init(code: trimmed[range].trimmingCharacters(in: .whitespaces).uppercased(),
+                      name: sentName == "my team" ? nil : sentName)
+        } else if Self.isCode(trimmed) {
+            self.init(code: trimmed.uppercased(), name: nil)
         } else {
             return nil
         }
+    }
+
+    private static func isCode(_ text: String) -> Bool {
+        text.range(of: #"^[A-Za-z0-9][A-Za-z0-9-]{2,23}$"#, options: .regularExpression) != nil
     }
 
     /// Six characters with nothing that can be misheard across a pitch.

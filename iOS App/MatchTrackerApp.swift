@@ -186,7 +186,8 @@ struct RootTabView: View {
                              selectedTab = .summary
                              openedMatch = id
                          },
-                         openSeason: { selectedTab = .summary })
+                         openSeason: { selectedTab = .summary },
+                         openTeam: { selectedTab = .team })
             .fullScreenCover(isPresented: .init(get: { !hasOnboarded },
                                                 set: { if $0 { hasOnboarded = false } })) {
                 OnboardingView()

@@ -4,7 +4,7 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Where everyone plays: a portrait pitch, attacking up, that a coach can rearrange by dragging.
+/// Where everyone plays: a portrait pitch, attacking up, that anyone can rearrange by dragging.
 struct FormationView: View {
     let teamCode: String
 
@@ -15,6 +15,8 @@ struct FormationView: View {
     @State private var board: FormationBoard
     @State private var selected: String?
     @State private var chosenStyle: Style?
+    @State private var isAddingName = false
+    @State private var newName = ""
 
     private enum Style: String, CaseIterable { case pitch = "Pitch", list = "List" }
 
@@ -37,6 +39,14 @@ struct FormationView: View {
             .toolbar { toolbar }
             .task { await board.load() }
             .sensoryFeedback(.impact(weight: .light), trigger: board.changeCount)
+            .alert("Add a Player", isPresented: $isAddingName) {
+                TextField("Name", text: $newName)
+                    .textInputAutocapitalization(.words)
+                Button("Add") { withAnimation(.snappy) { board.add(guest: newName) } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("For someone without MatchTracker. The name stays on this device.")
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -63,18 +73,24 @@ struct FormationView: View {
                 } actions: {
                     Button("Try Again") { Task { await board.load() } }
                         .buttonStyle(.prominentAction)
+                    if !board.squad.isEmpty {
+                        Button("Set Up by Hand") { board.setUpByHand() }
+                            .buttonStyle(.bordered)
+                    }
                 }
-            case .loaded where board.squad.isEmpty:
-                ContentUnavailableView("No squad yet", systemImage: "sportscourt",
-                                       description: Text("Once teammates share a match, you can set them up here."))
             case .loaded:
                 ContentUnavailableView {
                     Label("No formation yet", systemImage: "sportscourt")
                 } description: {
-                    Text("One appears after five teammates have shared matches. You can also set one up yourself.")
+                    Text("One appears after five teammates have shared matches. You can set one up yourself now, with anyone's name.")
                 } actions: {
-                    Button("Set Up by Hand") { board.setUpByHand() }
-                        .buttonStyle(.prominentAction)
+                    if board.squad.isEmpty {
+                        Button("Add a Player") { askForName() }
+                            .buttonStyle(.prominentAction)
+                    } else {
+                        Button("Set Up by Hand") { board.setUpByHand() }
+                            .buttonStyle(.prominentAction)
+                    }
                 }
             }
         }
@@ -119,15 +135,30 @@ struct FormationView: View {
                 Button("Undo", systemImage: "arrow.uturn.backward") { withAnimation(.snappy) { board.undo() } }
                     .disabled(!board.canUndo)
             }
-            if board.hasSuggestion {
-                Menu("More", systemImage: "ellipsis") {
-                    Button("Use Positions from Matches", systemImage: "figure.run") {
-                        withAnimation(.snappy) { board.useSuggestion() }
+            if !board.spots.isEmpty {
+                Menu("Add a player", systemImage: "plus") {
+                    ForEach(board.bench, id: \.self) { name in
+                        Button(name) { withAnimation(.snappy) { board.add(name) } }
                     }
-                    .disabled(!board.isEdited)
+                    Button("Someone Else…") { askForName() }
+                }
+                .disabled(!board.hasRoom)
+                Menu("More", systemImage: "ellipsis") {
+                    ShareLink("Share as Text", item: board.shareText)
+                    if board.hasSuggestion {
+                        Button("Use Positions from Matches", systemImage: "figure.run") {
+                            withAnimation(.snappy) { board.useSuggestion() }
+                        }
+                        .disabled(!board.isEdited)
+                    }
                 }
             }
         }
+    }
+
+    private func askForName() {
+        newName = ""
+        isAddingName = true
     }
 
     // MARK: Pitch
@@ -166,7 +197,8 @@ struct FormationView: View {
                         .buttonStyle(.bordered)
                 }
             } else {
-                Text("Drag a player to move them. Drop one on another to swap.")
+                Text(board.isEdited ? "Only on this device until you share it. Drop one player on another to swap."
+                     : "From where everyone has played. Drag a player to move them.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -187,10 +219,16 @@ struct FormationView: View {
                     }
                 }
             }
-            Section("Swap places with") {
-                ForEach(board.spots.map(\.name).filter { $0 != name }, id: \.self) { other in
-                    Button(other) { swap(name, other) }
+            if board.spots.count > 1 {
+                Section("Swap places with") {
+                    ForEach(board.spots.map(\.name).filter { $0 != name }, id: \.self) { other in
+                        Button(other) { swap(name, other) }
+                    }
                 }
+            }
+            Button("Take Off") {
+                withAnimation(.snappy) { board.remove(name) }
+                selected = nil
             }
         }
         .accessibilityLabel("Swap \(name)")
@@ -352,7 +390,7 @@ struct PortraitPitch: View {
 // MARK: - Board
 
 /// The formation on screen: suggested from matches until someone moves a player, then theirs.
-/// Kept on this device; the server has nowhere to put it.
+/// Kept on this device until it's shared; the server has nowhere to put it.
 @Observable
 @MainActor
 final class FormationBoard {
@@ -375,16 +413,23 @@ final class FormationBoard {
     private var suggestedName: String?
     private var history: [[Spot]] = []
     private let teamCode: String
+    private let plan: TeamPlan
 
     init(teamCode: String) {
         self.teamCode = teamCode
+        plan = TeamPlan(teamCode: teamCode)
         if let data = AppGroup.defaults.data(forKey: storageKey), let saved = try? JSONDecoder().decode([Spot].self, from: data) {
             spots = saved
             isEdited = true
         }
     }
 
-    private var storageKey: String { "formation.\(teamCode)" }
+    private var storageKey: String { Self.storageKey(teamCode) }
+    private static func storageKey(_ code: String) -> String { "formation.\(code)" }
+
+    static func remove(_ code: String) { AppGroup.defaults.removeObject(forKey: storageKey(code)) }
+
+    var hasRoom: Bool { spots.count < FormationShape.startingPoints.count }
 
     var canUndo: Bool { !history.isEmpty }
     var hasSuggestion: Bool { !suggestion.isEmpty }
@@ -404,6 +449,11 @@ final class FormationBoard {
         ].filter { !$0.1.isEmpty }
     }
 
+    var shareText: String {
+        ([shapeName].compactMap { $0 } + lines.reversed().map { "\($0.title): \($0.spots.map(\.name).formatted())" })
+            .joined(separator: "\n")
+    }
+
     var spoken: String {
         lines.reversed().map { "\($0.title): \($0.spots.map(\.name).formatted())" }.joined(separator: ". ")
     }
@@ -414,17 +464,38 @@ final class FormationBoard {
             async let formation = TeamService.formation(code: teamCode)
             async let stats = TeamService.stats(code: teamCode, since: TeamModel.seasonStart)
             let (newFormation, newStats) = try await (formation, stats)
-            squad = newStats.players.map(\.name).sorted()
+            squad = plan.squad(newStats.players.map(\.name))
             suggestion = newFormation?.slots.map { Spot(name: $0.playerName, x: $0.x, y: $0.y) } ?? []
             suggestedName = newFormation?.name
             if !isEdited { spots = suggestion }
             phase = .loaded
         } catch {
+            // Still a board to work on, with the names this device knows.
+            squad = plan.squad(TeamCache.load(teamCode)?.season.players.map(\.name) ?? [])
             phase = .failed(TeamService.explain(error))
         }
     }
 
     // MARK: Changes
+
+    /// Puts a player in the first place nobody is standing.
+    func add(_ name: String) {
+        guard hasRoom, !spots.contains(where: { $0.name == name }) else { return }
+        let free = FormationShape.startingPoints.first { point in
+            !spots.contains { hypot($0.x - point.x, $0.y - point.y) < 0.1 }
+        } ?? (0.5, 0.5)
+        change { spots.append(Spot(name: name, x: free.x, y: free.y)) }
+    }
+
+    func add(guest name: String) {
+        guard let name = plan.add(guest: name) else { return }
+        if !squad.contains(name) { squad = (squad + [name]).sorted() }
+        add(name)
+    }
+
+    func remove(_ name: String) {
+        change { spots.removeAll { $0.name == name } }
+    }
 
     func move(_ name: String, toX x: Double, y: Double) {
         guard let index = spots.firstIndex(where: { $0.name == name }) else { return }
@@ -447,7 +518,7 @@ final class FormationBoard {
 
     func setUpByHand() {
         change {
-            spots = zip(squad, FormationShape.startingPoints).map { Spot(name: $0, x: $1.x, y: $1.y) }
+            spots = zip(plan.picked(from: squad), FormationShape.startingPoints).map { Spot(name: $0, x: $1.x, y: $1.y) }
         }
     }
 

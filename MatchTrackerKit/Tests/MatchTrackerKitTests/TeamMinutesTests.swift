@@ -38,6 +38,13 @@ final class TeamMinutesTests: XCTestCase {
         XCTAssertEqual(matches.map(\.minutesByPlayer.count), [1, 2])
     }
 
+    func testGoalsGoWithTheMatch() {
+        let match = TeamMinutes.matches(from:
+            events("Maya", [(.matchStart, 0), (.goalMine, 10), (.goalMine, 80), (.matchEnd, 90)])
+            + events("Sam", [(.matchStart, 0), (.goalForUs, 10), (.matchEnd, 90)])).first
+        XCTAssertEqual(match?.goalsByPlayer, ["Maya": 2])
+    }
+
     func testForgottenAndSingleEventRecordingsAreLeftOut() {
         XCTAssertTrue(TeamMinutes.matches(from: events("Maya", [(.matchStart, 0), (.matchEnd, 600)])
             + events("Sam", [(.goalMine, 10)])).isEmpty)
@@ -61,6 +68,16 @@ final class TeamMinutesTests: XCTestCase {
         XCTAssertEqual(TeamInvite(pasted: invite.message), invite)
         let unnamed = TeamInvite(code: "ABC123", name: nil)
         XCTAssertEqual(TeamInvite(pasted: unnamed.message), unnamed)
+        let full = TeamInvite(code: "K7QM2P", name: "Ben & Co: FC", captain: "Ben L.")
+        XCTAssertEqual(TeamInvite(pasted: full.message), full)
+        XCTAssertEqual(TeamInvite(pasted: full.link.absoluteString), full)
+        XCTAssertEqual(MatchTrackerLink(full.link), .join(full))
+        XCTAssertEqual(TeamInvite(pasted: "Join Red Dragons on MatchTracker. In the Team tab, choose Join a Team and paste this message.\nTeam code: K7QM2P"),
+                       TeamInvite(code: "K7QM2P", name: "Red Dragons"), "Invites sent by earlier versions")
+        XCTAssertNil(TeamInvite(link: URL(string: "matchtracker-join://x?team=Too%20Short")!))
+        XCTAssertNil(TeamInvite(link: URL(string: "https://K7QM2P")!))
+        XCTAssertEqual(TeamInvite(link: URL(string: "matchtracker-join://k7qm2p?team=A%0AB&captain=")!),
+                       TeamInvite(code: "K7QM2P", name: "A B"))
         XCTAssertEqual(TeamInvite(pasted: " u14-red "), TeamInvite(code: "U14-RED", name: nil))
         XCTAssertNil(TeamInvite(pasted: "hello there"))
         XCTAssertNil(TeamInvite(pasted: ""))

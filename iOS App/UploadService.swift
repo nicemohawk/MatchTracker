@@ -84,6 +84,7 @@ final class UploadService: ObservableObject {
     func flushQueue() async {
         makeQueueIfNeeded()
         guard let queue else { return }
+        if breaker.allowsRequest() { await TeamService.tellServerAboutTeams() }
         let remaining = await queue.flush()
         pendingUploadCount = remaining
         if remaining > 0 {
@@ -165,6 +166,8 @@ final class UploadService: ObservableObject {
                     try queue.enqueue(match: payload)
                 }
                 if markUploaded { markIDs(sentIDs) }
+                // A team only takes matches from its members.
+                if breaker.allowsRequest() { await TeamService.tellServerAboutTeams() }
                 let remaining = await queue.flush()
                 pendingUploadCount = remaining
                 status = remaining == 0
@@ -185,8 +188,20 @@ final class UploadService: ObservableObject {
         }
     }
 
+    /// The team a match goes to, or nil for nobody. The watch may not have heard yet that its player
+    /// left a team, and a match can reach the phone long after it was played.
     private func teamCode(for summary: MatchSummary) -> String? {
-        summary.record?.teamCode ?? (settings.teamCode.isEmpty ? nil : settings.teamCode)
+        let code = [summary.record?.teamCode, settings.teamCode].compactMap { $0 }.first { !$0.isEmpty }
+        guard let team = settings.teamMemberships.first(where: { $0.code == code }),
+              summary.startDate >= team.joinedAt ?? .distantPast else { return nil }
+        return team.code
+    }
+
+    /// Matches still waiting to go to a team this player has left stay here.
+    func discardUploads(teamCode: String) {
+        makeQueueIfNeeded()
+        queue?.discardMatches(teamCode: teamCode)
+        pendingUploadCount = queue?.pending.count ?? 0
     }
 
     private func buildPayload(summary: MatchSummary, detail: MatchDetailModel) -> MatchPayload {
@@ -210,48 +225,16 @@ final class UploadService: ObservableObject {
 
     // MARK: - Privacy passthroughs
 
+    enum PrivacyError: Error { case noAPIKey }
+
     func postConsent(guardianName: String) async throws {
-        guard let client else { throw TeamStatsError.noAPIKey }
+        guard let client else { throw PrivacyError.noAPIKey }
         try await client.postConsent(guardianName: guardianName)
     }
 
     func requestServerDeletion() async throws {
-        guard let client else { throw TeamStatsError.noAPIKey }
+        guard let client else { throw PrivacyError.noAPIKey }
         try await client.requestDeletion()
-    }
-
-    // MARK: - Team stats
-
-    enum TeamStatsError: LocalizedError {
-        case noAPIKey
-        var errorDescription: String? { "No API key available yet." }
-    }
-
-    func fetchTeamStats(code: String) async throws -> TeamStats {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        return try await client.teamStats(code: code)
-    }
-
-    func fetchFormation(code: String) async throws -> TeamFormation {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        return try await client.formation(code: code)
-    }
-
-    func fetchLiveTeam(code: String) async throws -> [LivePlayerStatus] {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        return try await client.liveTeam(code: code)
-    }
-
-    /// Unified team event timeline for the coach view (`GET /teams/{code}/events`, V2 §11).
-    func fetchTeamEvents(code: String, sinceHours: Int = 6) async throws -> [TeamEvent] {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        return try await client.teamEvents(code: code, sinceHours: sinceHours)
-    }
-
-    /// Attach a coach label to one team event (`POST .../annotation`, V2 §11).
-    func annotateTeamEvent(id: UUID, matchUUID: UUID, label: String) async throws {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        try await client.annotateEvent(id: id, matchUUID: matchUUID, label: label)
     }
 
     // MARK: - Fields

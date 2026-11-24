@@ -560,14 +560,14 @@ App-layer roadmap items and where they live:
 - **Double-tap remap** (watch): setting `doubleTapAction` (flag|subToggle|goalUs) applied where
   `.handGestureShortcut` is attached.
 - **StoreKit** (iOS): `EntitlementStore` (StoreKit 2, product `com.nicemohawk.MatchTracker.team.monthly`,
-  local `MatchTracker.storekit` config for testing); team tabs beyond 1 membership, live dashboard,
-  chat, and formation gated behind `entitled(.team)` with graceful upsell view.
+  local `MatchTracker.storekit` config for testing). Being on a team and seeing it is free for everyone;
+  only writing notes on teammates' moments is gated.
 - **Video highlights** (iOS): PhotosPicker import per match; align flags to video time via
   creation-date offset + manual drift slider; scrubbable AVPlayer highlight list.
 - **Training load** (iOS): read HK cardio fitness (VO2max) + 28-day soccer-workout load, show
   workrate score in context ("above your 4-week average").
-- **Coach view** (iPad): NavigationSplitView dashboard — roster live dots on pitch (via
-  `liveTeam`), per-player stat tiles; degrades to last-known data offline.
+- **Team matches** (everyone on the team): live pitch (via `liveTeam`), minutes, events. A coach is an
+  optional, local role that only changes what that person sees first.
 
 ## Verification commands
 

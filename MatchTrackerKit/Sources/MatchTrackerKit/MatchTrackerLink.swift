@@ -14,6 +14,8 @@ public enum MatchTrackerLink: Hashable, Sendable {
     case matchStarting(Date)
     /// Saying how that match went.
     case review(startingAt: Date)
+    /// Joining a team. The only one another app can open; see `TeamInvite.scheme`.
+    case join(TeamInvite)
 
     public static let scheme = "matchtracker"
 
@@ -27,11 +29,16 @@ public enum MatchTrackerLink: Hashable, Sendable {
         case .match(let id): path = "match/\(id.uuidString)"
         case .matchStarting(let date): path = "match/at/\(Int(date.timeIntervalSince1970))"
         case .review(let date): path = "match/at/\(Int(date.timeIntervalSince1970))/review"
+        case .join(let invite): return invite.link
         }
         return URL(string: "\(Self.scheme)://\(path)")!
     }
 
     public init?(_ url: URL) {
+        if let invite = TeamInvite(link: url) {
+            self = .join(invite)
+            return
+        }
         guard url.scheme == Self.scheme else { return nil }
         let path = url.pathComponents.filter { $0 != "/" }
         switch (url.host(), path.count) {

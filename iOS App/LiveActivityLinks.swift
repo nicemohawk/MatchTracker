@@ -13,9 +13,10 @@ extension View {
     /// - Parameters:
     ///   - openMatch: navigate to a match. Without it the match opens in a sheet.
     ///   - openSeason: show the season.
+    ///   - openTeam: show the team.
     func systemLinks(showingLive: Binding<Bool>, openMatch: ((UUID) -> Void)? = nil,
-                     openSeason: @escaping () -> Void = {}) -> some View {
-        modifier(SystemLinks(showingLive: showingLive, openMatch: openMatch, openSeason: openSeason))
+                     openSeason: @escaping () -> Void = {}, openTeam: @escaping () -> Void = {}) -> some View {
+        modifier(SystemLinks(showingLive: showingLive, openMatch: openMatch, openSeason: openSeason, openTeam: openTeam))
     }
 }
 
@@ -23,12 +24,17 @@ private struct SystemLinks: ViewModifier {
     @Binding var showingLive: Bool
     let openMatch: ((UUID) -> Void)?
     let openSeason: () -> Void
+    let openTeam: () -> Void
 
+    @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var matches: MatchStore
     @Environment(LiveMatchStore.self) private var liveMatches
     @State private var router = LinkRouter.shared
     @State private var sheetMatch: MatchSummary?
     @State private var reviewing: ReviewedMatch?
+    @State private var invite: TeamInvite?
+    // An invite opened by somebody new waits until they've been shown around.
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var startOnWatch = StartOnWatch()
 
@@ -50,6 +56,7 @@ private struct SystemLinks: ViewModifier {
                 }
             }
             .sheet(item: $reviewing) { ScoreSheet(detail: $0.detail, isAsking: true) }
+            .sheet(item: $invite) { TeamJoinSheet(invite: $0) }
             .startOnWatchAlert(startOnWatch)
             .onOpenURL { url in
                 router.pending = MatchTrackerLink(url)
@@ -62,12 +69,14 @@ private struct SystemLinks: ViewModifier {
             .onChange(of: router.pending, initial: true) { follow() }
             // A match just played may still be on its way from the watch.
             .onChange(of: matches.contentVersion) { follow() }
+            .onChange(of: hasOnboarded) { follow() }
             .task(id: ReviewMoment(isActive: scenePhase == .active, match: matches.awaitingReview?.id)) { await askIfJustPlayed() }
             #if DEBUG
             .fullScreenCover(isPresented: .constant(SurfaceGallery.page != nil)) { SurfaceGallery() }
+            .fullScreenCover(isPresented: .constant(TeamDebugGallery.screen != nil)) { TeamDebugGallery() }
             .task {
                 DemoLiveMatch.runIfRequested()
-                // `-OpenLink matchtracker://live`: the scheme isn't registered, so nothing outside can.
+                // `-OpenLink matchtracker://live`: that scheme isn't registered, so nothing outside can.
                 if let link = UserDefaults.standard.string(forKey: "OpenLink").flatMap(URL.init(string:)) {
                     try? await Task.sleep(for: .seconds(2))
                     router.pending = MatchTrackerLink(link)
@@ -82,6 +91,15 @@ private struct SystemLinks: ViewModifier {
         case .live: showingLive = true
         case .season: openSeason()
         case .start: startOnWatch.start()
+        case .join(let joining):
+            guard hasOnboarded else { return }
+            showingLive = false
+            openTeam()
+            if settings.teamMemberships.contains(where: { $0.code == joining.code }) {
+                settings.viewedTeam = joining.code
+            } else {
+                invite = joining
+            }
         case .latestMatch, .match, .matchStarting:
             guard let summary = summary(for: link) else { return forget(link) }
             showingLive = false

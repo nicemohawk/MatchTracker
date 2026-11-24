@@ -31,6 +31,9 @@ final class SettingsStore: ObservableObject {
         static let teamCode = "teamCode"
         static let serverURLOverride = "serverURLOverride"
         static let teamMemberships = "teamMemberships"
+        static let viewedTeam = "viewedTeam"
+        static let confirmedTeams = "confirmedTeams"
+        static let leftTeams = "leftTeams"
         static let consentGuardianName = "consentGuardianName"
         static let consentAcknowledgedAt = "consentAcknowledgedAt"
         static let contributeDetectedFields = "contributeDetectedFields"
@@ -51,6 +54,7 @@ final class SettingsStore: ObservableObject {
         set { defaults.set(newValue, forKey: Key.playerName); bump() }
     }
 
+    /// The team new matches are shared with; empty when they're shared with nobody.
     var teamCode: String {
         get { defaults.string(forKey: Key.teamCode) ?? "" }
         set { defaults.set(newValue, forKey: Key.teamCode); bump() }
@@ -105,24 +109,21 @@ final class SettingsStore: ObservableObject {
 
     // MARK: - Team memberships (multi-team)
 
-    /// Every team this player belongs to. `teamCode` remains the default team for uploads and
-    /// the watch. Migrates the legacy single code into a membership on first read.
+    /// Every team this player belongs to. A code on its own, from versions where one could be typed
+    /// into Settings, counts as one too.
     var teamMemberships: [TeamMembership] {
         get {
-            if let data = defaults.data(forKey: Key.teamMemberships),
-               let memberships = try? MatchTrackerJSON.decoder().decode([TeamMembership].self, from: data) {
-                return memberships
-            }
-            // Legacy migration: a bare teamCode becomes the sole membership.
-            guard !teamCode.isEmpty else { return [] }
-            return [TeamMembership(code: teamCode, name: nil, displayInitialsOnly: false)]
+            let saved = defaults.data(forKey: Key.teamMemberships)
+                .flatMap { try? MatchTrackerJSON.decoder().decode([TeamMembership].self, from: $0) } ?? []
+            guard !teamCode.isEmpty, !saved.contains(where: { $0.code == teamCode }) else { return saved }
+            return saved + [TeamMembership(code: teamCode)]
         }
         set {
             if let data = try? MatchTrackerJSON.encoder().encode(newValue) {
                 defaults.set(data, forKey: Key.teamMemberships)
             }
             // Keep the legacy default-team code in sync for the watch + uploads.
-            if let first = newValue.first, !newValue.contains(where: { $0.code == teamCode }) {
+            if let first = newValue.first, !teamCode.isEmpty, !newValue.contains(where: { $0.code == teamCode }) {
                 defaults.set(first.code, forKey: Key.teamCode)
             }
             if newValue.isEmpty {
@@ -130,6 +131,26 @@ final class SettingsStore: ObservableObject {
             }
             bump()
         }
+    }
+
+    /// The team on the Team tab. Looking at one team doesn't change who new matches go to.
+    var viewedTeam: String {
+        get {
+            let codes = teamMemberships.map(\.code)
+            return [defaults.string(forKey: Key.viewedTeam), teamCode].compactMap { $0 }.first(where: codes.contains) ?? codes.first ?? ""
+        }
+        set { defaults.set(newValue, forKey: Key.viewedTeam); bump() }
+    }
+
+    /// Teams the server knows this device is on, and teams it has yet to hear this device left.
+    var confirmedTeams: [String] {
+        get { defaults.stringArray(forKey: Key.confirmedTeams) ?? [] }
+        set { defaults.set(newValue, forKey: Key.confirmedTeams) }
+    }
+
+    var leftTeams: [String] {
+        get { defaults.stringArray(forKey: Key.leftTeams) ?? [] }
+        set { defaults.set(newValue, forKey: Key.leftTeams) }
     }
 
     // MARK: - Guardian consent (minors privacy)

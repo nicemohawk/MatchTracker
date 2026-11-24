@@ -12,6 +12,17 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.nicemohawk.MatchTracker.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>matchtracker-join</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>MatchTracker reads the calendar you choose to find your next match and suggest the opponent afterwards. It never changes your calendar, and nothing in it leaves your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

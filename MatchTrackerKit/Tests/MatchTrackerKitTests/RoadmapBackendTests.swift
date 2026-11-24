@@ -148,6 +148,34 @@ final class RoadmapBackendTests: XCTestCase {
         XCTAssertNil(json["displayInitialsOnly"])
     }
 
+    func testTeamMembershipSavedByAnEarlierVersion() throws {
+        let saved = #"{"code":"ABC123","name":"U12","initials_only":false}"#.data(using: .utf8)!
+        let membership = try Self.isoDecoder.decode(TeamMembership.self, from: saved)
+        XCTAssertNil(membership.captainName)
+        XCTAssertFalse(membership.isCoach)
+    }
+
+    func testJoinAndLeaveTeam() async throws {
+        StubURLProtocol.reset(statusCode: 204)
+        try await stubbedClient().joinTeam(code: "ABC123")
+        try await stubbedClient().leaveTeam(code: "ABC123")
+        let requests = StubURLProtocol.recorder.requests
+        XCTAssertEqual(requests.map(\.request.httpMethod), ["POST", "DELETE"])
+        XCTAssertEqual(requests.map { $0.request.url?.path },
+                       ["/devices/\(deviceID.uuidString)/teams", "/devices/\(deviceID.uuidString)/teams/ABC123"])
+        XCTAssertEqual(try jsonObject(try XCTUnwrap(requests[0].body))["team_code"] as? String, "ABC123")
+        XCTAssertEqual(requests[0].request.value(forHTTPHeaderField: "X-Device-ID"), deviceID.uuidString)
+    }
+
+    func testANamelessTeammateDoesNotHideTheTeam() async throws {
+        StubURLProtocol.reset(statusCode: 200, body: """
+        {"team_code":"ABC123","team_name":null,"players":[{"player_name":null,"matches_played":1,"total_minutes":90,
+         "total_distance_m":8000,"total_sprints":4,"avg_workrate_score":null,"goals":0,"assists":0}]}
+        """.data(using: .utf8)!)
+        let stats = try await stubbedClient().teamStats(code: "ABC123")
+        XCTAssertEqual(stats.players.map(\.name), ["No name"])
+    }
+
     func testMatchCommentWireKeys() throws {
         let comment = MatchComment(id: UUID(), matchUUID: UUID(), author: "Ben L",
                                    body: "great pressing", postedAt: Date(timeIntervalSince1970: 0))
@@ -448,6 +476,7 @@ final class RoadmapBackendTests: XCTestCase {
         XCTAssertEqual(json["us_goals"] as? Int, 2)
         // Raw track is still stripped; tagged events now reach the server as new_events.
         XCTAssertNil(json["latest_points"])
+        XCTAssertNil(json["heart_rate"])
         let events = try XCTUnwrap(json["new_events"] as? [[String: Any]])
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?["id"] as? String, eventID.uuidString)

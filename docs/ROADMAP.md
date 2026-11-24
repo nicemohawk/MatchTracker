@@ -27,7 +27,7 @@ against that baseline.
 - **Comparative heatmap overlay** — season-average comparison in `iOS App/HeatmapSection.swift`.
 - **GPX/CSV export** — `iOS App/ExportMenu.swift` driving
   `MatchTrackerKit/Sources/MatchTrackerKit/Exporters.swift` (`MatchExporter`).
-- **Coach live dashboard (client side)** — `iOS App/CoachDashboardView.swift`; server endpoints
+- **Team matches and live view (client side)** — `iOS App/TeamMatchesView.swift`; server endpoints
   per `docs/BACKEND_UPGRADE_PROMPT_V2.md`.
 - **StoreKit team subscription** — `iOS App/EntitlementStore.swift`, `iOS App/PaywallView.swift`,
   `MatchTracker.storekit`.
@@ -40,7 +40,7 @@ against that baseline.
   `iOS App/TeamView.swift`.
 - **Multi-sport core** — `MatchTrackerKit/Sources/MatchTrackerKit/SportProfile.swift`; watch sport
   picker in `Watch App/WatchSettingsView.swift`. Note: analysis screens (`HeatmapSection`,
-  `PositionSection`, `LiveMatchView`, `CoachDashboardView`, `FormationView`) still render soccer
+  `PositionSection`, `LiveMatchView`, `TeamMatchesView`, `FormationView`) still render soccer
   pitch geometry (`SoccerPitch.swift`) for all sports — see follow-up in the backlog below.
 - **HealthKit training load / VO2max context** — `iOS App/TrainingLoadService.swift`, consumed by
   `iOS App/WorkrateSection.swift`.
@@ -89,7 +89,7 @@ against that baseline.
 
 - **Per-sport pitch drawings + role-aware analysis screens (new follow-up, L).** `SportProfile`
   and the watch sport picker shipped, but `HeatmapSection`, `PositionSection`, `LiveMatchView`,
-  `CoachDashboardView`, and `FormationView` all still draw `SoccerPitch` geometry regardless of
+  `TeamMatchesView`, and `FormationView` all still draw `SoccerPitch` geometry regardless of
   the match's sport. Needs per-sport field diagrams and sport-aware position roles across those
   screens.
 - **CloudKit sync replacing custom backend for personal (non-team) data (L).** For users who
@@ -102,6 +102,6 @@ against that baseline.
 
 ### Team & social
 
-- **Live streaming SSE upgrade (V2 stretch, S).** `CoachDashboardView` currently polls the team
+- **Live streaming SSE upgrade (V2 stretch, S).** `TeamMatchesView` currently polls the team
   live endpoint; `docs/BACKEND_UPGRADE_PROMPT_V2.md` §1 notes Server-Sent Events as an optional
   stretch goal to replace polling with push updates.

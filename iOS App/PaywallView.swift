@@ -6,7 +6,7 @@
 import SwiftUI
 import StoreKit
 
-/// The team subscription. StoreKit draws the price, terms and purchase; if the App Store can't be
+/// The subscription for team extras. StoreKit draws the price, terms and purchase; if the App Store can't be
 /// reached, this says so and offers another go.
 struct PaywallView: View {
     let entitlements: EntitlementStore
@@ -119,16 +119,14 @@ struct PaywallView: View {
 /// What the money buys, and what it doesn't.
 private struct TeamPitch: View {
     private let features: [(symbol: String, title: String, detail: String)] = [
-        ("person.3", "See the whole team", "Everyone’s average position on one pitch."),
-        ("dot.radiowaves.left.and.right", "Follow matches live", "Watch the score, subs and distance from the sideline."),
-        ("rectangle.stack", "Play for more than one team", "Keep each squad’s matches separate.")
+        ("square.and.pencil", "Write notes on moments", "Say what you saw on a goal or a flag. Your whole team can read it.")
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("MatchTracker Team").font(.largeTitle.bold())
-                Text("For the people you play with.").font(.title3).foregroundStyle(Theme.secondaryLabel)
+                Text("An extra for whoever wants it.").font(.title3).foregroundStyle(Theme.secondaryLabel)
             }
             VStack(alignment: .leading, spacing: 18) {
                 ForEach(features, id: \.title) { feature in
@@ -143,7 +141,7 @@ private struct TeamPitch: View {
                     .labelStyle(AlignedLabelStyle())
                 }
             }
-            Text("Always free: recording, heat maps, importing your history and sharing.")
+            Text("Always free: your team, its numbers, formations and live matches, recording, heat maps, importing your history and sharing.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryLabel)
         }

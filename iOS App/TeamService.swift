@@ -72,6 +72,42 @@ enum TeamService {
         try await client().annotateEvent(id: event.id, matchUUID: event.matchUUID, label: note)
     }
 
+    // MARK: Membership
+
+    /// Tells the server which teams this device is on. Joining works offline; this catches up later.
+    /// What it can't deliver now it tries again next time.
+    static func tellServerAboutTeams() async {
+        #if DEBUG
+        if TeamStub.current != nil { return }
+        #endif
+        let settings = SettingsStore.shared
+        guard let client = try? client() else { return }
+        for code in settings.leftTeams {
+            do {
+                try await client.leaveTeam(code: code)
+            } catch APIError.httpStatus(404) {
+                // Never knew about it.
+            } catch { continue }
+            settings.leftTeams.removeAll { $0 == code }
+        }
+        for code in settings.teamMemberships.map(\.code) where !settings.confirmedTeams.contains(code) {
+            do {
+                try await client.joinTeam(code: code)
+                // Left while this was on its way? Then leaving is what stands.
+                if settings.teamMemberships.contains(where: { $0.code == code }) { settings.confirmedTeams.append(code) }
+            } catch {
+                MatchLog.error("Joining a team on the server failed: \(error.localizedDescription)", category: "team")
+            }
+        }
+    }
+
+    static func sendReceipt(_ jws: String) async {
+        #if DEBUG
+        if TeamStub.current != nil { return }
+        #endif
+        try? await client().postReceipt(jws: jws)
+    }
+
     // MARK: Client
 
     private struct NotReady: Error {}
@@ -94,15 +130,23 @@ enum TeamService {
         case is NotReady:
             return "Team features are still setting up on this device. Try again in a moment."
         case APIError.httpStatus(401), APIError.httpStatus(403):
-            return "This team isn't sharing with you. Check the team code with a teammate."
+            return "This team isn't sharing with you. You may have been taken off it, or the code may be wrong."
         default:
             return "The team service isn't answering. Your own matches are safe."
         }
     }
 
-    /// Whether the server turned this down because it's part of the Team plan.
-    static func needsPlan(_ error: Error) -> Bool {
+    /// Whether the server says this player isn't on the team.
+    static func isTurnedAway(_ error: Error) -> Bool {
         guard case APIError.httpStatus(let status) = error else { return false }
-        return status == 402 || status == 403
+        return status == 401 || status == 403
+    }
+
+    static func explainNote(_ error: Error) -> String {
+        switch error {
+        case APIError.httpStatus(402), APIError.httpStatus(403):
+            return "MatchTracker couldn't confirm your subscription yet. Try again in a minute."
+        default: return explain(error)
+        }
     }
 }

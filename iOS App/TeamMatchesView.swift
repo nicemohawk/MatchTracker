@@ -1,34 +1,37 @@
-// CoachDashboardView.swift
+// TeamMatchesView.swift
 // MatchTracker
 
 import SwiftUI
 import MatchTrackerKit
 
-/// The coach's page: who's on right now, who has played how much, and what happened.
+/// The team's matches, for everyone on it: who's on right now, who has played how much, and what happened.
 /// A plain list on iPhone; on iPad the live pitch sits beside the players.
-struct CoachDashboardView: View {
+struct TeamMatchesView: View {
     let teamCode: String
 
     @Environment(LiveMatchStore.self) private var liveMatches
-    @State private var coach: CoachModel
+    @State private var model: TeamMatchesModel
     @State private var chosenPane: Pane?
 
     enum Pane: String, CaseIterable { case live = "Live", minutes = "Minutes", events = "Events" }
 
     init(teamCode: String) {
         self.teamCode = teamCode
-        _coach = State(initialValue: CoachModel(teamCode: teamCode))
+        _model = State(initialValue: TeamMatchesModel(teamCode: teamCode))
+        #if DEBUG
+        _chosenPane = State(initialValue: UserDefaults.standard.string(forKey: "TeamPane").flatMap(Pane.init))
+        #endif
     }
 
     /// Opens on whatever there is to see: the match if one is on, otherwise the minutes.
-    private var pane: Pane { chosenPane ?? (coach.players.isEmpty ? .minutes : .live) }
+    private var pane: Pane { chosenPane ?? (model.players.isEmpty ? .minutes : .live) }
 
     var body: some View {
         Group {
             switch pane {
-            case .live: CoachLivePane(coach: coach)
-            case .minutes: CoachMinutesPane(coach: coach)
-            case .events: CoachEventsPane(coach: coach)
+            case .live: TeamLivePane(model: model)
+            case .minutes: TeamMinutesPane(model: model)
+            case .events: TeamEventsPane(model: model)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -41,17 +44,17 @@ struct CoachDashboardView: View {
             .readableWidth()
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("Coach")
+        .navigationTitle("Team Matches")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await coach.loadHistory() }
-        .task { await coach.follow(liveMatches) }
+        .task { await model.loadHistory() }
+        .task { await model.follow(liveMatches) }
     }
 }
 
 // MARK: - Live
 
-private struct CoachLivePane: View {
-    let coach: CoachModel
+private struct TeamLivePane: View {
+    let model: TeamMatchesModel
 
     @EnvironmentObject private var settings: SettingsStore
     @State private var width: CGFloat = 0
@@ -63,8 +66,8 @@ private struct CoachLivePane: View {
     }
 
     @ViewBuilder private var content: some View {
-        if coach.players.isEmpty {
-            switch coach.livePhase {
+        if model.players.isEmpty {
+            switch model.livePhase {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
@@ -73,7 +76,7 @@ private struct CoachLivePane: View {
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try Again") { Task { await coach.refreshLive() } }
+                    Button("Try Again") { Task { await model.refreshLive() } }
                         .buttonStyle(.prominentAction)
                 }
             case .loaded:
@@ -90,7 +93,7 @@ private struct CoachLivePane: View {
             }
         } else {
             List {
-                if coach.players.contains(where: \.hasPlace) {
+                if model.players.contains(where: \.hasPlace) {
                     Section {
                         pitch
                             .frame(height: 400)
@@ -110,29 +113,29 @@ private struct CoachLivePane: View {
             let rect = PortraitPitch.fittedRect(in: geometry.size)
             ZStack {
                 PortraitPitch()
-                ForEach(coach.players.filter(\.hasPlace), id: \.playerName) { player in
-                    CoachMarker(player: player, isMe: settings.isMe(player.playerName))
+                ForEach(model.players.filter(\.hasPlace), id: \.playerName) { player in
+                    TeamMarker(player: player, isMe: settings.isMe(player.playerName))
                         .position(PortraitPitch.point(x: player.x ?? 0, y: player.y ?? 0, in: rect))
                 }
             }
-            .animation(.smooth, value: coach.players.map { "\($0.x ?? 0),\($0.y ?? 0)" })
+            .animation(.smooth, value: model.players.map { "\($0.x ?? 0),\($0.y ?? 0)" })
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spokenPitch)
     }
 
     private var spokenPitch: String {
-        let placed = coach.players.filter(\.hasPlace)
+        let placed = model.players.filter(\.hasPlace)
         return "Live positions. " + placed.map { player in
             "\(player.playerName), \(FormationShape.role(x: player.x ?? 0, y: player.y ?? 0).lowercased())"
         }.joined(separator: ". ")
     }
 
     @ViewBuilder private var playerSections: some View {
-        let current = coach.players.filter { !$0.stale }
+        let current = model.players.filter { !$0.stale }
         section("On the pitch", current.filter(\.onPitch))
         section("On the bench", current.filter { !$0.onPitch })
-        section("Not heard from", coach.players.filter(\.stale))
+        section("Not heard from", model.players.filter(\.stale))
     }
 
     @ViewBuilder
@@ -140,7 +143,7 @@ private struct CoachLivePane: View {
         if !players.isEmpty {
             Section("\(title) (\(players.count))") {
                 ForEach(players, id: \.playerName) { player in
-                    CoachLiveRow(player: player)
+                    TeamLiveRow(player: player)
                 }
             }
         }
@@ -151,7 +154,7 @@ private extension LivePlayerStatus {
     var hasPlace: Bool { x != nil && y != nil && onPitch }
 }
 
-private struct CoachMarker: View {
+private struct TeamMarker: View {
     let player: LivePlayerStatus
     let isMe: Bool
 
@@ -171,7 +174,7 @@ private struct CoachMarker: View {
     }
 }
 
-private struct CoachLiveRow: View {
+private struct TeamLiveRow: View {
     let player: LivePlayerStatus
 
     var body: some View {
@@ -182,21 +185,11 @@ private struct CoachLiveRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                HStack(spacing: 16) {
-                    Text(UnitSystem.current.distance(player.distanceMeters).text)
-                        .accessibilityLabel(UnitSystem.current.distance(player.distanceMeters).spoken)
-                    if let heartRate = player.heartRate {
-                        HStack(spacing: 4) {
-                            Image(systemName: "heart.fill").foregroundStyle(Theme.heart)
-                            Text("\(Int(heartRate))")
-                        }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Heart rate \(Int(heartRate))")
-                    }
-                }
-                .font(.subheadline)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                Text(UnitSystem.current.distance(player.distanceMeters).text)
+                    .accessibilityLabel(UnitSystem.current.distance(player.distanceMeters).spoken)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
@@ -205,13 +198,17 @@ private struct CoachLiveRow: View {
 
 // MARK: - Minutes
 
-private struct CoachMinutesPane: View {
-    let coach: CoachModel
+private struct TeamMinutesPane: View {
+    let model: TeamMatchesModel
 
-    @AppStorage("coachMinutesLeastFirst") private var isLeastFirst = true
+    @EnvironmentObject private var settings: SettingsStore
+    @State private var chosenOrder: Bool?
+
+    /// A coach is looking for who has played least; everyone else for who has played most.
+    private var isLeastFirst: Bool { chosenOrder ?? (settings.team(model.teamCode)?.isCoach ?? false) }
 
     var body: some View {
-        switch coach.historyPhase {
+        switch model.historyPhase {
         case .loading:
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
@@ -220,12 +217,12 @@ private struct CoachMinutesPane: View {
             } description: {
                 Text(message)
             } actions: {
-                Button("Try Again") { Task { await coach.loadHistory() } }
+                Button("Try Again") { Task { await model.loadHistory() } }
                     .buttonStyle(.prominentAction)
             }
-        case .loaded where coach.matches.isEmpty:
+        case .loaded where model.matches.isEmpty:
             ContentUnavailableView("No matches to count", systemImage: "clock",
-                                   description: Text("Minutes appear after players record a match on Apple Watch."))
+                                   description: Text("Minutes appear once someone records a match on Apple Watch."))
         case .loaded:
             List {
                 Section {
@@ -241,7 +238,7 @@ private struct CoachMinutesPane: View {
                         }
                     }
                     ForEach(rows, id: \.name) { row in
-                        CoachMinutesRow(name: row.name, load: row.load)
+                        TeamMinutesRow(name: row.name, load: row.load)
                     }
                 } footer: {
                     Text("Counted from each player's watch, without half-time or time on the bench. A dash means nothing was recorded.")
@@ -249,17 +246,17 @@ private struct CoachMinutesPane: View {
             }
             .contentMargins(.top, 8, for: .scrollContent)
             .readableFormWidth()
-            .refreshable { await coach.loadHistory() }
+            .refreshable { await model.loadHistory() }
         }
     }
 
     private var title: some View {
-        Text(coach.matches.count == 1 ? "Last match" : "Last \(min(5, coach.matches.count)) matches")
+        Text(model.matches.count == 1 ? "Last match" : "Last \(min(5, model.matches.count)) matches")
             .font(.title2.bold())
     }
 
     private var orderPicker: some View {
-        Picker("Order", selection: $isLeastFirst) {
+        Picker("Order", selection: Binding(get: { isLeastFirst }, set: { chosenOrder = $0 })) {
             Text("Least first").tag(true)
             Text("Most first").tag(false)
         }
@@ -269,8 +266,8 @@ private struct CoachMinutesPane: View {
     }
 
     private var rows: [(name: String, load: RecentLoad)] {
-        coach.squad
-            .map { (name: $0, load: RecentLoad(player: $0, matches: coach.matches)) }
+        model.squad
+            .map { (name: $0, load: RecentLoad(player: $0, matches: model.matches)) }
             .sorted { lhs, rhs in
                 if lhs.load.minutes == rhs.load.minutes { return lhs.name < rhs.name }
                 return (lhs.load.minutes < rhs.load.minutes) == isLeastFirst
@@ -278,7 +275,7 @@ private struct CoachMinutesPane: View {
     }
 }
 
-private struct CoachMinutesRow: View {
+private struct TeamMinutesRow: View {
     let name: String
     let load: RecentLoad
 
@@ -342,15 +339,17 @@ private struct CoachMinutesRow: View {
 
 // MARK: - Events
 
-private struct CoachEventsPane: View {
-    let coach: CoachModel
+private struct TeamEventsPane: View {
+    let model: TeamMatchesModel
 
+    @Environment(EntitlementStore.self) private var entitlements
+    @State private var isShowingPlan = false
     @State private var labeling: TeamEvent?
     @State private var draft = ""
     @State private var player: String?
 
     var body: some View {
-        switch coach.historyPhase {
+        switch model.historyPhase {
         case .loading:
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
@@ -359,19 +358,30 @@ private struct CoachEventsPane: View {
             } description: {
                 Text(message)
             } actions: {
-                Button("Try Again") { Task { await coach.loadHistory() } }
+                Button("Try Again") { Task { await model.loadHistory() } }
                     .buttonStyle(.prominentAction)
             }
-        case .loaded where coach.keyEvents.isEmpty:
+        case .loaded where model.keyEvents.isEmpty:
             ContentUnavailableView("No events yet", systemImage: "flag",
-                                   description: Text("Goals, cards and flags your players log on Apple Watch appear here."))
+                                   description: Text("Goals, cards and flags the team logs on Apple Watch appear here."))
         case .loaded:
             List {
                 ForEach(days, id: \.day) { day in
                     Section(day.day.formatted(.dateTime.weekday(.wide).month().day())) {
                         ForEach(day.events) { event in
-                            row(event)
+                            if entitlements.entitledToTeam {
+                                noteButton(event)
+                            } else {
+                                row(event)
+                            }
                         }
+                    }
+                }
+                if !entitlements.entitledToTeam {
+                    Section {
+                        Button("Add Notes with MatchTracker Team") { isShowingPlan = true }
+                    } footer: {
+                        Text("Reading the team's moments and notes is free. Writing notes is a paid extra.")
                     }
                 }
             }
@@ -382,7 +392,7 @@ private struct CoachEventsPane: View {
                     Menu {
                         Picker("Player", selection: $player) {
                             Text("Everyone").tag(String?.none)
-                            ForEach(coach.squad, id: \.self) { Text($0).tag(String?.some($0)) }
+                            ForEach(model.squad, id: \.self) { Text($0).tag(String?.some($0)) }
                         }
                     } label: {
                         Label(player ?? "Filter by player",
@@ -390,58 +400,64 @@ private struct CoachEventsPane: View {
                     }
                 }
             }
-            .refreshable { await coach.loadHistory() }
-            .alert("Coach's note", isPresented: Binding(get: { labeling != nil }, set: { if !$0 { labeling = nil } }),
+            .refreshable { await model.loadHistory() }
+            .sheet(isPresented: $isShowingPlan) { PaywallView(entitlements: entitlements) }
+            .alert("Note", isPresented: Binding(get: { labeling != nil }, set: { if !$0 { labeling = nil } }),
                    presenting: labeling) { event in
                 TextField("Great finish", text: $draft)
-                Button("Save") { Task { await coach.annotate(event, note: draft) } }
+                Button("Save") { Task { await model.annotate(event, note: draft) } }
                 Button("Cancel", role: .cancel) {}
             } message: { event in
-                Text("\(coach.sentence(event)). Your team sees this note.")
+                Text("\(model.sentence(event)). Your team sees this note.")
             }
-            .alert("Couldn't save the note", isPresented: Binding(get: { coach.noteProblem != nil }, set: { if !$0 { coach.noteProblem = nil } })) {
+            .alert("Couldn't save the note", isPresented: Binding(get: { model.noteProblem != nil }, set: { if !$0 { model.noteProblem = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text(coach.noteProblem ?? "")
+                Text(model.noteProblem ?? "")
             }
         }
     }
 
     private var days: [(day: Date, events: [TeamEvent])] {
-        let events = coach.keyEvents.filter { player == nil || $0.playerName == player }
+        let events = model.keyEvents.filter { player == nil || $0.playerName == player }
         return Dictionary(grouping: events) { Calendar.current.startOfDay(for: $0.date) }
             .map { (day: $0.key, events: $0.value.sorted { $0.date > $1.date }) }
             .sorted { $0.day > $1.day }
     }
 
-    private func row(_ event: TeamEvent) -> some View {
+    private func noteButton(_ event: TeamEvent) -> some View {
         Button {
             draft = event.coachLabel ?? ""
             labeling = event
         } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Image(systemName: event.kind?.systemImage ?? "circle")
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(coach.sentence(event))
-                    if let note = event.note, !note.isEmpty {
-                        Text(note).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    if let label = event.coachLabel, !label.isEmpty {
-                        Text("Coach: \(label)").font(.subheadline).foregroundStyle(Theme.turf)
-                    }
-                }
-                Spacer(minLength: 8)
-                Text(event.date, format: .dateTime.hour().minute())
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
+            row(event).contentShape(Rectangle())
         }
         .tint(.primary)
-        .accessibilityHint("Adds a coach's note")
+        .accessibilityHint("Adds a note")
+    }
+
+    private func row(_ event: TeamEvent) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: event.kind?.systemImage ?? "circle")
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.sentence(event))
+                if let note = event.note, !note.isEmpty {
+                    Text(note).font(.subheadline).foregroundStyle(.secondary)
+                }
+                if let label = event.coachLabel, !label.isEmpty {
+                    Text("Note: \(label)").font(.subheadline).foregroundStyle(Theme.turf)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(event.date, format: .dateTime.hour().minute())
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -449,7 +465,7 @@ private struct CoachEventsPane: View {
 
 @Observable
 @MainActor
-final class CoachModel {
+final class TeamMatchesModel {
     enum Phase: Equatable { case loading, loaded, failed(String) }
 
     private(set) var livePhase: Phase = .loading
@@ -462,7 +478,7 @@ final class CoachModel {
     var noteProblem: String?
 
     private var events: [UUID: TeamEvent] = [:]
-    private let teamCode: String
+    let teamCode: String
     private static let historyHours = 8 * 7 * 24
     private static let keyKinds: Set<MatchEventKind> = [.goalForUs, .goalAgainstUs, .goalMine, .assist, .flag, .yellowCard, .redCard]
 
@@ -508,12 +524,13 @@ final class CoachModel {
 
     /// This phone's own watch is fresher than the trip through the server.
     private func mergeOwnMatch(_ liveMatches: LiveMatchStore) {
-        guard liveMatches.isLive, let update = liveMatches.latest else { return }
+        // Only the team this match is shared with: the other one isn't watching it.
+        guard liveMatches.isLive, let update = liveMatches.latest, SettingsStore.shared.teamCode == teamCode else { return }
         let name = SettingsStore.shared.playerName.isEmpty ? "You" : SettingsStore.shared.playerName
         let known = players.first { $0.playerName == name }
         players.removeAll { $0.playerName == name }
         players.append(LivePlayerStatus(playerName: name, updatedAt: update.timestamp, x: known?.x, y: known?.y,
-                                        heartRate: update.heartRate, distanceMeters: update.distanceMeters,
+                                        distanceMeters: update.distanceMeters,
                                         onPitch: update.onPitch, stale: false))
         players.sort { $0.playerName < $1.playerName }
     }
@@ -533,7 +550,7 @@ final class CoachModel {
         } catch {
             events[event.id]?.coachLabel = previous
             summarizeEvents()
-            noteProblem = TeamService.explain(error)
+            noteProblem = TeamService.explainNote(error)
         }
     }
 
