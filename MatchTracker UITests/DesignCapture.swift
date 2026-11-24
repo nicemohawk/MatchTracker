@@ -181,6 +181,25 @@ final class DesignCapture: XCTestCase {
         screenshot("23-line-up")
     }
 
+    func testShare() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(8)
+        app.tabBars.buttons["Matches"].tap()
+        sleep(2)
+        app.collectionViews.cells.element(boundBy: 3).tap()
+        sleep(6)
+        app.buttons["Share"].tap()
+        sleep(4)
+        app.buttons["Pitch"].tap()
+        for name in ["Story", "Portrait", "Square", "Sticker"] where app.buttons[name].exists {
+            app.buttons[name].tap()
+            sleep(2)
+            screenshot("60-share-\(name.lowercased())")
+        }
+        if app.buttons["Replay"].exists { app.buttons["Replay"].tap(); sleep(8); screenshot("61-share-replay") }
+    }
+
     func testEffort() {
         for pass in 1...2 {
             app.launch()
@@ -263,7 +282,13 @@ final class DesignCapture: XCTestCase {
         screenshot("50-indoor")
         app.buttons["Share"].tap()
         sleep(4)
+        app.buttons["Pitch"].tap()
+        app.buttons["Story"].tap()
+        sleep(2)
         screenshot("53-indoor-share")
+        app.buttons["Square"].tap()
+        sleep(2)
+        screenshot("54-indoor-share-square")
         if app.buttons["Done"].exists { app.buttons["Done"].firstMatch.tap() } else { app.swipeDown(velocity: .fast) }
         sleep(1)
         app.swipeUp()

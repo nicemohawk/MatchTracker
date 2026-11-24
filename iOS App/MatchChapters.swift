@@ -33,7 +33,7 @@ struct MomentsChapter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Moments").font(.title2.bold())
+                Text("Moments").font(.name(.title3))
                 Spacer()
                 Button("Edit", action: onEdit)
             }
@@ -110,7 +110,7 @@ private struct MomentRow: View {
     private var moment: some View {
         HStack(spacing: 14) {
             Text(minutes.text(for: event.date))
-                .font(.system(.body, design: .rounded, weight: .semibold))
+                .font(.figure(.body))
                 .monospacedDigit()
                 .foregroundStyle(onShow == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
                 .frame(minWidth: 44, alignment: .leading)
@@ -168,8 +168,8 @@ extension MatchEventKind {
 
     var momentColor: Color {
         switch self {
-        case .goalForUs, .goalMine, .assist: return .green
-        case .goalAgainstUs, .redCard: return .red
+        case .goalForUs, .goalMine, .assist: return Theme.turf
+        case .goalAgainstUs, .redCard: return Theme.loss
         case .yellowCard: return .yellow
         default: return .secondary
         }
@@ -187,7 +187,7 @@ struct BestRunsChapter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Best runs").font(.title2.bold())
+            Text("Best runs").font(.name(.title3))
             VStack(spacing: 0) {
                 ForEach(runs) { run in
                     Button { onShow(run) } label: { row(run) }
@@ -221,7 +221,7 @@ struct BestRunsChapter: View {
             if !isLarge { Spacer(minLength: 8) }
             VStack(alignment: isLarge ? .leading : .trailing, spacing: 2) {
                 Text(UnitSystem.current.speed(run.peakSpeed).text)
-                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .font(.figure(.title3))
                     .monospacedDigit()
                 Text(UnitSystem.current.shortDistance(run.distanceMeters).text)
                     .font(.subheadline)
@@ -243,7 +243,7 @@ struct EffortChapter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Effort").font(.title2.bold())
+            Text("Effort").font(.name(.title3))
             EffortVerdict(workout: detail.workout, measured: Self.word(for: detail.digest?.effort))
             // Without a pitch, the picture is already the heart rate.
             if analytics.hasRoute, !detail.heartRateSeries.isEmpty {
@@ -359,7 +359,7 @@ struct HeartRateChart: View {
                  series: .value("Half", point.isSecondHalf ? 2 : 1))
             .interpolationMethod(.monotone)
             .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
-            .foregroundStyle(Color.pink)
+            .foregroundStyle(Theme.heart)
     }
 
     private func callout(_ point: Point) -> some ChartContent {
@@ -437,7 +437,7 @@ struct AllNumbersView: View {
                     Chart(Array(analytics.metersPerMinute.enumerated()), id: \.offset) { minute, meters in
                         BarMark(x: .value("Minute", minute + 1),
                                 y: .value("Distance", UnitSystem.current == .imperial ? meters * 1.0936 : meters))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Theme.turf)
                     }
                     .chartYAxisLabel(UnitSystem.current.shortDistance(0).unit)
                     .frame(height: 180)

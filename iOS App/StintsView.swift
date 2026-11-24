@@ -49,7 +49,7 @@ struct StintsHero: View {
                 LineMark(x: .value("Minute", point.minute), y: .value("Heart rate", point.bpm))
                     .interpolationMethod(.monotone)
                     .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .foregroundStyle(Color.pink)
+                    .foregroundStyle(Theme.heart)
             }
             .accessibilityHidden(true)
         }
@@ -75,7 +75,7 @@ struct StintsChapter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Stints").font(.title2.bold())
+            Text("Stints").font(.name(.title3))
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) { numbers(stretching: true) }
                 VStack(alignment: .leading, spacing: 12) { numbers(stretching: false) }
@@ -119,7 +119,7 @@ struct StintsChapter: View {
     private func number(_ value: String, _ unit: String?, _ label: String, _ stretching: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.system(.title, design: .rounded, weight: .semibold)).monospacedDigit()
+                Text(value).font(.figure(.title)).monospacedDigit()
                 if let unit { Text(unit).font(.subheadline.weight(.medium)).foregroundStyle(.secondary) }
             }
             Text(label).font(.subheadline).foregroundStyle(.secondary)

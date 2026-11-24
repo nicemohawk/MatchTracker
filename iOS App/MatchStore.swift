@@ -425,6 +425,12 @@ final class MatchStore: ObservableObject {
     /// Matches worth counting: a recording of a minute or two is someone trying the app.
     var playedDigests: [MatchDigest] { digests.values.filter { $0.secondsOnPitch >= 300 } }
 
+    /// Whether it set a best that still stands.
+    func isBest(_ digest: MatchDigest) -> Bool {
+        let history = playedDigests.filter { $0.startDate < digest.startDate }
+        return history.count >= 3 && !SeasonSummary(history + [digest]).bestsSet(by: digest.id).isEmpty
+    }
+
     /// The most interesting true thing about a match. Nil before its digest, or when there's nothing to say.
     func headline(for id: UUID) -> String? {
         digests[id].flatMap { MatchHeadline.make(for: $0, among: Array(digests.values)) }

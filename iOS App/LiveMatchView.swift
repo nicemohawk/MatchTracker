@@ -76,18 +76,18 @@ struct LiveMatchView: View {
         VStack(spacing: 4) {
             if let us = state.goalsUs, let them = state.goalsThem {
                 Text("\(us)–\(them)")
-                    .font(.system(size: min(heroSize, 132), weight: .bold, design: .rounded))
+                    .font(.system(size: min(heroSize, 132), weight: .heavy).width(.compressed))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .contentTransition(reduceMotion ? .identity : .numericText())
                     .animation(reduceMotion ? nil : .snappy, value: state.score)
                     .accessibilityLabel(state.spokenScore)
-                clock(state, font: .system(.title, design: .rounded, weight: .medium))
+                clock(state, font: .system(.title, weight: .semibold).width(.condensed))
                     .foregroundStyle(.secondary)
             } else {
                 // Nobody has logged a goal, which isn't the same as 0–0.
-                clock(state, font: .system(size: min(heroSize, 132) * 0.8, weight: .bold, design: .rounded))
+                clock(state, font: .system(size: min(heroSize, 132) * 0.8, weight: .heavy).width(.compressed))
             }
             status(state)
                 .font(.headline)
@@ -180,7 +180,7 @@ struct LiveMatchView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value)
-                    .font(.system(.title, design: .rounded, weight: .bold))
+                    .font(.figure(.title))
                     .monospacedDigit()
                     .foregroundStyle(tint)
                     .contentTransition(reduceMotion ? .identity : .numericText())

@@ -60,12 +60,15 @@ struct SurfaceGallery: View {
     }
 
     private func card<Content: View>(_ width: CGFloat, _ height: CGFloat,
-                                     background: Color = Color(uiColor: .systemBackground),
+                                     background: Color? = nil,
                                      @ViewBuilder content: () -> Content) -> some View {
         content()
             .padding(16)
             .frame(width: width, height: height)
-            .background(background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .foregroundStyle(SurfacePalette.ivory)
+            .environment(\.colorScheme, .dark)
+            .background { if let background { background } else { WidgetCloth() } }
+            .clipShape(.rect(cornerRadius: 22))
     }
 
     private var accessories: some View {

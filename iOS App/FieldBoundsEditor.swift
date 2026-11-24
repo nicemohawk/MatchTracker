@@ -295,7 +295,7 @@ struct FieldOutlineEditor: View {
         VStack(alignment: .leading, spacing: 4) {
             if let rectangle {
                 Text(MatchFormat.fieldSize(rectangle))
-                    .font(.system(.title2, design: .rounded).weight(.semibold))
+                    .font(.figure(.title2))
                     .monospacedDigit()
                     .accessibilityLabel(MatchFormat.spokenFieldSize(rectangle))
                 if let problem {

@@ -160,7 +160,7 @@ struct MatchStage: View {
     private var time: some View {
         if let time = clock.time {
             Text(minutes.text(for: date(at: time)))
-                .font(.system(.title, design: .rounded, weight: .bold))
+                .font(.system(.title, weight: .heavy).width(.compressed))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(16)

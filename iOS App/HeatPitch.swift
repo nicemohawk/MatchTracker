@@ -273,28 +273,30 @@ enum HeatImage {
         let width = max(8, pixelWidth)
         let height = max(8, Int((Double(width) / size.aspectRatio).rounded()))
         guard reference > 0 else { return nil }
-        let smoothed = smooth(heat, size: size)
-        let field = upscale(smoothed, columns: heat.columns, rows: heat.rows, width: width, height: height)
-
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        let ramp = ramp
-        let last = Float(ramp.count / 4 - 1)
-        for index in field.indices {
-            let level = min(max(field[index] / reference, 0), 1)
-            // Lift the low end so a wandering midfielder's whole game shows, not just one hot spot.
-            let shaped = powf(level, 0.5)
-            let color = Int(shaped * last + 0.5) * 4
-            // Ordered dither: a smooth dark ramp in eight bits shows contour lines without it.
-            let dither = ramp[color + 3] > 0.5 ? bayer[(index / width & 7) * 8 + (index % width & 7)] : 0
-            for channel in 0..<4 {
-                pixels[index * 4 + channel] = UInt8(min(ramp[color + channel] + dither, 255))
+        let columns = Knit.columns(across: CGFloat(width))
+        let stitch = CGFloat(width) / CGFloat(columns)
+        let rows = max(1, Int((CGFloat(height) / (stitch * Knit.rise)).rounded()))
+        let field = upscale(smooth(heat, size: size), columns: heat.columns, rows: heat.rows, width: columns, height: rows)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let cg = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        cg.translateBy(x: 0, y: CGFloat(height))
+        cg.scaleBy(x: 1, y: -1)
+        let paths = Knit.yarns.map { _ in CGMutablePath() }
+        for row in 0..<rows {
+            for column in 0..<columns {
+                // Lift the low end so a wandering midfielder's whole game shows, not just one hot spot.
+                let level = powf(min(max(field[row * columns + column] / reference, 0), 1), 0.5)
+                guard let yarn = Knit.yarn(for: level) else { continue }
+                Knit.addStitch(to: paths[yarn], column: column, row: row, width: stitch)
             }
         }
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
-              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-                       space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        for (path, yarn) in zip(paths, Knit.yarns) {
+            cg.setFillColor(yarn)
+            cg.addPath(path)
+            cg.fillPath()
+        }
+        return cg.makeImage()
     }
 
     /// How far a fix spreads. About GPS's own uncertainty, so the picture claims no more than it knows.
@@ -365,49 +367,6 @@ enum HeatImage {
         }
         return result
     }
-
-    /// One hue, transparent to bright: grass, then lit grass, then floodlight. Flat premultiplied RGBA, 0...255.
-    private static let ramp: [Float] = {
-        let stops: [(level: Float, red: Float, green: Float, blue: Float, alpha: Float)] = [
-            (0.00, 0.03, 0.42, 0.24, 0.00),
-            (0.12, 0.03, 0.42, 0.24, 0.05),
-            (0.30, 0.04, 0.50, 0.28, 0.40),
-            (0.52, 0.08, 0.64, 0.33, 0.74),
-            (0.74, 0.25, 0.83, 0.42, 0.93),
-            (0.90, 0.60, 0.96, 0.52, 1.00),
-            (1.00, 0.91, 1.00, 0.74, 1.00)
-        ]
-        return (0..<1024).flatMap { step -> [Float] in
-            let level = Float(step) / 1023
-            let upper = max(1, stops.firstIndex { $0.level >= level } ?? stops.count - 1)
-            let from = stops[upper - 1], to = stops[upper]
-            let linear = (level - from.level) / (to.level - from.level)
-            func mix(_ a: Float, _ b: Float) -> Float { a + (b - a) * linear }
-            let alpha = mix(from.alpha, to.alpha)
-            return [mix(from.red, to.red) * alpha * 255, mix(from.green, to.green) * alpha * 255,
-                    mix(from.blue, to.blue) * alpha * 255, alpha * 255]
-        }
-    }()
-
-    /// 8×8 Bayer thresholds, 0..<1, added before truncating to eight bits.
-    private static let bayer: [Float] = {
-        var matrix: [[Int]] = [[0]]
-        while matrix.count < 8 {
-            let size = matrix.count
-            var next = [[Int]](repeating: [Int](repeating: 0, count: size * 2), count: size * 2)
-            for row in 0..<size {
-                for column in 0..<size {
-                    let value = matrix[row][column] * 4
-                    next[row][column] = value
-                    next[row][column + size] = value + 2
-                    next[row + size][column] = value + 3
-                    next[row + size][column + size] = value + 1
-                }
-            }
-            matrix = next
-        }
-        return matrix.joined().map { (Float($0) + 0.5) / 64 }
-    }()
 }
 
 // MARK: - Drawing
@@ -466,30 +425,22 @@ struct PitchArtist: Sendable {
         cg.saveGState()
         defer { cg.restoreGState() }
         cg.clip(to: bounds)
-        let space = CGColorSpace(name: CGColorSpace.sRGB)
-        if let gradient = CGGradient(colorsSpace: space, colors: [color(0.062, 0.162, 0.122), color(0.026, 0.082, 0.063)] as CFArray,
-                                     locations: nil) {
-            cg.drawLinearGradient(gradient, start: CGPoint(x: bounds.midX, y: bounds.minY),
-                                  end: CGPoint(x: bounds.midX, y: bounds.maxY), options: [])
-        }
+        cg.setFillColor(Knit.cloth)
+        cg.fill(bounds)
         guard !isThumbnail, pitch.height > 0 else { return }
-        // Mown bands, edge to edge, lined up with the pitch.
-        let bandCount = 18
-        let band = pitch.height / CGFloat(bandCount)
-        cg.setFillColor(white(0.03))
-        var top = pitch.minY - band * (((pitch.minY - bounds.minY) / band / 2).rounded(.up) * 2)
-        while top < bounds.maxY {
-            cg.fill(CGRect(x: bounds.minX, y: top, width: bounds.width, height: band))
-            top += band * 2
+        // The whole cloth is knitted; the heat only changes the yarn.
+        let stitch = pitch.width / CGFloat(Knit.columns(across: pitch.width * 3))
+        let left = Int(((pitch.minX - bounds.minX) / stitch).rounded(.up)), up = Int(((pitch.minY - bounds.minY) / (stitch * Knit.rise)).rounded(.up))
+        let columns = left + Int(((bounds.maxX - pitch.minX) / stitch).rounded(.up)), rows = up + Int(((bounds.maxY - pitch.minY) / (stitch * Knit.rise)).rounded(.up))
+        let path = CGMutablePath()
+        for row in -up..<(rows - up) {
+            for column in -left..<(columns - left) {
+                Knit.addStitch(to: path, column: column, row: row, width: stitch, origin: pitch.origin)
+            }
         }
-        // Floodlights reach the middle better than the corners.
-        if let vignette = CGGradient(colorsSpace: space, colors: [color(0, 0, 0, 0), color(0, 0, 0, 0.38)] as CFArray,
-                                     locations: [0, 1]) {
-            let radius = hypot(bounds.width, bounds.height) / 2
-            cg.drawRadialGradient(vignette, startCenter: CGPoint(x: bounds.midX, y: bounds.midY), startRadius: radius * 0.35,
-                                  endCenter: CGPoint(x: bounds.midX, y: bounds.midY), endRadius: radius * 1.05,
-                                  options: [.drawsAfterEndLocation])
-        }
+        cg.setFillColor(Knit.ground)
+        cg.addPath(path)
+        cg.fillPath()
     }
 
     func drawHeat(_ image: CGImage, in cg: CGContext, opacity: CGFloat = 1) {

@@ -467,9 +467,9 @@ private final class ReplayScene {
             cg.setFillColor(UIColor(white: 1, alpha: 0.45 * arrival).cgColor)
             cg.fillPath()
             drawText("\(us)", size: size * (1 + 0.22 * CGFloat(usScored ? bump : 0)), weight: .heavy, alpha: arrival,
-                     at: CGPoint(x: canvas.width / 2 - dashWidth / 2 - 22, y: 232), alignment: .right, rounded: true)
+                     at: CGPoint(x: canvas.width / 2 - dashWidth / 2 - 22, y: 232), alignment: .right, kit: true)
             drawText("\(them)", size: size * (1 + 0.22 * CGFloat(usScored ? 0 : bump)), weight: .heavy, alpha: arrival * 0.75,
-                     at: CGPoint(x: canvas.width / 2 + dashWidth / 2 + 22, y: 232), alignment: .left, rounded: true)
+                     at: CGPoint(x: canvas.width / 2 + dashWidth / 2 + 22, y: 232), alignment: .left, kit: true)
             let nameEdge: CGFloat = 230
             if let opponent = match.opponent {
                 let team = match.teamName ?? "Us"
@@ -488,10 +488,10 @@ private final class ReplayScene {
         let clock = clockText(now)
         if match.hasScore {
             drawText(clock, size: 46, weight: .semibold, alpha: arrival * 0.8, at: CGPoint(x: canvas.width / 2, y: 356),
-                     alignment: .center, rounded: true)
+                     alignment: .center, kit: true)
         } else {
             drawText(clock, size: 96, weight: .heavy, alpha: arrival, at: CGPoint(x: canvas.width / 2, y: 260),
-                     alignment: .center, rounded: true)
+                     alignment: .center, kit: true)
         }
     }
 
@@ -514,7 +514,7 @@ private final class ReplayScene {
             let value = now.closing > 0 ? final : running(final, at: now.opening < 1 ? .distantPast : now.date)
             let x = canvas.width * (CGFloat(index) + 0.5) / CGFloat(finals.count) * 0.88 + canvas.width * 0.06
             let valueText = NSMutableAttributedString(string: value.value,
-                                                      attributes: attributes(size: 84 * grow, weight: .bold, alpha: arrival, rounded: true))
+                                                      attributes: attributes(size: 84 * grow, weight: .bold, alpha: arrival, kit: true))
             if !value.unit.isEmpty {
                 valueText.append(NSAttributedString(string: " " + value.unit,
                                                     attributes: attributes(size: 40 * grow, weight: .semibold, alpha: arrival * 0.85)))
@@ -564,7 +564,7 @@ private final class ReplayScene {
             drawText(best.caption, size: 76, weight: .heavy, alpha: now.spotlight,
                      at: CGPoint(x: center.x, y: 1478), alignment: .center)
             drawText(best.detail, size: 52, weight: .semibold, alpha: now.spotlight * 0.85,
-                     at: CGPoint(x: center.x, y: 1552), alignment: .center, rounded: true)
+                     at: CGPoint(x: center.x, y: 1552), alignment: .center, kit: true)
         } else if let callout = callout(now) {
             drawScrimBand(around: artist.pitch.minY + 74, height: 340, opacity: 0.8 * callout.alpha, in: cg)
             drawText(callout.text, size: 88, weight: .heavy, alpha: callout.alpha,
@@ -591,21 +591,21 @@ private final class ReplayScene {
 
     private enum Alignment { case left, center, right }
 
-    private func attributes(size: CGFloat, weight: UIFont.Weight, alpha: Double, rounded: Bool = false) -> [NSAttributedString.Key: Any] {
+    private func attributes(size: CGFloat, weight: UIFont.Weight, alpha: Double, kit: Bool = false) -> [NSAttributedString.Key: Any] {
         var font = UIFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
-        if rounded, let descriptor = font.fontDescriptor.withDesign(.rounded) { font = UIFont(descriptor: descriptor, size: size) }
+        if kit { font = .systemFont(ofSize: size, weight: .heavy, width: .compressed) }
         return [.font: font, .foregroundColor: UIColor(white: 1, alpha: min(max(alpha, 0), 1))]
     }
 
     /// `at` is the vertical middle of the text and its left, center or right edge.
     private func drawText(_ text: String, size: CGFloat, weight: UIFont.Weight, alpha: Double, at point: CGPoint,
-                          alignment: Alignment, rounded: Bool = false, maximumWidth: CGFloat = .infinity) {
+                          alignment: Alignment, kit: Bool = false, maximumWidth: CGFloat = .infinity) {
         guard alpha > 0.004, !text.isEmpty else { return }
         var size = size
-        var string = NSAttributedString(string: text, attributes: attributes(size: size, weight: weight, alpha: alpha, rounded: rounded))
+        var string = NSAttributedString(string: text, attributes: attributes(size: size, weight: weight, alpha: alpha, kit: kit))
         if string.size().width > maximumWidth {
             size = max(size * 0.5, size * maximumWidth / string.size().width)
-            string = NSAttributedString(string: text, attributes: attributes(size: size, weight: weight, alpha: alpha, rounded: rounded))
+            string = NSAttributedString(string: text, attributes: attributes(size: size, weight: weight, alpha: alpha, kit: kit))
         }
         let measured = string.size()
         let x: CGFloat

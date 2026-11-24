@@ -1,7 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// A session with no pitch to draw: its playing and resting on dark turf, kickoff first. Portrait, so
+/// A session with no pitch to draw, as a hooped shirt: playing in yarn, resting bare, kickoff first. Portrait, so
 /// it sits beside the heat of outdoor matches, or landscape for wide places.
 public struct EffortStripView: View {
     let levels: [Float]
@@ -17,32 +17,34 @@ public struct EffortStripView: View {
     public var body: some View {
         Canvas { context, size in
             if hasTurf {
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
-                    Gradient(colors: [Color(red: 0.055, green: 0.176, blue: 0.129), Color(red: 0.020, green: 0.086, blue: 0.071)]),
-                    startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.043, green: 0.231, blue: 0.173)))
             }
             let along = axis == .vertical ? size.height : size.width
             let across = axis == .vertical ? size.width : size.height
-            let margin = min(along, across) * 0.1
+            let margin = min(along, across) * (hasTurf ? 0.08 : 0)
             let slice = (along - margin * 2) / CGFloat(max(levels.count, 1))
             for (index, level) in levels.enumerated() {
                 let offset = margin + CGFloat(index) * slice
-                let length = level > 0 ? (across - margin * 2) * CGFloat(0.35 + 0.65 * level) : across * 0.04
-                let thickness = max(slice * 0.72, 0.8)
+                // A hooped shirt: full width while playing, and bare cloth with a thread while not.
+                let length = level > 0 ? across : min(across * 0.06, 8)
+                let thickness = level > 0 ? slice + 0.3 : max(slice * 0.3, 0.7)
                 let rect = axis == .vertical
-                    ? CGRect(x: (across - length) / 2, y: offset, width: length, height: thickness)
-                    : CGRect(x: offset, y: (across - length) / 2, width: thickness, height: length)
-                context.fill(Path(roundedRect: rect, cornerRadius: thickness / 2), with: .color(color(level)))
+                    ? CGRect(x: (across - length) / 2, y: offset + (slice - thickness) / 2, width: length, height: thickness)
+                    : CGRect(x: offset + (slice - thickness) / 2, y: (across - length) / 2, width: thickness, height: length)
+                context.fill(Path(rect), with: .color(color(level)))
             }
         }
         .accessibilityHidden(true)
     }
 
-    /// The heat pitch's greens: deep, then bright, then pale at the hardest.
+    /// The knit's yarns: the harder, the paler.
     private func color(_ level: Float) -> Color {
-        guard level > 0 else { return .white.opacity(0.22) }
-        let glow = Double(max(0, (level - 0.55) / 0.45))
-        return Color(red: 0.10 + 0.70 * glow, green: 0.62 + 0.36 * glow, blue: 0.30 + 0.40 * glow)
+        switch level {
+        case ...0: return Color(red: 0.961, green: 0.933, blue: 0.867).opacity(0.35)
+        case ..<0.6: return Color(red: 0.180, green: 0.490, blue: 0.333)
+        case ..<0.85: return Color(red: 0.553, green: 0.733, blue: 0.447)
+        default: return Color(red: 0.961, green: 0.933, blue: 0.867)
+        }
     }
 }
 #endif

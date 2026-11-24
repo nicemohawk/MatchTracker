@@ -14,6 +14,7 @@ struct MatchTrackerApp: App {
         Self.registerBackgroundRefresh()
         LiveActivityController.shared.observeMirroredMatches()
         MatchReminders.shared.start()
+        BarType.apply()
         // Not left to the first window: the watch wakes the app in the background, without one.
         let environment = AppEnvironment()
         environment.connectivity.start()

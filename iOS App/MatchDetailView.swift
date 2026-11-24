@@ -47,7 +47,7 @@ struct MatchDetailView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.background)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .onChange(of: sheet) { clock.pause() }
@@ -187,7 +187,7 @@ struct MatchDetailView: View {
             }
             if let notes = detail.record?.notes, !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Notes").font(.title2.bold())
+                    Text("Notes").font(.name(.title3))
                     Text(notes)
                 }
             }
@@ -248,20 +248,14 @@ private struct MatchScoreline: View {
         Button(action: onEdit) {
             VStack(spacing: 4) {
                 if let games = digest?.games {
-                    Text("\(games.won) of \(games.count)")
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .monospacedDigit()
+                    KitNumber("\(games.won) of \(games.count)", size: 72)
                     Text(games.drawn > 0 ? "games won, \(games.drawn) drawn" : "games won").font(.headline)
                 } else if let digest, let result = digest.result, let us = digest.goalsUs, let them = digest.goalsThem {
                     Text(word(result)).font(.headline).foregroundStyle(color(result))
-                    Text("\(us) – \(them)")
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
+                    KitNumber("\(us)–\(them)", size: 80).accessibilityLabel("\(us) to \(them)")
                 } else {
                     Text(digest?.opponent.map { "vs \($0)" } ?? digest?.fieldName ?? fallbackTitle)
-                        .font(.largeTitle.bold())
+                        .font(.name(.title))
                         .multilineTextAlignment(.center)
                     if keepsScore { Text("Add the Score").font(.headline).foregroundStyle(.tint).frame(minHeight: 32) }
                 }
@@ -296,8 +290,8 @@ private struct MatchScoreline: View {
     private func color(_ result: MatchDigest.Result) -> Color {
         switch result {
         case .won: return Theme.turf
-        case .drawn: return .secondary
-        case .lost: return .red
+        case .drawn: return Theme.draw
+        case .lost: return Theme.loss
         }
     }
 }
@@ -336,7 +330,7 @@ private struct TrimSuggestion: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+        .background(Theme.surface, in: .rect(cornerRadius: 24))
     }
 }
 

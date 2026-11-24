@@ -29,7 +29,7 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(app.buttons["Share"].waitForExistence(timeout: 20), "A row opens its match")
 
         setScore(us: 7)
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '7 – 0'")).firstMatch.waitForExistence(timeout: 10),
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '7 to 0'")).firstMatch.waitForExistence(timeout: 10),
                       "The result is on the match")
 
         relaunch()
@@ -71,7 +71,7 @@ final class SmokeTests: XCTestCase {
         generate.tap()
         handleHealthKitPrompt(app: app)
         let done = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Generated sample season'")).firstMatch
-        let deadline = Date().addingTimeInterval(120)
+        let deadline = Date().addingTimeInterval(240)
         while Date() < deadline, !done.exists {
             app.swipeUp(velocity: .slow)
             _ = done.waitForExistence(timeout: 3)

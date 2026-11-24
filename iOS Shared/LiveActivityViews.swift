@@ -25,14 +25,14 @@ struct LiveActivityLockScreenView: View {
             HStack(alignment: .firstTextBaseline) {
                 if let score = state.score {
                     Text(score)
-                        .font(.largeTitle.weight(.bold)).fontDesign(.rounded)
+                        .font(.largeTitle.weight(.bold)).fontWidth(.condensed)
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .accessibilityLabel(state.spokenScore)
                     Spacer(minLength: 12)
                 }
                 MatchClock(state: state, isStale: isStale)
-                    .font(.largeTitle.weight(state.score == nil ? .bold : .medium)).fontDesign(.rounded)
+                    .font(.largeTitle.weight(state.score == nil ? .bold : .medium)).fontWidth(.condensed)
                     .monospacedDigit()
                     .foregroundStyle(state.score == nil ? .primary : .secondary)
                     // Timer text takes all the width it's offered.
@@ -68,7 +68,7 @@ struct LiveActivitySummary: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(state.finalTitle)
-                    .font(.title.weight(.bold)).fontDesign(.rounded)
+                    .font(.title.weight(.bold)).fontWidth(.condensed)
                 Text(state.finalDetail(units: units))
                     .font(.headline)
                     .foregroundStyle(.secondary)
@@ -153,7 +153,7 @@ struct LiveActivitySmallView: View {
         VStack(alignment: .leading, spacing: 2) {
             if state.hasEnded {
                 Text(state.finalTitle)
-                    .font(.title3.weight(.bold)).fontDesign(.rounded)
+                    .font(.title3.weight(.bold)).fontWidth(.condensed)
                 Text(state.finalDetail(units: units))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -168,7 +168,7 @@ struct LiveActivitySmallView: View {
                         .foregroundStyle(state.score == nil ? .primary : .secondary)
                         .multilineTextAlignment(state.score == nil ? .leading : .trailing)
                 }
-                .font(.title3.weight(.bold)).fontDesign(.rounded)
+                .font(.title3.weight(.bold)).fontWidth(.condensed)
                 .monospacedDigit()
                 LiveActivityStatus(state: state, isStale: isStale)
                     .font(.footnote)
@@ -189,7 +189,7 @@ struct IslandCompactLeading: View {
     var body: some View {
         if let score = state.score {
             Text(score)
-                .font(.body.weight(.bold)).fontDesign(.rounded)
+                .font(.body.weight(.bold)).fontWidth(.condensed)
                 .monospacedDigit()
                 .foregroundStyle(SurfacePalette.us)
                 .accessibilityLabel(state.spokenScore)
@@ -210,7 +210,7 @@ struct IslandCompactTrailing: View {
                 .font(.footnote.weight(.semibold))
         } else {
             MatchClock(state: state, isStale: isStale)
-                .font(.body.weight(.medium)).fontDesign(.rounded)
+                .font(.body.weight(.medium)).fontWidth(.condensed)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
                 .lineLimit(1)
@@ -227,7 +227,7 @@ struct IslandMinimal: View {
     var body: some View {
         if let score = state.score {
             Text(score)
-                .font(.footnote.weight(.bold)).fontDesign(.rounded)
+                .font(.footnote.weight(.bold)).fontWidth(.condensed)
                 .monospacedDigit()
                 .minimumScaleFactor(0.6)
                 .foregroundStyle(SurfacePalette.us)
@@ -256,7 +256,7 @@ struct IslandExpandedLeading: View {
                     .accessibilityLabel("Match in progress")
             }
         }
-        .font(.title.weight(.bold)).fontDesign(.rounded)
+        .font(.title.weight(.bold)).fontWidth(.condensed)
         .monospacedDigit()
         .lineLimit(1)
         .minimumScaleFactor(0.7)
@@ -271,7 +271,7 @@ struct IslandExpandedTrailing: View {
     var body: some View {
         if !state.hasEnded {
             MatchClock(state: state, isStale: isStale)
-                .font(.title.weight(.medium)).fontDesign(.rounded)
+                .font(.title.weight(.medium)).fontWidth(.condensed)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)

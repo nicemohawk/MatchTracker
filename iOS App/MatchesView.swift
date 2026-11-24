@@ -128,7 +128,7 @@ struct MatchList: View {
             if let selection {
                 List(selection: selection) { rows }.listStyle(.sidebar)
             } else {
-                List { rows }.listStyle(.insetGrouped)
+                List { rows }.listStyle(.insetGrouped).canvasBackground()
             }
         }
     }
@@ -138,6 +138,7 @@ struct MatchList: View {
             Section(section.title) {
                 ForEach(section.items) { item in
                     NavigationLink(value: item.id) { MatchRow(item: item, transition: transition) }
+                        .listRowBackground(Theme.surface)
                         .swipeActions {
                             Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
                         }
@@ -159,12 +160,12 @@ struct MatchRow: View {
         HStack(spacing: 16) {
             if !dynamicTypeSize.isAccessibilitySize { thumbnail }
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.headline)
+                Text(item.title).font(.name(.subheadline))
                 Text(item.subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Text(item.numbers)
-                    .font(.subheadline)
+                    .font(.figure(.subheadline))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -186,20 +187,20 @@ struct MatchRow: View {
         if let heat = item.digest?.heat {
             HeatPitch(heat: PitchHeat(digestHeat: heat))
                 .frame(width: 44, height: 66)
-                .clipShape(.rect(cornerRadius: 8))
+                .clipShape(.rect(cornerRadius: 4))
                 .zoomSource(id: item.id, in: transition)
                 .accessibilityHidden(true)
         } else if let strip = item.digest?.strip {
             EffortStripView(levels: strip)
                 .frame(width: 44, height: 66)
-                .clipShape(.rect(cornerRadius: 8))
+                .clipShape(.rect(cornerRadius: 4))
                 .zoomSource(id: item.id, in: transition)
         } else {
             Image(systemName: item.symbolName)
-                .font(.title2)
-                .foregroundStyle(.secondary)
+                .font(.title3)
+                .foregroundStyle(Theme.ivory.opacity(0.7))
                 .frame(width: 44, height: 66)
-                .background(.quaternary, in: .rect(cornerRadius: 8))
+                .background { Cloth(cornerRadius: 4, hasPinstripe: false, hasHem: false) }
                 .accessibilityHidden(true)
         }
     }
@@ -213,7 +214,7 @@ private struct ScoreMark: View {
 
     var body: some View {
         Text(text)
-            .font(.system(.title3, design: .rounded, weight: .bold))
+            .font(.figure(.title3))
             .monospacedDigit()
             .foregroundStyle(color)
             .accessibilityLabel(spoken)
@@ -222,8 +223,8 @@ private struct ScoreMark: View {
     private var color: Color {
         switch result {
         case .won: return Theme.turf
-        case .drawn: return .secondary
-        case .lost: return .red
+        case .drawn: return Theme.draw
+        case .lost: return Theme.loss
         }
     }
 }

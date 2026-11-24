@@ -1,8 +1,8 @@
 // Theme.swift
 // MatchTracker
 //
-// The app's visual identity, kept small on purpose: system backgrounds, system type, one green.
-// Dark is the identity; light is the same layout on system grouped backgrounds. What's marked
+// The app's visual identity, kept small on purpose: bottle-green cloth, ivory, and the system's own type
+// at its widest for names and its narrowest for numbers. What's marked
 // "Legacy" predates DESIGN.md and survives only for the sideline camera.
 
 import SwiftUI
@@ -45,28 +45,37 @@ enum Theme {
     }
 
     /// The canvas behind cards and forms.
-    static let background = Color(.systemGroupedBackground)
+    static let background = dynamic(dark: (0.039, 0.071, 0.055), light: (0.953, 0.933, 0.882))
     /// A card or form row on `background`.
-    static let surface = Color(.secondarySystemGroupedBackground)
+    static let surface = dynamic(dark: (0.075, 0.125, 0.102), light: (1.0, 0.988, 0.961))
     /// One step above `surface`.
-    static let surfaceElevated = Color(.tertiarySystemGroupedBackground)
+    static let surfaceElevated = dynamic(dark: (0.110, 0.169, 0.141), light: (0.965, 0.949, 0.906))
     /// Hairlines and empty tracks. Visible in both schemes, unlike white at 8%.
     static let surfaceStroke = Color(.separator)
     /// Labels that support a value. A concrete color rather than the hierarchical `.secondary`,
     /// so an outer tint can't turn it into a faint wash of itself.
-    static let secondaryLabel = Color(.secondaryLabel)
+    static let secondaryLabel = dynamic(dark: (0.663, 0.710, 0.655), light: (0.333, 0.376, 0.310))
+    /// Bottle green, the same cloth by day and by night. One piece of it per screen.
+    static let cloth = Color(red: 0.043, green: 0.231, blue: 0.173)
+    /// What's written on cloth.
+    static let ivory = Color(red: 0.961, green: 0.933, blue: 0.867)
+    /// Copper: a best, or the match being looked at. Always beside a word that says so.
+    static let trim = dynamic(dark: (0.914, 0.627, 0.400), light: (0.561, 0.278, 0.094))
+    /// Copper on cloth, whatever the scheme.
+    static let trimOnCloth = Color(red: 0.914, green: 0.627, blue: 0.400)
+    static let draw = dynamic(dark: (0.784, 0.745, 0.647), light: (0.392, 0.361, 0.290))
     /// Text on a filled `turf` button: black on the bright dark-mode green, white on the deep one.
-    static let onTurf = dynamic(dark: (0, 0, 0), light: (1, 1, 1))
+    static let onTurf = dynamic(dark: (0.039, 0.071, 0.055), light: (0.961, 0.933, 0.867))
 
     /// You and your team, and the app's tint. The light value holds 4.5:1 as text on white.
-    static let turf = dynamic(dark: (0.188, 0.820, 0.345),
-                              light: (0.0, 0.50, 0.21))
+    static let turf = dynamic(dark: (0.435, 0.827, 0.604),
+                              light: (0.039, 0.400, 0.259))
     /// Legacy: teal. DESIGN.md gives color three jobs and this isn't one of them.
     static let signal = dynamic(dark: (0.400, 0.831, 0.812),
                                 light: (0.0, 0.478, 0.463))
     /// Rose (#FF375F) — heart rate.
-    static let heart = dynamic(dark: (1.0, 0.216, 0.373),
-                               light: (0.835, 0.075, 0.243))
+    static let heart = dynamic(dark: (1.0, 0.416, 0.573),
+                               light: (0.722, 0.094, 0.322))
     /// Legacy: blue, as `signal`.
     static let pace = dynamic(dark: (0.251, 0.612, 1.0),
                               light: (0.078, 0.412, 0.882))
@@ -77,11 +86,10 @@ enum Theme {
     /// API stability so call sites reading `Theme.goal` need not change.
     static let goal = turf
     /// Neutral gray (#98989D) — bench / draws read neutral, not amber.
-    static let bench = dynamic(dark: (0.596, 0.596, 0.616),
-                               light: (0.400, 0.400, 0.420))
+    static let bench = draw
     /// Red (#FF453A) — a loss, distinct from `heart`'s rose so score chips don't collide.
-    static let loss = dynamic(dark: (1.0, 0.271, 0.227),
-                              light: (0.812, 0.126, 0.086))
+    static let loss = dynamic(dark: (1.0, 0.478, 0.400),
+                              light: (0.690, 0.165, 0.110))
     /// Card yellow (#FFD60A) — reserved for yellow cards, where amber must read as a caution.
     static let cardYellow = dynamic(dark: (1.0, 0.839, 0.039),
                                     light: (0.694, 0.541, 0.0))
@@ -89,8 +97,8 @@ enum Theme {
     // MARK: - Pitch canvas colors
 
     /// Deep green-black turf top color (for a vertical gradient with `pitchTurfBottom`).
-    static let pitchTurfTop = Color(red: 0.055, green: 0.176, blue: 0.129)
-    static let pitchTurfBottom = Color(red: 0.020, green: 0.086, blue: 0.071)
+    static let pitchTurfTop = cloth
+    static let pitchTurfBottom = Color(red: 0.031, green: 0.180, blue: 0.133)
     /// Pitch markings — luminous white.
     static let pitchLines = Color.white.opacity(0.70)
 
@@ -115,6 +123,118 @@ enum Haptics {
 
 // MARK: - Typography helpers
 
+extension Font {
+    /// Names and titles: wide, like the back of a shirt.
+    static func name(_ style: Font.TextStyle) -> Font { .system(style, weight: .heavy).width(.expanded) }
+    /// Numbers in rows and columns: narrow, so they line up and leave room.
+    static func figure(_ style: Font.TextStyle) -> Font { .system(style, weight: .semibold).width(.condensed) }
+}
+
+/// A shirt number: tall, narrow and cut through once. For the few numbers a screen is about; below
+/// 44 points the cut would only be noise.
+struct KitNumber: View {
+    let text: String
+    var size: CGFloat = 64
+
+    @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
+
+    init(_ text: String, size: CGFloat = 64) {
+        self.text = text
+        self.size = size
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var arrivals = 0
+
+    private var rendered: CGFloat { min(size * scale, size * 1.6) }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: rendered, weight: .heavy).width(.compressed))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.4)
+            // The two halves slide home when the number arrives or changes.
+            .keyframeAnimator(initialValue: CGFloat(0), trigger: arrivals) { number, slip in
+                if rendered < 44 {
+                    number
+                } else {
+                    number.mask { Half(isUpper: true) }.offset(x: -slip)
+                        .overlay { number.mask { Half(isUpper: false) }.offset(x: slip).accessibilityHidden(true) }
+                }
+            } keyframes: { _ in
+                KeyframeTrack {
+                    MoveKeyframe(rendered * 0.14)
+                    SpringKeyframe(0, duration: 0.5, spring: .bouncy)
+                }
+            }
+            .onAppear { if !reduceMotion { arrivals += 1 } }
+            .onChange(of: text) { if !reduceMotion { arrivals += 1 } }
+    }
+
+    /// One side of the cut. It falls three fifths down a numeral, where the fewest of them have a
+    /// stroke end, so it leaves no slivers, and low enough not to read as a strikethrough.
+    private struct Half: Shape {
+        let isUpper: Bool
+
+        func path(in rect: CGRect) -> Path {
+            let cut = rect.minY + rect.height * 0.555, gap = max(rect.height * 0.029, 1.5)
+            return Path(isUpper
+                ? CGRect(x: rect.minX - 8, y: rect.minY - 8, width: rect.width + 16, height: cut - rect.minY + 8)
+                : CGRect(x: rect.minX - 8, y: cut + gap, width: rect.width + 16, height: rect.maxY - cut - gap + 8))
+        }
+    }
+}
+
+// MARK: - Cloth
+
+/// The one piece of kit on a screen: bottle green, a pinstripe, and a hem.
+struct Cloth: View {
+    var cornerRadius: CGFloat = 22
+    var hasPinstripe = true
+    var hasHem = true
+    /// Copper when there's something to be proud of; ivory alone otherwise.
+    var isBest = false
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.cloth))
+            if hasPinstripe, contrast == .standard {
+                var stripes = Path()
+                for x in stride(from: CGFloat(9), to: size.width, by: 18) {
+                    stripes.move(to: CGPoint(x: x, y: 0))
+                    stripes.addLine(to: CGPoint(x: x, y: size.height))
+                }
+                context.stroke(stripes, with: .color(Theme.ivory.opacity(0.08)), lineWidth: 1)
+            }
+            guard hasHem else { return }
+            context.fill(Path(CGRect(x: 0, y: size.height - 11, width: size.width, height: 4)), with: .color(Theme.ivory))
+            context.fill(Path(CGRect(x: 0, y: size.height - 4, width: size.width, height: 4)),
+                         with: .color(isBest ? Theme.trimOnCloth : Theme.ivory.opacity(0.35)))
+        }
+        .clipShape(.rect(cornerRadius: cornerRadius))
+        .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// The app's own paper behind a scrolling screen. Forms and sheets keep the system's.
+    func canvasBackground() -> some View {
+        scrollContentBackground(.hidden).background(Theme.background.ignoresSafeArea())
+    }
+}
+
+/// Large titles in the names' type. Only the type: the bar itself stays the system's.
+enum BarType {
+    @MainActor
+    static func apply() {
+        let large = UIFont.systemFont(ofSize: 33, weight: .heavy, width: .expanded)
+        UINavigationBar.appearance().largeTitleTextAttributes = [.font: UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: large)]
+    }
+}
+
 extension Text {
     /// The one big number on a screen.
     func heroNumeral() -> some View {
@@ -129,7 +249,7 @@ private struct HeroNumeral: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: min(size, 96), weight: .bold, design: .rounded))
+            .font(.system(size: min(size, 96), weight: .heavy).width(.compressed))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.5)

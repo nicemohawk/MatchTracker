@@ -30,7 +30,7 @@ struct HomeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Summary")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -74,7 +74,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 LiveMatchCard()
-                LastMatchCard(digest: last, headline: matches.headline(for: last.id))
+                LastMatchCard(digest: last, headline: matches.headline(for: last.id), isBest: matches.isBest(last))
                     .zoomSource(id: last.id, in: transition)
                     .onTapGesture { path.append(last.id) }
                     .accessibilityAddTraits(.isButton)
@@ -116,7 +116,7 @@ struct HomeView: View {
             NextMatchCard()
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+                .background(Theme.surface, in: .rect(cornerRadius: 24))
         }
     }
 
@@ -137,7 +137,7 @@ struct HomeView: View {
         let summary = termSummary
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Season").font(.title2.bold())
+                Text("Season").font(.name(.title3))
                 Spacer()
                 if let term {
                     Menu(term.title) {
@@ -156,7 +156,7 @@ struct HomeView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+            .background(Theme.surface, in: .rect(cornerRadius: 24))
         }
     }
 
@@ -168,7 +168,7 @@ struct HomeView: View {
         let holders = PersonalBest.allCases.compactMap { best in all.holder(of: best).map { (best, $0.digest, $0.value) } }
         if !holders.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Personal bests").font(.title2.bold())
+                Text("Personal bests").font(.name(.title3))
                 VStack(spacing: 0) {
                     ForEach(holders, id: \.0) { best, digest, value in
                         Button { path.append(digest.id) } label: {
@@ -179,7 +179,7 @@ struct HomeView: View {
                         if best != holders.last?.0 { Divider().padding(.leading, 60) }
                     }
                 }
-                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+                .background(Theme.surface, in: .rect(cornerRadius: 24))
             }
         }
     }
@@ -193,7 +193,7 @@ struct HomeView: View {
                 Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
             }
             .padding(20)
-            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+            .background(Theme.surface, in: .rect(cornerRadius: 24))
         }
         .buttonStyle(.plain)
     }
@@ -205,42 +205,51 @@ struct HomeView: View {
 struct LastMatchCard: View {
     let digest: MatchDigest
     let headline: String?
+    /// Better than every match before it, at something.
+    var isBest = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isWide: Bool { horizontalSizeClass == .regular }
 
+    private var isStacked: Bool {
+        dynamicTypeSize.isAccessibilitySize || (digest.heat == nil && digest.strip == nil)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(digest.scoreline ?? digest.place)
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .monospacedDigit()
+                if let scoreline = digest.scoreline {
+                    KitNumber(scoreline, size: 56).accessibilityLabel(scoreline.replacingOccurrences(of: "–", with: " to "))
+                } else {
+                    Text(digest.place).font(.name(.title)).lineLimit(2).minimumScaleFactor(0.7)
+                }
                 Text(digest.subtitle(beside: digest.scoreline ?? digest.place))
                     .font(.headline)
-                    .foregroundStyle(.white.opacity(0.75))
+                    .opacity(0.8)
             }
-            if dynamicTypeSize.isAccessibilitySize || (digest.heat == nil && digest.strip == nil) {
-                DigestNumbers(digest: digest)
+            if isStacked {
+                DigestNumbers(digest: digest, style: .kit)
             } else {
-                HStack(alignment: .center, spacing: 12) {
-                    DigestNumbers(digest: digest, isStacked: true)
+                HStack(alignment: .bottom, spacing: 12) {
+                    DigestNumbers(digest: digest, style: .kit)
                     Spacer(minLength: 0)
-                    pitch
+                    pitch.modifier(WovenIn(id: digest.id))
                 }
             }
             if let headline {
-                Text(headline).font(.title3.weight(.medium))
+                Text(headline)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isBest ? Theme.trimOnCloth : Theme.ivory)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.ivory)
         .padding(22)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [Color(red: 0.05, green: 0.20, blue: 0.14), Color(red: 0.02, green: 0.10, blue: 0.08)],
-                                   startPoint: .top, endPoint: .bottom))
-        .clipShape(.rect(cornerRadius: 28))
-        .contentShape(.rect(cornerRadius: 28))
+        .background { Cloth(isBest: isBest) }
+        .contentShape(.rect(cornerRadius: 22))
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .combine)
     }
@@ -250,22 +259,46 @@ struct LastMatchCard: View {
         if let heat = digest.heat {
             HeatPitch(heat: PitchHeat(digestHeat: heat), surface: .clear, insets: EdgeInsets(),
                       directionIsKnown: digest.heatIsDirected ?? false)
+                .background(Theme.cloth)
                 .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
-                .frame(maxWidth: isWide ? 260 : 168)
+                .frame(maxWidth: isWide ? 260 : 176)
                 .accessibilityHidden(true)
         } else if let strip = digest.strip {
             EffortStripView(levels: strip)
                 .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
-                .frame(maxWidth: isWide ? 260 : 168)
-                .clipShape(.rect(cornerRadius: 12))
+                .frame(maxWidth: isWide ? 260 : 176)
         }
+    }
+}
+
+/// The first time a match is seen, its cloth is knitted from the bottom row up.
+private struct WovenIn: ViewModifier {
+    let id: UUID
+    @AppStorage("lastWovenMatch") private var lastWoven = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var progress: CGFloat = 1
+    @State private var completions = 0
+
+    func body(content: Content) -> some View {
+        content
+            .mask(alignment: .bottom) { Rectangle().scaleEffect(x: 1, y: progress, anchor: .bottom) }
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: completions)
+            .task(id: id) {
+                guard lastWoven != id.uuidString else { return }
+                lastWoven = id.uuidString
+                guard !reduceMotion else { return }
+                progress = 0
+                withAnimation(.easeOut(duration: 1.1).delay(0.35)) { progress = 1 } completion: { completions += 1 }
+            }
     }
 }
 
 /// The three numbers a match is remembered by. Fewer when fewer are known.
 struct DigestNumbers: View {
     let digest: MatchDigest
-    var isStacked = false
+    /// `.kit` is for cloth: the first number big and cut, the others beneath it.
+    enum Style { case row, kit }
+    var style = Style.row
 
     private struct Number {
         let label: String
@@ -293,35 +326,49 @@ struct DigestNumbers: View {
     }
 
     var body: some View {
-        if isStacked {
-            stack
-        } else {
+        switch style {
+        case .kit:
+            VStack(alignment: .leading, spacing: 14) {
+                if let first = numbers.first { big(first) }
+                ForEach(numbers.dropFirst(), id: \.label) { view($0) }
+            }
+        case .row:
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     ForEach(numbers, id: \.label) { number in
                         view(number).fixedSize().frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                stack
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(numbers, id: \.label) { view($0) }
+                }
             }
         }
     }
 
-    private var stack: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(numbers, id: \.label) { view($0) }
+    private func big(_ number: Number) -> some View {
+        VStack(alignment: .leading, spacing: -4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                KitNumber(number.value, size: 76)
+                Text(number.unit).font(.title3.weight(.semibold)).opacity(0.8)
+            }
+            Text(number.label).font(.subheadline).opacity(0.8)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(number.label), \(number.spoken)")
     }
+
+    private var supporting: Color { style == .kit ? Theme.ivory.opacity(0.8) : Theme.secondaryLabel }
 
     private func view(_ number: Number) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(number.value)
-                    .font(.system(.title, design: .rounded, weight: .semibold))
+                    .font(.system(.largeTitle, weight: .heavy).width(.compressed))
                     .monospacedDigit()
-                Text(number.unit).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                Text(number.unit).font(.subheadline.weight(.medium)).foregroundStyle(supporting)
             }
-            Text(number.label).font(.subheadline).foregroundStyle(.secondary)
+            Text(number.label).font(.subheadline).foregroundStyle(supporting)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
@@ -349,7 +396,7 @@ private struct LiveMatchCard: View {
                     Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
                 .padding(20)
-                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+                .background(Theme.surface, in: .rect(cornerRadius: 24))
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the live match")
@@ -388,8 +435,8 @@ private struct SeasonHeader: View {
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 24))
         return layout {
             piece(summary.won, "won", Theme.turf)
-            piece(summary.drawn, "drawn", .primary)
-            piece(summary.lost, "lost", .red)
+            piece(summary.drawn, "drawn", Theme.draw)
+            piece(summary.lost, "lost", Theme.loss)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Won \(summary.won), drawn \(summary.drawn), lost \(summary.lost)")
@@ -397,10 +444,8 @@ private struct SeasonHeader: View {
 
     private func piece(_ count: Int, _ label: String, _ color: Color) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(count)")
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .monospacedDigit()
-                .foregroundStyle(count == 0 ? .secondary : color)
+            KitNumber("\(count)", size: 54)
+                .foregroundStyle(count == 0 ? Theme.secondaryLabel : color)
             Text(label).font(.body).foregroundStyle(.secondary)
         }
     }
@@ -440,8 +485,8 @@ private struct SeasonWall: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 72 : 46), spacing: 8)],
-                      spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 76 : 50), spacing: 3)],
+                      spacing: 3) {
                 ForEach(shown) { digest in
                     Button { onOpen(digest.id) } label: { SeasonTile(digest: digest) }
                         .buttonStyle(.plain)
@@ -467,27 +512,26 @@ private struct SeasonTile: View {
             } else if let strip = digest.strip {
                 EffortStripView(levels: strip)
             } else {
-                Rectangle().fill(Color(.tertiarySystemFill))
-                Image(systemName: digest.format == .indoor ? "house.fill" : "soccerball").foregroundStyle(.secondary)
+                Cloth(cornerRadius: 0, hasPinstripe: false, hasHem: false)
+                Image(systemName: digest.format == .indoor ? "house.fill" : "soccerball").foregroundStyle(Theme.ivory.opacity(0.7))
             }
         }
         .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
-        .clipShape(.rect(cornerRadius: 8))
-        .overlay {
-            if let color { RoundedRectangle(cornerRadius: 8).strokeBorder(color, lineWidth: 2.5) }
-        }
+        .overlay(alignment: .bottom) { hem }
+        .clipShape(.rect(cornerRadius: 4))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(digest.startDate.formatted(date: .abbreviated, time: .omitted))
         .accessibilityValue([digest.scoreline ?? digest.place, digest.distanceMeters.map { UnitSystem.current.distance($0).spoken }]
             .compactMap { $0 }.joined(separator: ", "))
     }
 
-    private var color: Color? {
+    /// A win has a hem, a draw a thin one. What it was is also in the words.
+    @ViewBuilder
+    private var hem: some View {
         switch digest.result {
-        case .won: return .green
-        case .lost: return .red
-        case .drawn: return Color(.systemGray)
-        case nil: return nil
+        case .won: Theme.ivory.frame(height: 5)
+        case .drawn: Theme.ivory.frame(height: 1.5).padding(.bottom, 2)
+        case .lost, nil: EmptyView()
         }
     }
 }
@@ -512,7 +556,7 @@ private struct BestRow: View {
             }
             Spacer(minLength: 8)
             Text(best.formatted(value))
-                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .font(.figure(.title2))
                 .monospacedDigit()
         }
         .padding(.horizontal, 20)

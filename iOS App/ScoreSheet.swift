@@ -50,7 +50,7 @@ struct ScoreSheet: View {
                     Section {
                         HStack(alignment: .top) {
                             goals("Us", $us, color: Theme.turf)
-                            goals("Them", $them, color: .red)
+                            goals("Them", $them, color: Theme.loss)
                         }
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
@@ -138,7 +138,7 @@ struct ScoreSheet: View {
         VStack(spacing: 8) {
             Text(title).font(.headline).foregroundStyle(.secondary)
             Text("\(value.wrappedValue)")
-                .font(.system(size: 72, weight: .bold, design: .rounded))
+                .font(.system(size: 72, weight: .heavy).width(.compressed))
                 .monospacedDigit()
                 .foregroundStyle(color)
                 .contentTransition(.numericText())

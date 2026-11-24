@@ -60,7 +60,7 @@ private struct RateEffortSheet: View {
             VStack(spacing: 24) {
                 VStack(spacing: 0) {
                     Text("\(Int(draft))")
-                        .font(.system(size: 80, weight: .bold, design: .rounded))
+                        .font(.system(size: 80, weight: .heavy).width(.compressed))
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     Text(EffortRating.word(for: Int(draft))).font(.title2.weight(.semibold)).foregroundStyle(.secondary)

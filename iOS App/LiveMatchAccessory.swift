@@ -71,7 +71,7 @@ struct LiveMatchAccessory: View {
     private func scoreText(_ score: String, font: Font) -> some View {
         Text(score)
             .font(font.bold())
-            .fontDesign(.rounded)
+            .fontWidth(.condensed)
             .monospacedDigit()
             .contentTransition(.numericText())
             .animation(.snappy, value: score)

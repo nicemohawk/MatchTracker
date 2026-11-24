@@ -47,7 +47,7 @@ private struct MatchHero: View {
             }
         }
         .font(font)
-        .fontDesign(.rounded)
+        .fontWidth(.compressed)
         .monospacedDigit()
         .lineLimit(1)
         .minimumScaleFactor(0.6)
@@ -92,7 +92,7 @@ private struct LastMatchSmall: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 MatchHero(match: match, units: snapshot.units,
-                          font: .largeTitle.weight(.bold))
+                          font: .largeTitle.weight(.heavy))
                 if showsPitch {
                     Spacer(minLength: 4)
                     Text(match.startDate, format: .dateTime.month(.abbreviated).day())
@@ -123,7 +123,7 @@ private struct LastMatchMedium: View {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 2) {
                     MatchHero(match: match, units: snapshot.units,
-                              font: .largeTitle.weight(.bold))
+                              font: .largeTitle.weight(.heavy))
                     MatchCaption(match: match, showsDate: !dynamicTypeSize.isAccessibilitySize)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,7 +148,7 @@ private struct LastMatchLarge: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 MatchHero(match: match, units: snapshot.units,
-                          font: .largeTitle.weight(.bold))
+                          font: .largeTitle.weight(.heavy))
                 Spacer(minLength: 0)
                 MatchCaption(match: match, alignment: .trailing)
             }
@@ -187,7 +187,7 @@ private struct MatchNumbers: View {
                 number(units.speed(speed), caption: "Top speed")
             } else if let sprints = match.sprintCount {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(sprints)").font(.headline).fontDesign(.rounded)
+                    Text("\(sprints)").font(.headline).fontWidth(.condensed)
                     Text("Sprints").font(.footnote).foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
@@ -201,7 +201,7 @@ private struct MatchNumbers: View {
     private func number(_ measure: UnitSystem.Measure, caption: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(measure.text)
-                .font(.headline).fontDesign(.rounded)
+                .font(.headline).fontWidth(.condensed)
                 .monospacedDigit()
             Text(caption)
                 .font(.footnote)
@@ -314,12 +314,12 @@ private struct SeasonSmall: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             if season.hasResults {
-                RecordRow(season: season, font: .title.weight(.bold))
+                RecordRow(season: season, font: .title.weight(.heavy))
                 Spacer(minLength: 0)
                 if !dynamicTypeSize.isAccessibilitySize { FormRow(form: season.form) }
             } else {
                 Text(season.matchesText)
-                    .font(.title.weight(.bold)).fontDesign(.rounded)
+                    .font(.title.weight(.heavy)).fontWidth(.compressed)
                     .widgetAccentable()
                 Spacer(minLength: 0)
             }
@@ -351,10 +351,10 @@ private struct SeasonMedium: View {
             }
             Spacer(minLength: 0)
             if season.hasResults {
-                RecordRow(season: season, font: .largeTitle.weight(.bold), spread: true)
+                RecordRow(season: season, font: .largeTitle.weight(.heavy), spread: true)
             } else {
                 Text(season.matchesText)
-                    .font(.largeTitle.weight(.bold)).fontDesign(.rounded)
+                    .font(.largeTitle.weight(.heavy)).fontWidth(.compressed)
                     .widgetAccentable()
             }
             Spacer(minLength: 0)
@@ -395,7 +395,7 @@ private struct RecordRow: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("\(count)")
                 .font(font)
-                .fontDesign(.rounded)
+                .fontWidth(.compressed)
                 .monospacedDigit()
                 .foregroundStyle(result == .won ? AnyShapeStyle(SurfacePalette.us) : AnyShapeStyle(.primary))
                 .widgetAccentable(result == .won)
@@ -417,7 +417,7 @@ private struct FormRow: View {
                     .foregroundStyle(result.color)
             }
         }
-        .font(.subheadline.weight(.bold)).fontDesign(.rounded)
+        .font(.subheadline.weight(.bold)).fontWidth(.condensed)
         .accessibilityElement()
         .accessibilityLabel("Recent results, oldest first: " + form.map(\.title).joined(separator: ", "))
     }
@@ -431,7 +431,7 @@ private struct SeasonCircular: View {
             AccessoryWidgetBackground()
             VStack(spacing: 0) {
                 Text("\(season.hasResults ? season.won : season.matchCount)")
-                    .font(.title2.weight(.bold)).fontDesign(.rounded)
+                    .font(.title2.weight(.bold)).fontWidth(.condensed)
                     .widgetAccentable()
                 Text(season.hasResults ? "Won" : "Played")
                     .font(.caption2)

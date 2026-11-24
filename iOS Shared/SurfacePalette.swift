@@ -5,19 +5,35 @@ import MatchTrackerKit
 /// the same values.
 enum SurfacePalette {
     /// You and your team.
-    static let us = dynamic(dark: (0.188, 0.820, 0.345), light: (0.024, 0.510, 0.208))
+    static let us = dynamic(dark: (0.435, 0.827, 0.604), light: (0.039, 0.400, 0.259))
     /// The opponent.
-    static let them = dynamic(dark: (1.0, 0.271, 0.227), light: (0.812, 0.126, 0.086))
-    static let heart = dynamic(dark: (1.0, 0.365, 0.494), light: (0.835, 0.075, 0.243))
+    static let them = dynamic(dark: (1.0, 0.478, 0.400), light: (0.690, 0.165, 0.110))
+    static let heart = dynamic(dark: (1.0, 0.416, 0.573), light: (0.722, 0.094, 0.322))
 
-    static let pitchTop = Color(red: 0.055, green: 0.176, blue: 0.129)
-    static let pitchBottom = Color(red: 0.020, green: 0.086, blue: 0.071)
+    static let cloth = Color(red: 0.043, green: 0.231, blue: 0.173)
+    static let ivory = Color(red: 0.961, green: 0.933, blue: 0.867)
 
     private static func dynamic(dark: (Double, Double, Double), light: (Double, Double, Double)) -> Color {
         Color(uiColor: UIColor { traits in
             let components = traits.userInterfaceStyle == .light ? light : dark
             return UIColor(red: components.0, green: components.1, blue: components.2, alpha: 1)
         })
+    }
+}
+
+/// The app's cloth: a pinstripe, and a hem along the bottom.
+struct WidgetCloth: View {
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(SurfacePalette.cloth))
+            var stripes = Path()
+            for x in stride(from: CGFloat(9), to: size.width, by: 18) {
+                stripes.move(to: CGPoint(x: x, y: 0))
+                stripes.addLine(to: CGPoint(x: x, y: size.height))
+            }
+            context.stroke(stripes, with: .color(SurfacePalette.ivory.opacity(0.08)), lineWidth: 1)
+            context.fill(Path(CGRect(x: 0, y: size.height - 4, width: size.width, height: 4)), with: .color(SurfacePalette.ivory))
+        }
     }
 }
 

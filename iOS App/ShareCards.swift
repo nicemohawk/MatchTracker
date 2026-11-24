@@ -59,7 +59,7 @@ struct ShareCard: View {
         let size = Self.size(style: style, format: format)
         Group {
             switch style {
-            case .pitch: pitchCard
+            case .pitch: pitchCard.overlay(alignment: .bottom) { hem }
             case .photo: photoCard
             case .sticker: stickerCard
             }
@@ -68,11 +68,13 @@ struct ShareCard: View {
         .clipped()
         .environment(\.colorScheme, .dark)
         .dynamicTypeSize(.large)
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.ivory)
     }
 
     private var subtitle: String { match.subtitle(showsFieldName: showsFieldName) }
-    private var numbers: [ShareNumber] { Array(match.numbers.prefix(3)) }
+    /// What the card is about when nobody kept score.
+    private var lead: ShareNumber? { match.hasScore ? nil : match.numbers.first }
+    private var numbers: [ShareNumber] { Array(match.numbers.dropFirst(lead == nil ? 0 : 1).prefix(3)) }
 
     // MARK: Pitch
 
@@ -108,14 +110,13 @@ struct ShareCard: View {
 
     private func header(scoreSize: CGFloat) -> some View {
         HStack(alignment: .center, spacing: 14) {
-            if match.hasScore { score(size: scoreSize) }
-            VStack(alignment: match.hasScore ? .trailing : .leading, spacing: 2) {
-                titleText(size: match.hasScore ? scoreSize * 0.3 : scoreSize * 0.54)
-                    .multilineTextAlignment(match.hasScore ? .trailing : .leading)
+            hero(size: scoreSize)
+            VStack(alignment: .trailing, spacing: 2) {
+                titleText(size: scoreSize * 0.3).multilineTextAlignment(.trailing)
                 Text(subtitle).font(.system(size: 14, weight: .medium)).opacity(0.7)
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
-            .frame(maxWidth: .infinity, alignment: match.hasScore ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(height: scoreSize * 1.2)
     }
@@ -147,8 +148,8 @@ struct ShareCard: View {
                                                    trailing: columnWidth + margin + 16))
             .overlay(alignment: .trailing) {
                 VStack(alignment: .leading, spacing: 0) {
-                    if match.hasScore { score(size: 56) }
-                    titleText(size: match.hasScore ? 17 : 24).padding(.top, match.hasScore ? 2 : 0)
+                    hero(size: 56)
+                    titleText(size: 17).padding(.top, lead == nil ? 2 : 10)
                     Text(match.dateText).font(.system(size: 12, weight: .medium)).opacity(0.7).padding(.top, 3)
                     if showsFieldName, let fieldName = match.fieldName {
                         Text(fieldName).font(.system(size: 12, weight: .medium)).opacity(0.7).lineLimit(2)
@@ -172,34 +173,27 @@ struct ShareCard: View {
                   surface: surface, insets: insets, directionIsKnown: pitch.directionIsKnown, rendersImmediately: true)
     }
 
-    /// Indoors, or without a route: the score is the picture.
+    /// Indoors, or without a route: the playing and resting as a hooped shirt, the length of the card.
     private var plainCard: some View {
-        ZStack {
-            Canvas { context, size in
-                context.withCGContext { cg in
-                    PitchArtist(size: .standard, bounds: CGRect(origin: .zero, size: size)).drawTurf(in: cg)
-                }
+        VStack(spacing: 0) {
+            header(scoreSize: format == .story ? 84 : 64)
+                .padding(.horizontal, 24)
+                .padding(.top, format == .story ? 64 : 16)
+                .padding(.bottom, 12)
+            if let strip = match.strip {
+                EffortStripView(levels: strip, hasTurf: false)
+            } else {
+                Spacer(minLength: 0)
             }
-            VStack(spacing: 6) {
-                if match.hasScore { score(size: format == .story ? 118 : 92) }
-                titleText(size: 26)
-                Text(subtitle).font(.system(size: 15, weight: .medium)).opacity(0.7)
-            }
-            .frame(width: format == .story ? 290 : 230, height: format == .story ? 290 : 230)
-            // Where a match with no map starts and ends: the center circle.
-            .background { Circle().stroke(.white.opacity(0.22), lineWidth: 1.5).padding(format == .story ? -18 : match.strip == nil ? 0 : 24) }
-            .offset(y: match.strip != nil ? -70 : format == .square ? -40 : -30)
-            VStack(spacing: 12) {
-                Spacer()
-                if let strip = match.strip {
-                    EffortStripView(levels: strip, axis: .horizontal, hasTurf: false)
-                        .frame(height: format == .story ? 84 : 52)
-                }
+            VStack(spacing: 10) {
                 numberRow(valueSize: 28)
                 wordmark
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.top, 14)
+            .padding(.bottom, 26)
         }
+        .background { Cloth(cornerRadius: 0, hasHem: false) }
     }
 
     // MARK: Photo
@@ -222,8 +216,8 @@ struct ShareCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .bottom, spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
-                        if match.hasScore { score(size: format == .story ? 84 : 70) }
-                        titleText(size: match.hasScore ? 22 : 34)
+                        hero(size: format == .story ? 84 : 70)
+                        titleText(size: 22)
                         Text(subtitle).font(.system(size: 14, weight: .medium)).opacity(0.8)
                             .lineLimit(1).minimumScaleFactor(0.7)
                     }
@@ -254,9 +248,13 @@ struct ShareCard: View {
                     .frame(width: height * HeatPitch.aspectRatio(for: pitch.size), height: height)
                     .background(Color(red: 0.02, green: 0.05, blue: 0.042).opacity(0.62),
                                 in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else if let strip = match.strip {
+                EffortStripView(levels: strip)
+                    .frame(width: 180, height: 328)
+                    .clipShape(.rect(cornerRadius: 14))
             }
             VStack(alignment: .leading, spacing: 10) {
-                if match.hasScore { score(size: 50) }
+                hero(size: 50)
                 ForEach(numbers) { number($0, valueSize: 24, alignment: .leading, labelOpacity: 1) }
                 wordmark
             }
@@ -270,17 +268,38 @@ struct ShareCard: View {
 
     // MARK: Pieces
 
+    /// The hem every piece of the app's cloth ends in.
+    private var hem: some View {
+        VStack(spacing: 3) {
+            Theme.ivory.frame(height: 4)
+            Theme.ivory.opacity(0.35).frame(height: 4)
+        }
+    }
+
+    @ViewBuilder
+    private func hero(size: CGFloat) -> some View {
+        if match.hasScore {
+            score(size: size)
+        } else if let lead {
+            VStack(alignment: .leading, spacing: -size * 0.06) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    KitNumber(lead.value, size: size)
+                    Text(lead.unit).font(.system(size: max(size * 0.26, 14), weight: .semibold)).opacity(0.8)
+                }
+                Text(lead.label).font(.system(size: 13, weight: .medium)).opacity(0.85)
+            }
+            .fixedSize()
+        }
+    }
+
     private func score(size: CGFloat) -> some View {
         HStack(spacing: size * 0.09) {
-            Text("\(match.goalsUs ?? 0)")
+            KitNumber("\(match.goalsUs ?? 0)", size: size)
             RoundedRectangle(cornerRadius: size * 0.04)
                 .frame(width: size * 0.22, height: size * 0.08)
                 .opacity(0.5)
-            Text("\(match.goalsThem ?? 0)").opacity(0.72)
+            KitNumber("\(match.goalsThem ?? 0)", size: size).opacity(0.72)
         }
-        .font(.system(size: size, weight: .heavy, design: .rounded))
-        .monospacedDigit()
-        .lineLimit(1)
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(match.goalsUs ?? 0) to \(match.goalsThem ?? 0)")
@@ -288,7 +307,7 @@ struct ShareCard: View {
 
     private func titleText(size: CGFloat) -> some View {
         Text(match.title)
-            .font(.system(size: size, weight: .bold))
+            .font(.system(size: size, weight: .heavy).width(.expanded))
             .lineLimit(2)
             .minimumScaleFactor(0.6)
     }
@@ -306,7 +325,7 @@ struct ShareCard: View {
                         labelOpacity: Double = 0.7) -> some View {
         VStack(alignment: alignment, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(entry.value).font(.system(size: valueSize, weight: .bold, design: .rounded)).monospacedDigit()
+                Text(entry.value).font(.system(size: valueSize, weight: .heavy).width(.compressed)).monospacedDigit()
                 if !entry.unit.isEmpty {
                     Text(entry.unit).font(.system(size: valueSize * 0.5, weight: .semibold))
                 }

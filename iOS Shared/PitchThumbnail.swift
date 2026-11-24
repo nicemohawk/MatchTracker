@@ -13,49 +13,51 @@ struct PitchThumbnail: View {
         Canvas { context, size in
             let rect = CGRect(origin: .zero, size: size)
             if !monochrome {
-                context.fill(Path(rect), with: .linearGradient(
-                    Gradient(colors: [SurfacePalette.pitchTop, SurfacePalette.pitchBottom]),
-                    startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+                context.fill(Path(rect), with: .color(SurfacePalette.cloth))
             }
             drawHeat(in: &context, rect: rect)
             drawMarkings(in: &context, rect: rect.insetBy(dx: 1, dy: 1))
         }
         .aspectRatio(Self.aspectRatio, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .accessibilityElement()
         .accessibilityLabel(Self.sentence(for: heat))
     }
 
     private func drawHeat(in context: inout GraphicsContext, rect: CGRect) {
         guard let heat, heat.columns > 0, heat.rows > 0 else { return }
-        let cell = CGSize(width: rect.width / CGFloat(heat.columns), height: rect.height / CGFloat(heat.rows))
-        context.drawLayer { layer in
-            // Cells blend into one field of heat instead of a grid of tiles.
-            layer.addFilter(.blur(radius: min(cell.width, cell.height) * 0.6))
-            for row in 0..<heat.rows {
-                for column in 0..<heat.columns where heat[column, row] > 0.02 {
-                    let value = heat[column, row]
-                    let cellRect = CGRect(x: rect.minX + CGFloat(column) * cell.width,
-                                          y: rect.minY + CGFloat(row) * cell.height,
-                                          width: cell.width, height: cell.height).insetBy(dx: -0.5, dy: -0.5)
-                    layer.fill(Path(cellRect), with: .color(color(for: value)))
-                }
+        // Three points a stitch: finer than that shimmers.
+        let columns = Int(rect.width / 3.6)
+        guard columns > 0 else { return }
+        let width = rect.width / CGFloat(columns), rise = width * Knit.rise
+        let yarns = Knit.yarns.map { _ in CGMutablePath() }
+        for row in 0..<Int((rect.height / rise).rounded(.up)) {
+            for column in 0..<columns {
+                let level = level(in: heat, x: (CGFloat(column) + 0.5) / CGFloat(columns), y: (CGFloat(row) + 0.5) * rise / rect.height)
+                guard let yarn = Knit.yarn(for: Float(level.squareRoot())) else { continue }
+                Knit.addStitch(to: yarns[yarn], column: column, row: row, width: width)
             }
+        }
+        for (index, path) in yarns.enumerated() {
+            let color = monochrome ? Color.white.opacity([0.2, 0.4, 0.65, 0.95][index]) : Color(cgColor: Knit.yarns[index])
+            context.fill(Path(path), with: .color(color))
         }
     }
 
-    private func color(for value: Double) -> Color {
-        if monochrome { return .white.opacity(0.15 + 0.75 * value) }
-        // Deep green to pale mint, as in the app's heatmap, whose square root this shares.
-        let t = value.squareRoot()
-        let glow = max(0, (t - 0.55) / 0.45)
-        return Color(red: 0.10 + 0.72 * glow, green: 0.55 + 0.45 * glow, blue: 0.28 + 0.42 * glow)
-            .opacity(min(1, 0.05 + 1.1 * t))
+    /// Between cells rather than at them, or the cloth would show the grid.
+    private func level(in heat: HeatmapGrid, x: CGFloat, y: CGFloat) -> Double {
+        let column = min(max(Double(x) * Double(heat.columns) - 0.5, 0), Double(heat.columns - 1))
+        let row = min(max(Double(y) * Double(heat.rows) - 0.5, 0), Double(heat.rows - 1))
+        let left = Int(column), top = Int(row)
+        let right = min(left + 1, heat.columns - 1), bottom = min(top + 1, heat.rows - 1)
+        let across = column - Double(left), down = row - Double(top)
+        return (heat[left, top] * (1 - across) + heat[right, top] * across) * (1 - down)
+            + (heat[left, bottom] * (1 - across) + heat[right, bottom] * across) * down
     }
 
     private func drawMarkings(in context: inout GraphicsContext, rect: CGRect) {
         let metersToPoints = rect.width / 105
-        var path = Path(roundedRect: rect, cornerRadius: 7, style: .continuous)
+        var path = Path(rect)
         path.move(to: CGPoint(x: rect.midX, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
         let radius = 9.15 * metersToPoints

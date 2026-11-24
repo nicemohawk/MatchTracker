@@ -75,10 +75,17 @@ private struct WidgetContent<Content: View>: View {
     @Environment(\.widgetRenderingMode) private var renderingMode
     @ViewBuilder let content: (WidgetFamily, Bool) -> Content
 
+    private var isOnCloth: Bool { renderingMode == .fullColor && [.systemSmall, .systemMedium, .systemLarge].contains(family) }
+
     var body: some View {
-        content(family, renderingMode != .fullColor)
-            .containerBackground(for: .widget) {
-                Color(uiColor: .systemBackground)
-            }
+        if isOnCloth {
+            content(family, false)
+                .foregroundStyle(SurfacePalette.ivory)
+                .environment(\.colorScheme, .dark)
+                .containerBackground(for: .widget) { WidgetCloth() }
+        } else {
+            content(family, renderingMode != .fullColor)
+                .containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
+        }
     }
 }
