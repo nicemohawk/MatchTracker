@@ -103,7 +103,7 @@ final class WorkoutManager: NSObject {
             }
             switch code {
             case .errorBackgroundWorkoutSessionNotAllowed:
-                message = "The watch screen went dark before kickoff. Start again and keep your wrist up until the timer appears."
+                message = "The watch was asleep when the match tried to start. Wake it and tap Start again."
             case .errorAnotherWorkoutSessionStarted:
                 message = "Another app is already recording a workout. End that one, then start again."
             case .errorAuthorizationDenied, .errorAuthorizationNotDetermined, .errorRequiredAuthorizationDenied:
@@ -133,9 +133,19 @@ final class WorkoutManager: NSObject {
     @ObservationIgnored private let healthStore = HKHealthStore()
     @ObservationIgnored private var session: HKWorkoutSession?
     @ObservationIgnored private var builder: HKLiveWorkoutBuilder?
-    @ObservationIgnored private var routeBuilder: HKWorkoutRouteBuilder?
-    @ObservationIgnored private let locationManager = CLLocationManager()
-    @ObservationIgnored private var recentLocations: [CLLocation] = []
+    /// GPS for the match: warm-up, recording, retries and the on-disk copy of the route.
+    @ObservationIgnored let routeRecorder = RouteRecorder()
+    @ObservationIgnored private var recentLocations: [RouteFix] = []
+
+    /// HealthKit refused or dropped the session mid-match. GPS keeps recording; the session is
+    /// retried whenever the app is frontmost.
+    @ObservationIgnored private var sessionLost = false
+    @ObservationIgnored private var sessionStarting = false
+    @ObservationIgnored private var sessionAttempts = 0
+    /// Earlier matches still being saved. A new session waits (briefly) for them: starting one
+    /// ends any session still open.
+    @ObservationIgnored private var healthSavesInFlight = 0
+    @ObservationIgnored private var recoveryInFlight = false
 
     /// Geometry-first automatic substitution detector. Non-nil only when a field was resolved for
     /// this match (no field → no boundary to reason about → detection disabled, everything else
@@ -179,7 +189,7 @@ final class WorkoutManager: NSObject {
 
     private override init() {
         super.init()
-        locationManager.delegate = self
+        routeRecorder.onFixes = { [weak self] fixes in self?.ingest(fixes) }
     }
 
     // MARK: - Derived values
@@ -244,15 +254,6 @@ final class WorkoutManager: NSObject {
         } catch {
             isAuthorized = false
         }
-        requestLocationAuthorization()
-    }
-
-    private func requestLocationAuthorization() {
-        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        locationManager.activityType = .fitness
-        if locationManager.authorizationStatus == .notDetermined {
-            locationManager.requestAlwaysAuthorization()
-        }
     }
 
     // MARK: - Match lifecycle
@@ -262,155 +263,217 @@ final class WorkoutManager: NSObject {
     /// drops, and a swallowed tick used to strand the countdown on "1" forever with no way out.
     private(set) var countdownDeadline = Date()
 
-    /// Guards against two kickoff triggers (a tick and the deadline task) both getting past the
-    /// phase check before `startMatch` flips it.
-    @ObservationIgnored private var kickoffInFlight = false
-
-    /// The session + builder created and moved to `.prepared` while the Start tap still has us
-    /// frontmost. `startMatch` awaits this rather than building its own.
-    @ObservationIgnored private var preparedSession: Task<(HKWorkoutSession, HKLiveWorkoutBuilder), Error>?
-
-    /// Enter the pre-kickoff countdown. Owns the deadline *and* the timer that fires it, so the
-    /// countdown view is only a display of state it can't strand.
+    /// Start the match. **Recording begins here, on the tap** — the countdown is only a display.
+    ///
+    /// HealthKit won't start a session from the background, and Core Location won't continue in
+    /// the background unless updates began in the foreground. The tap is the one moment both are
+    /// guaranteed; three seconds later the wrist is usually down. (One match sat suspended in its
+    /// countdown for 37 minutes, none of it recorded.)
     @MainActor
     func beginCountdown(field: FieldModel?, format: MatchFormat, seconds: TimeInterval = 3) {
         guard phase == .idle else { return }
+        // Anything a previous match left behind goes out before this one writes over it.
+        salvageInterruptedMatch()
         matchFormat = format
         detectedField = field
-        startFailure = nil
-        countdownDeadline = Date().addingTimeInterval(seconds)
+        resetForNewMatch(field: field)
+        let start = Date()
+        matchStartDate = start
+        countdownDeadline = start.addingTimeInterval(seconds)
         phase = .countdown
-        MatchLog.info("user: start tapped (format \(format.rawValue), field \(field?.name ?? "none"))",
+        MatchLog.info("user: start tapped (format \(format.rawValue), field \(field?.name ?? "none"), referee \(WatchSettings.refereeMode))",
                       category: "workout")
 
-        // Prepare HealthKit NOW, while the tap guarantees the app is frontmost. HealthKit refuses
-        // to start a workout session from the background, and the watch backgrounds the app the
-        // moment the wrist drops — which is exactly what someone does after tapping Start, so the
-        // kickoff three seconds later was failing with
-        // `errorBackgroundWorkoutSessionNotAllowed`. A prepared session keeps the app running in
-        // the background without collecting data yet, so kickoff succeeds wherever the wrist is.
-        preparedSession = makePreparedSession()
+        // Indoor: no location updates, route, field detection, auto-sub or heading capture.
+        if !isIndoor {
+            routeRecorder.arm()
+            routeRecorder.beginRecording(matchID: matchID, start: start)
+            headingRecorder.start()
+        } else {
+            routeRecorder.coolDown()
+        }
+        startWorkoutSession()
+        log(.matchStart, haptic: false)
+        liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // A sleep can be starved or resume late (the watch's clock doesn't advance while the
-            // CPU sleeps), so this loops on the wall clock instead of trusting a single wait.
+            // Loops on the wall clock: a sleep can be starved or resume late.
             while phase == .countdown, countdownDeadline.timeIntervalSinceNow > 0 {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
-            await kickoffIfCountdownElapsed(trigger: "deadline")
+            kickoffIfCountdownElapsed(trigger: "deadline")
         }
     }
 
-    /// Create the workout session and move it to `.prepared`: sensors warm, background execution
-    /// granted, no data collected until `startActivity`.
+    /// Reveal the live screen if the countdown has run out. Safe to call from every redundant
+    /// trigger — the deadline task, a display tick, or the app coming back to the foreground.
     @MainActor
-    private func makePreparedSession() -> Task<(HKWorkoutSession, HKLiveWorkoutBuilder), Error> {
+    func kickoffIfCountdownElapsed(trigger: String) {
+        guard phase == .countdown, countdownDeadline.timeIntervalSinceNow <= 0 else { return }
+        phase = .active
+        MatchLog.info("kickoff: phase -> active (trigger \(trigger), \(Int(Date().timeIntervalSince(matchStartDate))) s after the tap)",
+                      category: "workout")
+    }
+
+    /// Skip the rest of the countdown.
+    @MainActor
+    func skipCountdown() {
+        guard phase == .countdown else { return }
+        countdownDeadline = Date()
+        kickoffIfCountdownElapsed(trigger: "skipped")
+    }
+
+    private var isRecording: Bool { phase == .countdown || phase == .active }
+
+    /// Create and start the HealthKit session for the current match, dated from the Start tap.
+    /// Also the retry path: the match (and its GPS) carries on without a session until one takes.
+    @MainActor
+    private func startWorkoutSession() {
+        guard !sessionStarting else { return }
+        sessionStarting = true
+        sessionLost = false
+        sessionAttempts += 1
+        let id = matchID
+        let start = matchStartDate
+        let attempt = sessionAttempts
         let configuration = makeWorkoutConfiguration()
         let store = healthStore
-        return Task.detached(priority: .userInitiated) { [weak self] in
-            let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
-            let builder = session.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: store,
-                                                         workoutConfiguration: configuration)
-            session.delegate = self
-            builder.delegate = self
-            session.prepare()
-            MatchLog.info("prepared session (sensors warm, background granted)", category: "workout")
-            return (session, builder)
-        }
-    }
 
-    /// Start the match if the countdown has run out. Safe to call from every redundant trigger —
-    /// the deadline task, a display tick, or the app coming back to the foreground.
-    @MainActor
-    func kickoffIfCountdownElapsed(trigger: String) async {
-        guard phase == .countdown, !kickoffInFlight,
-              countdownDeadline.timeIntervalSinceNow <= 0 else { return }
-        kickoffInFlight = true
-        MatchLog.info("countdown elapsed: kicking off (trigger \(trigger))", category: "workout")
-        await startMatch(field: detectedField)
-        kickoffInFlight = false
-    }
-
-    /// Configure and start the workout session for a match on an optional detected field.
-    ///
-    /// The live UI is shown as soon as the session starts — `beginCollection` is a HealthKit XPC
-    /// round-trip that can take seconds, so it completes after the transition and metrics simply
-    /// read 0 until the first samples arrive.
-    /// @MainActor: `phase` (and every other @Observable property) MUST mutate on the main
-    /// thread — off-main mutations happened to render on the simulator but never re-rendered on
-    /// a physical watch, leaving the countdown frozen on "1" with the session already live.
-    /// The synchronous HealthKit calls here are fast; the awaits suspend without blocking UI.
-    @MainActor
-    func startMatch(field: FieldModel?) async {
-        // Re-entry guard: a stuck countdown view could fire this twice, stacking two live
-        // sessions (observed on-device as doubled start breadcrumbs).
-        guard phase != .active else {
-            MatchLog.error("startMatch: ignored — a session is already active", category: "workout")
-            return
-        }
-        resetForNewMatch(field: field)
-
-        // Flip the UI FIRST: the HealthKit setup below takes real time on-device, and running
-        // it before the phase change was the visible beat between "1" and the session screen.
-        let start = Date()
-        matchStartDate = start
-        phase = .active
-        MatchLog.info("startMatch: phase -> active", category: "workout")
-        log(.matchStart, haptic: false)
-        // Indoor: no location updates, route, field detection, auto-sub or heading capture.
-        // HR/energy still collect; the track stays empty and currentSpeed stays 0.
-        if !isIndoor {
-            startLocationUpdates()
-            headingRecorder.start()
-        }
-        liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
-
-        // Watchdog: if collection hasn't begun shortly, say so on the session screen — a wedged
-        // healthd otherwise reads as a mysteriously frozen 0:00 timer.
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard let self, self.phase == .active, !self.collectionBegan else { return }
-            MatchLog.error("startMatch: collection has not begun after 10s", category: "workout")
+        // Say so on the session screen if collection doesn't begin: a wedged healthd otherwise
+        // reads as a heart rate that mysteriously never arrives.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard let self, self.matchID == id, self.isRecording, !self.collectionBegan else { return }
+            MatchLog.error("session: collection has not begun after 10s", category: "workout")
             self.healthCollectionStalled = true
         }
 
-        // HealthKit setup off the main actor so the session screen renders instantly. Delegates
-        // are set before startActivity (their callbacks hop to main themselves).
-        let store = healthStore
-        MatchLog.info("startMatch: starting activity (format \(matchFormat.rawValue), field \(field != nil ? "detected" : "none"), referee \(WatchSettings.refereeMode))",
-                      category: "workout")
-        do {
-            // Prepared at the Start tap; only built here if something skipped the countdown.
-            let pending = preparedSession ?? makePreparedSession()
-            preparedSession = nil
-            let (session, builder) = try await pending.value
-            await Task.detached(priority: .userInitiated) { session.startActivity(with: start) }.value
-            MatchLog.info("startMatch: activity started", category: "workout")
-
-            self.session = session
-            self.builder = builder
-            // Indoor sessions have no usable GPS: skip the route builder entirely.
-            self.routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: store, device: .local())
-
-            try await builder.beginCollection(at: start)
-            collectionBegan = true
-            healthCollectionStalled = false
-            MatchLog.info("startMatch: collection began", category: "workout")
-        } catch {
-            // Session creation or collection failed: tear down what the optimistic start spun up
-            // and fall back to the start screen with a visible reason.
-            MatchLog.error("Unable to start workout session: \(error.localizedDescription)", category: "workout")
-            startFailure = StartFailure(error)
-            stopLocationUpdates()
-            headingRecorder.stop()
-            headingRecorder.reset()
-            liveStreamer.stop()
-            session?.end()
-            clearInProgressBehindPendingWrites()
-            reset()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { sessionStarting = false }
+            let patience = Date().addingTimeInterval(5)
+            while healthSavesInFlight > 0, Date() < patience {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            do {
+                let (session, builder) = try await Task.detached(priority: .userInitiated) {
+                    let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
+                    let builder = session.associatedWorkoutBuilder()
+                    builder.dataSource = HKLiveWorkoutDataSource(healthStore: store,
+                                                                 workoutConfiguration: configuration)
+                    session.delegate = self
+                    builder.delegate = self
+                    session.startActivity(with: start)
+                    return (session, builder)
+                }.value
+                // Ended (or replaced) while HealthKit was working: don't leave a session running.
+                guard matchID == id, isRecording else {
+                    session.end()
+                    builder.discardWorkout()
+                    return
+                }
+                self.session = session
+                self.builder = builder
+                try await builder.beginCollection(at: start)
+                guard matchID == id, isRecording else { return }
+                // A refused session fails asynchronously, and collection still "begins" on it.
+                guard session.state != .ended, session.state != .stopped else {
+                    sessionFailed(nil, matchID: id)
+                    return
+                }
+                collectionBegan = true
+                healthCollectionStalled = false
+                applySessionState(session.state)
+                MatchLog.info("session: collecting (attempt \(attempt), \(Int(Date().timeIntervalSince(start))) s after the tap)",
+                              category: "workout")
+            } catch {
+                sessionFailed(error, matchID: id)
+            }
         }
+    }
+
+    /// HealthKit couldn't start or keep the session. Without permission there is nothing to
+    /// record, so the start is abandoned; anything else keeps the match going on GPS alone and
+    /// tries again — losing the heart rate is bad, losing the match is worse.
+    @MainActor
+    private func sessionFailed(_ error: Error?, matchID id: UUID) {
+        guard matchID == id, isRecording, !sessionLost else { return }
+        MatchLog.error("session failed (attempt \(sessionAttempts)): \(error?.localizedDescription ?? "ended before collecting")",
+                       category: "workout")
+        let code = (error as? HKError)?.code
+        session = nil
+        builder = nil
+        collectionBegan = false
+
+        switch code {
+        case .errorAuthorizationDenied, .errorAuthorizationNotDetermined, .errorRequiredAuthorizationDenied,
+             .errorHealthDataUnavailable, .errorHealthDataRestricted, .errorWorkoutActivityNotAllowed:
+            startFailure = error.map { StartFailure($0) }
+            abandonMatch()
+            return
+        case .errorAnotherWorkoutSessionStarted:
+            // The wearer chose the other app; taking the session back would end their workout.
+            healthCollectionStalled = true
+            return
+        default:
+            break
+        }
+        sessionLost = true
+        healthCollectionStalled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.retryWorkoutSessionIfNeeded()
+        }
+    }
+
+    /// Only from the foreground (HealthKit's rule), and not forever.
+    @MainActor
+    private func retryWorkoutSessionIfNeeded() {
+        guard isRecording, sessionLost, sessionAttempts < 6,
+              WKApplication.shared().applicationState == .active else { return }
+        MatchLog.info("session: retrying", category: "workout")
+        startWorkoutSession()
+    }
+
+    /// Throw the current match away: nothing is saved anywhere.
+    @MainActor
+    private func abandonMatch() {
+        let abandonedID = matchID
+        let endingSession = session
+        let endingBuilder = builder
+        _ = routeRecorder.finish()
+        routeRecorder.removeJournal(matchID: abandonedID)
+        headingRecorder.reset()
+        liveStreamer.stop()
+        clearInProgress(matchID: abandonedID)
+        reset()
+        Task.detached(priority: .userInitiated) {
+            endingSession?.end()
+            endingBuilder?.discardWorkout()
+        }
+    }
+
+    // MARK: - App state
+
+    /// The app is frontmost: restore whatever can only be restored from here.
+    @MainActor
+    func appBecameActive() {
+        switch phase {
+        case .idle:
+            routeRecorder.warmUp()
+        case .countdown, .active:
+            kickoffIfCountdownElapsed(trigger: "app became active")
+            routeRecorder.appBecameActive()
+            retryWorkoutSessionIfNeeded()
+        case .summary:
+            break
+        }
+    }
+
+    @MainActor
+    func appResignedActive() {
+        if phase == .idle { routeRecorder.coolDown() }
     }
 
     /// Snapshot of live state for the sideline stream; nil ends the current send quietly.
@@ -447,10 +510,9 @@ final class WorkoutManager: NSObject {
             MatchLog.error("pause: ignored — guard rejected the tap", category: "workout")
             return
         }
+        // GPS stays on: a forgotten (or accidental — both side buttons together pause a workout)
+        // pause must not cost the route, and updates stopped here may not restart wrist-down.
         applySessionState(.paused)
-        // A paused match shouldn't keep drawing track, distance or auto-subs from a player
-        // standing on the sideline.
-        if !isIndoor { stopLocationUpdates() }
         session?.pause()
     }
 
@@ -464,7 +526,6 @@ final class WorkoutManager: NSObject {
             return
         }
         applySessionState(.running)
-        if !isIndoor { startLocationUpdates() }
         session?.resume()
     }
 
@@ -519,192 +580,274 @@ final class WorkoutManager: NSObject {
     /// discarded rather than saved.
     private let minimumMatchDuration: TimeInterval = 30
 
-    /// End the match: stop location, finish the builder + route, persist and hand back results.
+    /// Everything a finished match needs to be saved. Captured once, when the match ends: saving
+    /// takes seconds and the wearer may tap Done — or start the next match — long before it's
+    /// over. Reading live state after that point used to save an empty match.
+    private struct FinishingMatch {
+        let id: UUID
+        let start: Date
+        let end: Date
+        let format: MatchFormat
+        let fieldID: UUID?
+        let events: [MatchEvent]
+        let fixes: [RouteFix]
+        let headings: [HeadingSample]?
+        let context: MatchContext
+        let session: HKWorkoutSession?
+        let builder: HKLiveWorkoutBuilder?
+        let elapsed: TimeInterval
+        let distanceMeters: Double
+        let score: (us: Int, them: Int)
+
+        var track: [TrackPoint] { fixes.map(\.point) }
+
+        func record(id: UUID, events: [MatchEvent]) -> MatchRecord {
+            var record = MatchRecord(id: id, startDate: start, endDate: end, fieldID: fieldID, events: events,
+                                     teamCode: AppGroupStorage.teamCode,
+                                     sportID: WatchSettings.sportProfile.id,
+                                     headings: headings)
+            // Set explicitly so a formal match records `.match` rather than relying on nil.
+            record.format = format
+            // The full-resolution track travels with the record too, so the phone can analyze the
+            // match even if the HealthKit route was never saved.
+            record.track = fixes.isEmpty ? nil : track
+            return record
+        }
+    }
+
+    /// End the match: show the summary, then save everything behind it.
     /// Sessions shorter than `minimumMatchDuration` are discarded without saving or transferring.
-    @discardableResult
-    /// @MainActor for the same reason as `startMatch`: observable mutations (phase, summary
-    /// fields) must land on the main thread to reliably re-render on device.
     @MainActor
+    @discardableResult
     func endMatch() async -> MatchOutcome {
         let end = Date()
-        let heartRateUnit = Self.heartRateUnit
-        stopLocationUpdates()
-        headingRecorder.stop()
+        guard isRecording else { return .discardedTooShort }
         MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan), session \(session == nil ? "absent" : "live"))",
                       category: "workout")
 
-        // Discard an accidental / too-short session: no matchEnd event, no HealthKit save, no
-        // record persistence, no file transfer, no field learning. Return to the start screen.
         // `elapsedTime` falls back to the wall clock when HealthKit never began collecting, so a
-        // real match isn't discarded as an accident on the builder's meaningless 0; the record
-        // (with its embedded track) still saves and transfers without HealthKit.
+        // real match isn't discarded as an accident on the builder's meaningless 0.
         let elapsed = elapsedTime(at: end)
         if elapsed < minimumMatchDuration {
             MatchLog.info("endMatch: discarding too-short session (\(Int(elapsed))s)", category: "workout")
-            liveStreamer.stop()
-            headingRecorder.reset()
-            clearInProgressBehindPendingWrites()
-            let endingSession = session
-            let endingBuilder = builder
-            reset()
-            // Back on the start screen before HealthKit is touched — see `endMatch`'s teardown.
-            await Task.detached(priority: .userInitiated) {
-                endingSession?.end()
-                endingBuilder?.discardWorkout()
-            }.value
+            abandonMatch()
             return .discardedTooShort
         }
 
         log(.matchEnd, haptic: false)
-        elapsedAtPause = elapsedTime(at: end)
-        // Built while the match is still `.active`, because that's what `makeLiveUpdate` reports on.
+        elapsedAtPause = elapsed
+        // Built while the match is still live, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
+        headingRecorder.stop()
+        let match = FinishingMatch(
+            id: matchID, start: matchStartDate, end: end, format: matchFormat, fieldID: fieldID,
+            events: events, fixes: isIndoor ? [] : routeRecorder.finish(),
+            headings: headingRecorder.collected, context: matchContext,
+            session: session, builder: builder, elapsed: elapsed,
+            distanceMeters: distanceMeters, score: score)
+        session = nil
+        builder = nil
+        collectionBegan = false
 
-        // Show the summary now, before anything else: its hero stats (duration, distance,
-        // calories) are already known, and everything below is teardown. The record-driven rows
-        // fill in when `finishedRecord` publishes at the end.
+        // The summary's hero stats are already known; the record-driven rows fill in when
+        // `finishedRecord` publishes.
         phase = .summary
         MatchLog.info("endMatch: phase -> summary", category: "workout")
-
         // One final live delta so the sideline sees matchEnd instead of timing out.
         liveStreamer.sendFinalUpdate(finalUpdate)
         liveStreamer.stop()
+        return await save(match)
+    }
 
-        // HealthKit teardown off the main thread. `session.end()` and the builder's statistics are
-        // round-trips to healthd, and a synchronous one on the main thread freezes the whole watch
-        // UI — the End button buzzes and then nothing ever redraws. Awaiting a detached task hands
-        // the main thread back, so SwiftUI renders the summary whether or not healthd answers.
-        let endingSession = session
-        let endingBuilder = builder
-        summaryAverageHeartRate = await Task.detached(priority: .userInitiated) { () -> Double? in
-            let average = endingBuilder?.statistics(for: HKQuantityType(.heartRate))?
-                .averageQuantity()?.doubleValue(for: heartRateUnit)
-            endingSession?.end()
-            return average
-        }.value
-
-        var workout: HKWorkout?
-        do {
-            try await builder?.endCollection(at: end)
-            do {
-                workout = try await builder?.finishWorkout()
-            } catch {
-                // finishWorkout can fail transiently (HealthKit XPC); one immediate retry rescues
-                // the workout + route save. On a second failure the record below still carries the
-                // full track, so the route is never lost with the workout.
-                MatchLog.error("finishWorkout failed, retrying once: \(error.localizedDescription)", category: "workout")
-                workout = try await builder?.finishWorkout()
-            }
-            if let workout, let routeBuilder {
-                _ = try? await routeBuilder.finishRoute(with: workout, metadata: nil)
-            }
-        } catch {
-            MatchLog.error("Finishing workout failed: \(error.localizedDescription)", category: "workout")
-            workout = nil
+    /// Save a finished match. Independent of live state: results are published only if this match
+    /// is still the one on screen.
+    @MainActor
+    private func save(_ match: FinishingMatch) async -> MatchOutcome {
+        func publish(_ update: () -> Void) {
+            if matchID == match.id, phase == .summary { update() }
         }
+
+        // Safe on disk before anything that can be suspended or fail. If nothing below ever runs,
+        // this is what the next launch sends, and the phone pairs it with the workout by time.
+        let provisional = match.record(id: match.id, events: match.events)
+        let provisionalSaved = await Task.detached(priority: .userInitiated) {
+            AppGroupStorage.persistFinished(provisional) != nil
+        }.value
+        if provisionalSaved { clearInProgress(matchID: match.id) }
+
+        // Bounded: HealthKit has been seen never to answer, and the phone should get this match
+        // regardless. A save that lands later still pairs up there, by time.
+        healthSavesInFlight += 1
+        let saving = Task { () -> HKWorkout? in
+            let workout = await self.saveWorkout(match) { average in
+                publish { self.summaryAverageHeartRate = average }
+            }
+            self.healthSavesInFlight -= 1
+            return workout
+        }
+        let workout = await Self.value(of: saving, within: 30)
 
         // Automatic period detection: no-op when the wearer tagged periods manually. A formal
         // match expects two halves; pickup/indoor sessions have variable breaks (expectedPeriods 0).
-        let projector = fieldID
+        let projector = match.fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id } }
             .map { FieldProjector(rectangle: $0.rectangle) }
         var periodConfiguration = PeriodDetectorConfiguration()
-        periodConfiguration.expectedPeriods = matchFormat == .match ? 2 : 0
-        // Off the main actor: the detectors sweep the whole track, which on a 90-minute match is
-        // real work — enough to freeze the summary the moment it appears. Awaiting a detached task
-        // hands the main thread back to SwiftUI while they run.
-        let loggedEvents = events
-        let recordedTrack = track
-        let detectedPeriods = await Task.detached(priority: .userInitiated) {
-            PeriodDetector.detectPeriods(track: recordedTrack, events: loggedEvents,
-                                         projector: projector, configuration: periodConfiguration)
+        periodConfiguration.expectedPeriods = match.format == .match ? 2 : 0
+        let configuration = periodConfiguration
+        let runConfiguration = RunDetectorConfiguration.scaled(for: match.context)
+        let track = match.track
+        let recordID = workout?.uuid ?? match.id
+
+        // Off the main actor: the detectors sweep the whole track and the record is megabytes.
+        let (record, runCounts, recordSaved) = await Task.detached(priority: .userInitiated) {
+            let periods = PeriodDetector.detectPeriods(track: track, events: match.events,
+                                                       projector: projector, configuration: configuration)
+            if !periods.isEmpty {
+                let boundaries = periods.map { String(Int($0.date.timeIntervalSince(match.start)) / 60) }
+                MatchLog.info("endMatch: detected \(periods.count) period events at minutes [\(boundaries.joined(separator: ", "))]",
+                              category: "workout")
+            }
+            let record = match.record(id: recordID, events: (match.events + periods).sorted { $0.date < $1.date })
+            let saved = AppGroupStorage.persistFinished(record) != nil
+            let runs = RunDetector.detectRuns(in: track, configuration: runConfiguration)
+            let counts = (runs: runs.filter { $0.intensity == .run }.count,
+                          sprints: runs.filter { $0.intensity == .sprint }.count)
+            return (record, counts, saved)
         }.value
-        if !detectedPeriods.isEmpty {
-            let boundaries = detectedPeriods
-                .map { Int($0.date.timeIntervalSince(matchStartDate)) / 60 }
-                .map(String.init).joined(separator: ", ")
-            MatchLog.info("endMatch: detected \(detectedPeriods.count) period events at minutes [\(boundaries)]",
-                          category: "workout")
-            events.append(contentsOf: detectedPeriods)
-            events.sort { $0.date < $1.date }
-        }
 
-        let recordID = workout?.uuid ?? matchID
-        var record = MatchRecord(
-            id: recordID,
-            startDate: matchStartDate,
-            endDate: end,
-            fieldID: fieldID,
-            events: events,
-            teamCode: AppGroupStorage.teamCode,
-            sportID: WatchSettings.sportProfile.id,
-            headings: headingRecorder.collected
-        )
-        // Set explicitly so a formal match records `.match` rather than relying on the nil default.
-        record.format = matchFormat
-        // Redundant route: the final record carries the full-resolution track so the phone can
-        // still render/analyze the match if the HealthKit workout (and thus its route) was lost
-        // above. Only the final record gets it — the per-event crash-safety snapshots stay lean.
-        record.track = track.isEmpty ? nil : track
-
-        clearInProgressBehindPendingWrites()
-
-        // Detect runs once, feeding both the summary rows and the widget snapshot. Same hop as the
-        // period detection above, together with the record's encode + disk write.
-        let finalRecord = record
-        let runConfiguration = RunDetectorConfiguration.scaled(for: matchContext)
-        let runCounts = await Task.detached(priority: .userInitiated) { () -> (runs: Int, sprints: Int) in
-            AppGroupStorage.persistFinished(finalRecord)
-            let runs = RunDetector.detectRuns(in: recordedTrack, configuration: runConfiguration)
-            return (runs: runs.filter { $0.intensity == .run }.count,
-                    sprints: runs.filter { $0.intensity == .sprint }.count)
-        }.value
-        summaryRunCounts = runCounts
-        writeLastMatchSnapshot(record: record, end: end, sprintCount: runCounts.sprints)
-
-        finishedWorkout = workout
-        // Published before field learning: SummaryView refreshes off the record, and run counts
-        // are already in place. The proposed field arrives on its own and the summary picks it up.
-        finishedRecord = record
-
-        // The record goes to the phone from here, not from the summary screen. It used to be sent
-        // by SummaryView.onAppear, so a match whose ending didn't finish cleanly kept its events,
-        // format, field and track on the watch — the workout saved to HealthKit either way, which
-        // is why those matches arrive on the phone stripped of everything the app adds.
+        if recordSaved, recordID != match.id { AppGroupStorage.removeFinished(id: match.id) }
+        if recordSaved || provisionalSaved { routeRecorder.removeJournal(matchID: match.id) }
+        MatchLog.info("endMatch: saved (record \(recordSaved), workout \(workout != nil), fixes \(match.fixes.count))",
+                      category: "workout")
         ConnectivityManager.shared.send(matchRecord: record)
         ConnectivityManager.shared.sendJournal()
 
-        // Post-match field learning last: it sweeps the whole track through the fitter, and
-        // nothing above should wait on it — least of all the record's trip to the phone.
-        // Skipped indoors — there is no GPS track to learn a field from.
-        if isIndoor {
-            proposedField = nil
-        } else {
-            switch AppGroupStorage.fieldStore.recordObservation(track: track) {
-            case .proposed(let field):
-                proposedField = field
-            case .matched, .none:
-                proposedField = nil
-            }
+        // Only now: the session is what keeps the app running wrist-down. Ending it first left
+        // matches whose record was never written because the app was suspended mid-save.
+        if let session = match.session {
+            await Task.detached(priority: .userInitiated) { session.end() }.value
+        }
+
+        publish {
+            events = record.events
+            summaryRunCounts = runCounts
+            finishedWorkout = workout
+            // Last: SummaryView refreshes off the record, so the rest must already be in place.
+            finishedRecord = record
+        }
+        writeLastMatchSnapshot(match, record: record, sprintCount: runCounts.sprints)
+
+        // Field learning sweeps the whole track through the fitter, so nothing waits on it.
+        if match.format != .indoor,
+           case .proposed(let field) = AppGroupStorage.fieldStore.recordObservation(track: track) {
+            publish { proposedField = field }
         }
         return .finished(workout: workout, record: record)
     }
 
+    /// Save the workout and its route to HealthKit, in Apple's order: stop, end collection, finish,
+    /// route — with the session still open throughout (`.stopped` keeps the app running).
+    private func saveWorkout(_ match: FinishingMatch,
+                             onAverageHeartRate: @escaping @MainActor (Double?) -> Void) async -> HKWorkout? {
+        guard let session = match.session, let builder = match.builder else { return nil }
+        let heartRateUnit = Self.heartRateUnit
+        let average = await Task.detached(priority: .userInitiated) { () -> Double? in
+            session.stopActivity(with: match.end)
+            let patience = Date().addingTimeInterval(3)
+            while session.state != .stopped, session.state != .ended, Date() < patience {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            // An unanswered stop blocks `endCollection` indefinitely; ending outright releases it.
+            if session.state != .stopped, session.state != .ended { session.end() }
+            return builder.statistics(for: HKQuantityType(.heartRate))?
+                .averageQuantity()?.doubleValue(for: heartRateUnit)
+        }.value
+        await onAverageHeartRate(average)
+        MatchLog.info("endMatch: session \(session.state.rawValue), ending collection", category: "workout")
+
+        var workout: HKWorkout?
+        do {
+            try await builder.endCollection(at: match.end)
+            do {
+                workout = try await builder.finishWorkout()
+            } catch {
+                // finishWorkout can fail transiently (HealthKit XPC); one retry rescues it.
+                MatchLog.error("finishWorkout failed, retrying once: \(error.localizedDescription)", category: "workout")
+                workout = try await builder.finishWorkout()
+            }
+        } catch {
+            MatchLog.error("Finishing workout failed: \(error.localizedDescription)", category: "workout")
+        }
+        if let workout, !match.fixes.isEmpty {
+            await saveRoute(match.fixes, to: workout)
+        }
+        return workout
+    }
+
+    /// A task's value, or nil if it takes longer than `seconds` (the task itself carries on).
+    private static func value<Value>(of task: Task<Value?, Never>, within seconds: TimeInterval) async -> Value? {
+        await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
+            func resume(_ value: Value?, timedOut: Bool) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !resumed else { return }
+                resumed = true
+                if timedOut {
+                    MatchLog.error("HealthKit hasn't answered after \(Int(seconds)) s, moving on", category: "workout")
+                }
+                continuation.resume(returning: value)
+            }
+            Task { resume(await task.value, timedOut: false) }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                resume(nil, timedOut: true)
+            }
+        }
+    }
+
+    /// Write the whole route at once, from the fixes we kept.
+    ///
+    /// Not inserted live: a route builder loses everything if the app goes away, and a single
+    /// failed insert is fatal to it (per its header) — the rest of the match then goes nowhere,
+    /// silently. From a complete copy, a failure costs one retry with a fresh builder.
+    private func saveRoute(_ fixes: [RouteFix], to workout: HKWorkout) async {
+        let locations = fixes.map(\.location)
+        for attempt in 1...2 {
+            do {
+                let routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+                for batchStart in stride(from: 0, to: locations.count, by: 1000) {
+                    let batch = locations[batchStart..<min(batchStart + 1000, locations.count)]
+                    try await routeBuilder.insertRouteData(Array(batch))
+                }
+                _ = try await routeBuilder.finishRoute(with: workout, metadata: nil)
+                MatchLog.info("endMatch: route saved to HealthKit (\(locations.count) points, attempt \(attempt))",
+                              category: "workout")
+                return
+            } catch {
+                MatchLog.error("endMatch: route save attempt \(attempt) failed: \(error.localizedDescription)",
+                               category: "workout")
+            }
+        }
+    }
+
     /// Feeds the widget's last-match Smart Stack card.
-    private func writeLastMatchSnapshot(record: MatchRecord, end: Date, sprintCount: Int) {
+    private func writeLastMatchSnapshot(_ match: FinishingMatch, record: MatchRecord, sprintCount: Int) {
         let fieldName = record.fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id }?.name }
         let snapshot = LastMatchSnapshot(
             matchID: record.id,
-            endDate: end,
+            endDate: match.end,
             fieldName: fieldName,
-            durationSeconds: elapsedAtPause,
+            durationSeconds: match.elapsed,
             timeOnPitchSeconds: SubstitutionTracker.timeOnPitch(events: record.events,
                                                                 matchStart: record.startDate,
-                                                                matchEnd: end),
-            distanceMeters: distanceMeters,
-            goalsUs: score.us,
-            goalsThem: score.them,
+                                                                matchEnd: match.end),
+            distanceMeters: match.distanceMeters,
+            goalsUs: match.score.us,
+            goalsThem: match.score.them,
             sprintCount: sprintCount
         )
         do {
@@ -715,7 +858,8 @@ final class WorkoutManager: NSObject {
         }
     }
 
-    /// Return to the start screen, clearing the finished match.
+    /// Return to the start screen. Clears what's on screen only — a match still being saved has
+    /// its own copy of everything (`FinishingMatch`).
     func reset() {
         finishedWorkout = nil
         finishedRecord = nil
@@ -734,30 +878,24 @@ final class WorkoutManager: NSObject {
         onPitch = true
         autoSubDetector = nil
         autoSubBanner = nil
-        // A session prepared at the Start tap holds background execution until it ends.
-        if let pending = preparedSession {
-            preparedSession = nil
-            Task.detached { if let (prepared, _) = try? await pending.value { prepared.end() } }
-        }
         session = nil
         builder = nil
-        routeBuilder = nil
+        collectionBegan = false
         sessionState = .notStarted
         phase = .idle
     }
 
     private func resetForNewMatch(field: FieldModel?) {
         matchID = UUID()
-        fieldID = field?.id
+        fieldID = isIndoor ? nil : field?.id
         startFailure = nil
+        sessionState = .notStarted
+        sessionLost = false
+        sessionStarting = false
+        sessionAttempts = 0
         healthCollectionStalled = false
         collectionBegan = false
-        // A resolved field gives the detector a touchline to reason about; without one, automatic
-        // substitution detection is simply off for this match. Referees are never "subbed", and
-        // indoor sessions have no GPS to reason about a touchline.
-        autoSubDetector = (WatchSettings.refereeMode || isIndoor) ? nil : field.map {
-            AutoSubDetector(projector: FieldProjector(rectangle: $0.rectangle), initiallyOnPitch: true)
-        }
+        autoSubDetector = field.flatMap(makeAutoSubDetector)
         autoSubBanner = nil
         events = []
         track = []
@@ -775,6 +913,13 @@ final class WorkoutManager: NSObject {
         proposedField = nil
         summaryAverageHeartRate = nil
         summaryRunCounts = nil
+    }
+
+    /// A resolved field gives the detector a touchline to reason about; without one, automatic
+    /// substitution detection is off. Referees are never "subbed", and indoor has no GPS.
+    private func makeAutoSubDetector(for field: FieldModel) -> AutoSubDetector? {
+        guard !WatchSettings.refereeMode, !isIndoor else { return nil }
+        return AutoSubDetector(projector: FieldProjector(rectangle: field.rectangle), initiallyOnPitch: onPitch)
     }
 
     private func persistInProgress() {
@@ -801,92 +946,162 @@ final class WorkoutManager: NSObject {
         }
     }
 
-    /// Clears the crash-safety record on the persist queue, behind any queued writes — clearing
-    /// directly could otherwise be overtaken by a pending write that resurrects a stale record.
-    private func clearInProgressBehindPendingWrites() {
+    /// Clears one match's crash-safety record on the persist queue, behind any queued writes —
+    /// never another's: the next match may already be writing to the same file.
+    private func clearInProgress(matchID: UUID) {
         persistQueue.async {
+            guard AppGroupStorage.loadInProgress()?.id == matchID else { return }
             AppGroupStorage.clearInProgress()
         }
     }
 
     // MARK: - Location
 
-    private func startLocationUpdates() {
-        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        locationManager.activityType = .fitness
-        locationManager.allowsBackgroundLocationUpdates = true
-        locationManager.startUpdatingLocation()
+    /// New fixes from the recorder (already on disk). Runs on the main queue.
+    private func ingest(_ fixes: [RouteFix]) {
+        let points = fixes.map(\.point)
+        track.append(contentsOf: points)
+        recentLocations.append(contentsOf: fixes)
+        if recentLocations.count > 10 {
+            recentLocations.removeFirst(recentLocations.count - 10)
+        }
+        recomputeCurrentSpeed()
+        resolveFieldIfNeeded()
+        runAutoSubDetection(on: points)
     }
 
-    private func stopLocationUpdates() {
-        locationManager.stopUpdatingLocation()
+    /// Match the field from the route's own fixes when the start screen hadn't yet. Most matches
+    /// start within a couple of seconds of opening the app, before a one-shot lookup can answer.
+    private func resolveFieldIfNeeded() {
+        guard fieldID == nil, !isIndoor, track.count >= 10, track.count <= 600, track.count.isMultiple(of: 10)
+        else { return }
+        let samples = track.suffix(30).filter { $0.horizontalAccuracy <= 20 }.map(\.coordinate)
+        guard samples.count >= 5, let field = AppGroupStorage.fieldStore.bestMatch(for: samples) else { return }
+        fieldID = field.id
+        autoSubDetector = makeAutoSubDetector(for: field)
+        MatchLog.info("field: resolved \(field.name) after \(track.count) fixes", category: "location")
+        persistInProgress()
     }
 
     private func recomputeCurrentSpeed() {
-        let usable = recentLocations.suffix(5).filter { $0.speed >= 0 }
-        if usable.isEmpty {
-            currentSpeed = 0
-        } else {
-            currentSpeed = usable.reduce(0) { $0 + $1.speed } / Double(usable.count)
-        }
+        let speeds = recentLocations.suffix(5).map(\.point.speedMetersPerSecond).filter { $0 >= 0 }
+        currentSpeed = speeds.isEmpty ? 0 : speeds.reduce(0, +) / Double(speeds.count)
     }
 
     // MARK: - Session recovery
 
-    /// Called on launch to reattach to a session that survived the app being suspended/killed.
+    /// Called on launch to reattach to a session that survived the app being suspended/killed, or
+    /// failing that to save whatever an interrupted match left on disk.
+    ///
+    /// Reached from both the launch task and the crash-recovery delegate; only one may run, or the
+    /// second replaces the session the first just restored.
     @MainActor
     func recoverActiveWorkoutSession() async {
-        guard session == nil else { return }
-        let recovered: HKWorkoutSession?
-        do {
-            recovered = try await healthStore.recoverActiveWorkoutSession()
-        } catch {
-            recovered = nil
+        guard phase == .idle, session == nil, !recoveryInFlight else { return }
+        recoveryInFlight = true
+        defer { recoveryInFlight = false }
+        let store = healthStore
+        let recovering = Task { try? await store.recoverActiveWorkoutSession() }
+        let recovered = await Self.value(of: recovering, within: 4)
+        // Start was tapped while HealthKit was answering: that match owns the session now.
+        guard phase == .idle, session == nil else {
+            MatchLog.info("recovery: skipped, a match is already under way", category: "workout")
+            return
         }
-        guard let recovered else { return }
-        handleActiveWorkoutRecovery(session: recovered)
-    }
-
-    /// Reattach delegates/metrics to a recovered session and restore the in-progress record.
-    func handleActiveWorkoutRecovery(session recovered: HKWorkoutSession) {
-        let builder = recovered.associatedWorkoutBuilder()
-        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
-                                                     workoutConfiguration: recovered.workoutConfiguration)
-        recovered.delegate = self
-        builder.delegate = self
-
-        session = recovered
-        self.builder = builder
-        // Restore the format from the persisted record (falls back to the recovered config's
-        // location type, which distinguishes indoor from outdoor).
-        matchFormat = AppGroupStorage.loadInProgress()?.format
-            ?? (recovered.workoutConfiguration.locationType == .indoor ? .indoor : .match)
-        routeBuilder = isIndoor ? nil : HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
-        sessionState = recovered.state
-
-        if let record = AppGroupStorage.loadInProgress() {
-            matchID = record.id
-            matchStartDate = record.startDate
-            fieldID = record.fieldID
-            events = record.events
-            // Restore on-pitch state from the last substitution event (a subIn or subOut),
-            // ignoring any later non-sub events that would otherwise mask it.
-            let lastSub = events.last { $0.kind == .subIn || $0.kind == .subOut }
-            onPitch = lastSub?.kind != .subOut
-
-            // Rebuild the detector from the recovered field so auto-detection resumes mid-match
-            // (never indoors — there is no GPS touchline to reason about).
-            if !isIndoor, let fieldID, let field = AppGroupStorage.fieldStore.fields.first(where: { $0.id == fieldID }) {
-                autoSubDetector = AutoSubDetector(projector: FieldProjector(rectangle: field.rectangle),
-                                                  initiallyOnPitch: onPitch)
+        if let recovered, recovered.state == .running || recovered.state == .paused {
+            restore(recovered)
+        } else {
+            recovered?.end()
+            // The session is gone (or HealthKit isn't answering), but the match may not be.
+            if let interrupted = interruptedMatch(), Date().timeIntervalSince(interrupted.lastSeen) < resumableInterval {
+                restore(nil)
+            } else {
+                salvageInterruptedMatch()
             }
         }
+    }
 
-        // Indoor sessions never resumed location updates.
-        if !isIndoor {
-            startLocationUpdates()
+    /// An interrupted match seen this recently is still being played.
+    private let resumableInterval: TimeInterval = 15 * 60
+
+    /// The match on disk that was never ended, with its route and when it last recorded anything.
+    private func interruptedMatch() -> (record: MatchRecord, track: [TrackPoint], lastSeen: Date)? {
+        guard let record = AppGroupStorage.loadInProgress() else { return nil }
+        let track = RouteJournal(directory: AppGroupStorage.containerURL, matchID: record.id).load().map(\.point)
+        let lastSeen = [track.last?.timestamp, record.events.map(\.date).max()].compactMap { $0 }.max()
+        return (record, track, lastSeen ?? record.startDate)
+    }
+
+    /// Reattach delegates/metrics to a recovered session and pick the match back up from disk —
+    /// events from the in-progress record, the route from its journal.
+    /// Without a session, the match carries on from disk alone and asks HealthKit for a new one.
+    @MainActor
+    private func restore(_ recovered: HKWorkoutSession?) {
+        // Only if it's this session's record, not one an earlier match left behind.
+        var saved = AppGroupStorage.loadInProgress()
+        let sessionStart = recovered?.startDate ?? saved?.startDate ?? Date()
+        if let record = saved, abs(record.startDate.timeIntervalSince(sessionStart)) > 180 {
+            salvageInterruptedMatch()
+            saved = nil
         }
+
+        // Falls back to the config's location type, which distinguishes indoor from outdoor.
+        matchFormat = saved?.format
+            ?? (recovered?.workoutConfiguration.locationType == .indoor ? .indoor : .match)
+        resetForNewMatch(field: nil)
+        if let recovered {
+            let builder = recovered.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
+                                                         workoutConfiguration: recovered.workoutConfiguration)
+            recovered.delegate = self
+            builder.delegate = self
+            session = recovered
+            self.builder = builder
+            collectionBegan = true
+            sessionState = recovered.state
+        }
+        matchID = saved?.id ?? matchID
+        matchStartDate = saved?.startDate ?? sessionStart
+        fieldID = saved?.fieldID
+        events = saved?.events ?? []
+        // Restore on-pitch state from the last substitution event (a subIn or subOut), ignoring
+        // any later non-sub events that would otherwise mask it.
+        onPitch = events.last { $0.kind == .subIn || $0.kind == .subOut }?.kind != .subOut
+        autoSubDetector = AppGroupStorage.fieldStore.fields.first { $0.id == fieldID }
+            .flatMap(makeAutoSubDetector)
+
+        if !isIndoor {
+            routeRecorder.arm()
+            routeRecorder.beginRecording(matchID: matchID, start: matchStartDate, resuming: true)
+            track = routeRecorder.fixes.map(\.point)
+            headingRecorder.start()
+        }
+        liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
         phase = .active
+        persistInProgress()
+        if recovered == nil { startWorkoutSession() }
+        MatchLog.info("recovery: match restored (session \(recovered == nil ? "gone" : "recovered"), \(Int(Date().timeIntervalSince(matchStartDate))) s in, \(events.count) events, \(track.count) fixes)",
+                      category: "workout")
+    }
+
+    /// Turn a match that was never ended — the app and its session both died — into a finished
+    /// record, so its events and route reach the phone instead of being overwritten by the next.
+    @MainActor
+    private func salvageInterruptedMatch() {
+        guard let interrupted = interruptedMatch() else { return }
+        var record = interrupted.record
+        let track = interrupted.track
+        let lastSeen = interrupted.lastSeen
+        if lastSeen.timeIntervalSince(record.startDate) >= minimumMatchDuration {
+            record.endDate = lastSeen
+            record.track = track.isEmpty ? nil : track
+            guard AppGroupStorage.persistFinished(record) != nil else { return }
+            MatchLog.info("recovery: salvaged an interrupted match (\(record.events.count) events, \(track.count) fixes)",
+                          category: "workout")
+            ConnectivityManager.shared.send(matchRecord: record)
+        }
+        routeRecorder.removeJournal(matchID: record.id)
+        AppGroupStorage.clearInProgress()
     }
 }
 
@@ -899,18 +1114,17 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
                         date: Date) {
         MatchLog.info("session state \(fromState.rawValue) -> \(toState.rawValue)", category: "workout")
         DispatchQueue.main.async {
+            // A previous match's session finishing must not touch this one.
+            guard workoutSession === self.session else { return }
             self.applySessionState(toState)
         }
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        // A dead session means no samples will ever arrive — swallowing this is how a device
-        // failure (e.g. the missing WKBackgroundModes key) stayed invisible for days. Log it
-        // and light both failure surfaces; the UI stays responsive either way.
         MatchLog.error("workout session failed: \(error.localizedDescription)", category: "workout")
         DispatchQueue.main.async {
-            self.startFailure = StartFailure(error)
-            self.healthCollectionStalled = true
+            guard workoutSession === self.session else { return }
+            self.sessionFailed(error, matchID: self.matchID)
         }
     }
 }
@@ -945,6 +1159,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
         }
 
         DispatchQueue.main.async {
+            guard workoutBuilder === self.builder else { return }
             if let newHeartRate { self.heartRate = newHeartRate }
             if let newCalories { self.activeCalories = newCalories }
             if let newDistance { self.distanceMeters = newDistance }
@@ -952,33 +1167,9 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
     }
 }
 
-// MARK: - CLLocationManagerDelegate
+// MARK: - Automatic substitutions
 
-extension WorkoutManager: CLLocationManagerDelegate {
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        let filtered = locations.filter { $0.horizontalAccuracy <= TrackPoint.maximumUsableHorizontalAccuracy }
-        guard !filtered.isEmpty else { return }
-
-        routeBuilder?.insertRouteData(filtered) { _, _ in }
-
-        let points = filtered.map(Self.trackPoint(from:))
-        DispatchQueue.main.async {
-            // First accepted fix: the "GPS is alive" journal breadcrumb (accuracy only — the
-            // MatchLog privacy contract keeps coordinates out of logs).
-            if self.track.isEmpty, let first = filtered.first {
-                MatchLog.info("first GPS fix accepted (accuracy \(Int(first.horizontalAccuracy)) m)",
-                              category: "location")
-            }
-            self.track.append(contentsOf: points)
-            self.recentLocations.append(contentsOf: filtered)
-            if self.recentLocations.count > 10 {
-                self.recentLocations.removeFirst(self.recentLocations.count - 10)
-            }
-            self.recomputeCurrentSpeed()
-            self.runAutoSubDetection(on: points)
-        }
-    }
-
+extension WorkoutManager {
     /// Feed accepted GPS points (with the latest heart rate) through the detector. A returned auto
     /// sub event is logged preserving its own date/source, flips `onPitch`, fires a distinct gentle
     /// haptic and raises a transient banner. Runs on the main queue with the published metrics.
@@ -1004,18 +1195,5 @@ extension WorkoutManager: CLLocationManagerDelegate {
             try? await Task.sleep(for: .seconds(2))
             if self?.autoSubBanner == message { self?.autoSubBanner = nil }
         }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
-
-    static func trackPoint(from location: CLLocation) -> TrackPoint {
-        TrackPoint(
-            coordinate: Coordinate2D(latitude: location.coordinate.latitude,
-                                     longitude: location.coordinate.longitude),
-            timestamp: location.timestamp,
-            speedMetersPerSecond: location.speed,
-            courseDegrees: location.course,
-            horizontalAccuracy: location.horizontalAccuracy
-        )
     }
 }

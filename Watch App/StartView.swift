@@ -77,6 +77,7 @@ struct StartView: View {
             }
             .navigationTitle("MatchTracker")
         }
+        .onAppear { workoutManager.routeRecorder.warmUp() }
         .task(id: connectivity.fieldsRevision) {
             fieldDetector.detect()
         }

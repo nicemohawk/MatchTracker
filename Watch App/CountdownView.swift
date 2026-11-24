@@ -7,12 +7,8 @@ import Combine
 import SwiftUI
 import WatchKit
 
-/// A 3-second countdown before kickoff, then starts the workout session.
-///
-/// The numeral is derived from `WorkoutManager.countdownDeadline` rather than decremented per
-/// tick, and kickoff is the manager's job: a dropped tick (the watch suspends the app as soon as
-/// the wrist drops) can no longer strand the match on "1". Reactivating the app re-checks the
-/// deadline immediately, so a countdown that ran out while the screen was off starts on wake.
+/// A 3-second countdown to kickoff. Purely a display: recording began on the Start tap, so even a
+/// countdown the watch sleeps through costs nothing but the animation. Tap to skip it.
 struct CountdownView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(\.scenePhase) private var scenePhase
@@ -29,6 +25,11 @@ struct CountdownView: View {
                 .contentTransition(.numericText(countsDown: true))
                 .transaction { $0.animation = .snappy }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { workoutManager.skipCountdown() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Skips the countdown")
         .onAppear {
             WKInterfaceDevice.current().play(.start)
             refresh()
@@ -47,7 +48,7 @@ struct CountdownView: View {
             WKInterfaceDevice.current().play(.click)
         }
         if secondsLeft <= 0 {
-            Task { await workoutManager.kickoffIfCountdownElapsed(trigger: "countdown view") }
+            workoutManager.kickoffIfCountdownElapsed(trigger: "countdown view")
         }
     }
 }

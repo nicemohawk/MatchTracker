@@ -256,6 +256,43 @@ final class WatchSmokeTests: XCTestCase {
         if done.exists && done.isHittable { done.tap() }
     }
 
+    /// The two ways real matches lost their data: the app dying mid-match (a relaunch used to
+    /// restart the route from nothing) and tapping Done before the save finished (which used to
+    /// save an empty match). Assertions here are UI-level; the saved record is inspected on disk.
+    func testMatchSurvivesRelaunchAndEarlyDone() {
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 15)
+        handleWatchLocationPrompt(timeout: 8)
+        let startButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        let metricsMarker = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        // A match interrupted minutes ago resumes straight into the live screen instead.
+        if startButton.waitForExistence(timeout: 20) { startButton.tap() }
+        XCTAssertTrue(metricsMarker.waitForExistence(timeout: 30))
+        sleep(20)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(metricsMarker.waitForExistence(timeout: 45), "A relaunch should land back in the match")
+        sleep(20)
+
+        app.swipeDown()
+        let endCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        XCTAssertTrue(endCaption.waitForExistence(timeout: 15))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
+        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 20), "End should show the summary at once")
+        // Let the live screen finish leaving and the list scroll to rest before tapping.
+        for _ in 0..<6 {
+            app.swipeUp(velocity: .slow)
+            usleep(800_000)
+            if done.isHittable { break }
+        }
+        done.tap()
+        XCTAssertTrue(startButton.waitForExistence(timeout: 20))
+        sleep(12)
+    }
+
     /// Opens the touchline-training flow from the start screen, captures its themed idle screen
     /// (`67-watch-train-field`), then backs out. It deliberately never taps "Start Walking", so no
     /// GPS recording is ever started or left running.

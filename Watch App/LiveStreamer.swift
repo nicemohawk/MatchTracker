@@ -18,6 +18,7 @@ final class LiveStreamer {
     private var sentTrackCount = 0
     private var sentEventCount = 0
     private var lastUserInfoSend = Date.distantPast
+    private var reportedSendFailure = false
 
     private let sendInterval: TimeInterval = 5
     private let userInfoInterval: TimeInterval = 30
@@ -28,6 +29,7 @@ final class LiveStreamer {
         sequence = 0
         sentTrackCount = 0
         sentEventCount = 0
+        reportedSendFailure = false
         streamTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.sendOnce(snapshot: snapshot)
@@ -88,7 +90,11 @@ final class LiveStreamer {
         guard session.activationState == .activated,
               let data = try? MatchTrackerJSON.encoder().encode(update) else { return }
         if session.isReachable {
-            session.sendMessage([Self.messageKey: data], replyHandler: nil) { error in
+            session.sendMessage([Self.messageKey: data], replyHandler: nil) { [weak self] error in
+                // Once per match: an out-of-range phone fails every send, and hundreds of these were
+                // crowding everything else out of the journal.
+                guard let self, !self.reportedSendFailure else { return }
+                self.reportedSendFailure = true
                 MatchLog.error("Live update send failed: \(error.localizedDescription)", category: "live")
             }
         } else {

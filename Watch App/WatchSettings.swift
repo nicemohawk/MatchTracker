@@ -25,12 +25,8 @@ enum DoubleTapAction: String, CaseIterable, Identifiable {
 
 /// Watch-local preferences, stored in the app group so widgets and recovery paths see them too.
 ///
-/// Every read comes from an in-memory mirror rather than from `UserDefaults` directly. SwiftUI view
-/// bodies read these on every render, and the match start and end paths read them too — while the
-/// first touch of an app-group preferences suite is a cfprefsd round trip that has been measured
-/// taking seconds on device, freezing the whole UI (the countdown stuck on "1", End buzzing with no
-/// redraw). `prime()` fills the mirror off the main thread at launch; until it lands, reads return
-/// the same defaults a fresh install would, and writes go straight through.
+/// Reads come from an in-memory mirror — view bodies read these on every render. `prime()` fills it
+/// before the first view exists; writes update the mirror and persist in the background.
 enum WatchSettings {
     private enum Key {
         static let refereeMode = "refereeMode"
@@ -63,7 +59,7 @@ enum WatchSettings {
         lock.unlock()
     }
 
-    /// Load the stored values into the mirror. Call once at launch, OFF the main thread.
+    /// Load the stored values into the mirror. Call once at launch, before the first view.
     static func prime() {
         let defaults = AppGroupStorage.defaults
         var loaded = Snapshot()
@@ -80,8 +76,7 @@ enum WatchSettings {
                       category: "settings")
     }
 
-    /// Mirror first, then persist off the main thread — a setting change is a user action, and the
-    /// UI shouldn't wait on cfprefsd to reflect it.
+    /// Mirror first, then persist off the main thread.
     private static func store(_ value: Any, forKey key: String) {
         DispatchQueue.global(qos: .utility).async {
             AppGroupStorage.defaults.set(value, forKey: key)

@@ -91,14 +91,22 @@ enum AppGroupStorage {
         try? FileManager.default.removeItem(at: inProgressMatchURL)
     }
 
-    /// Writes the final record for a finished match, keyed by workout UUID.
+    /// Writes the final record for a finished match, keyed by workout UUID. Nil if it didn't land.
     @discardableResult
     static func persistFinished(_ record: MatchRecord) -> URL? {
         let directory = finishedMatchesDirectory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(record.id.uuidString).json")
-        guard let data = try? MatchTrackerJSON.encoder().encode(record) else { return nil }
-        try? data.write(to: url, options: .atomic)
+        guard let data = try? MatchTrackerJSON.encoder().encode(record),
+              (try? data.write(to: url, options: .atomic)) != nil else {
+            MatchLog.error("Finished record write failed", category: "workout")
+            return nil
+        }
         return url
+    }
+
+    static func removeFinished(id: UUID) {
+        try? FileManager.default.removeItem(
+            at: finishedMatchesDirectory.appendingPathComponent("\(id.uuidString).json"))
     }
 }

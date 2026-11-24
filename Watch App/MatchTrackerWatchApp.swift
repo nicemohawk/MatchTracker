@@ -13,6 +13,12 @@ struct MatchTrackerWatchApp: App {
     @State private var workoutManager = WorkoutManager.shared
     @State private var connectivity = ConnectivityManager.shared
 
+    init() {
+        // Before any view reads a setting: views seed their state from the mirror, so priming it
+        // later made the start screen forget the last-used format.
+        WatchSettings.prime()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -33,7 +39,6 @@ struct MatchTrackerWatchApp: App {
                         MatchLog.enableJournal(
                             at: AppGroupStorage.containerURL.appendingPathComponent("journal-watch.jsonl"),
                             deviceTag: "watch")
-                        WatchSettings.prime()
                         _ = AppGroupStorage.fieldStore
                     }
                     // The HealthKit calls are independent — run them concurrently.
@@ -42,9 +47,16 @@ struct MatchTrackerWatchApp: App {
                     _ = await (authorization, recovery)
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    // Suspension and a wedged main thread look identical from the outside; only
-                    // the journal can separate them, and only if it records this.
-                    MatchLog.info("scene phase -> \(String(describing: phase))", category: "lifecycle")
+                    // Not journaled mid-match: every wrist raise is three of these, and they were
+                    // pushing the lines that matter out of the journal.
+                    if workoutManager.phase != .active {
+                        MatchLog.info("scene phase -> \(String(describing: phase))", category: "lifecycle")
+                    }
+                    if phase == .active {
+                        workoutManager.appBecameActive()
+                    } else {
+                        workoutManager.appResignedActive()
+                    }
                 }
                 .onOpenURL { url in
                     // Widget deep link: jump straight into the pre-match countdown.

@@ -121,8 +121,10 @@ final class MatchDetailModel: ObservableObject {
                 guard record?.track?.isEmpty == false else { throw error }
                 points = []
             }
-            if points.isEmpty, let recordTrack = record?.track, !recordTrack.isEmpty {
-                MatchLog.info("match \(matchIdentifier): HealthKit route missing, using record track fallback",
+            // Also when it's only partial: a route restarted by a mid-match relaunch holds just the
+            // tail of the match, and the record has all of it.
+            if let recordTrack = record?.track, Double(recordTrack.count) > Double(points.count) * 1.1 {
+                MatchLog.info("match \(matchIdentifier): HealthKit route has \(points.count) points, using the record's \(recordTrack.count)",
                               category: "matchdetail")
                 points = recordTrack
             }
