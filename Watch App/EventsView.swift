@@ -81,6 +81,8 @@ struct EventsView: View {
         } label: {
             Label(title, systemImage: kind.watchSymbol)
                 .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .buttonStyle(WatchTileButtonStyle(tint: kind.watchTint, minHeight: 52))
     }
