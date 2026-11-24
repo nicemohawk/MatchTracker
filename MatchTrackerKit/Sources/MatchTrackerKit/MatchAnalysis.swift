@@ -92,6 +92,8 @@ public enum MatchAnalyzer {
     private static let onFieldMarginMeters = 6.0
     /// How far a run at full tilt goes before it stops.
     private static let overrunMarginMeters = 20.0
+    /// Standing in goal for this much of a match is keeping goal.
+    private static let goalkeepingShare = 0.25
     private static let minimumRoutePoints = 30
     private static let maximumSampleSeconds = 10.0
     private static let pathSampleSeconds = 1.9   // fixes jitter around the second
@@ -147,8 +149,13 @@ public enum MatchAnalyzer {
         // never smear onto the pitch. Standing about waiting is on the pitch but isn't play.
         let isOnField = track.map { projector.isOnField($0.coordinate, marginMeters: onFieldMarginMeters) }
         let isPlaying = track.indices.map { isOnField[$0] && isWithin(track[$0].timestamp, intervals: playingIntervals) }
+        let normalized = track.map { projector.normalizedPoint(for: $0.coordinate) }
         let isWaiting = WaitingDetector.isWaiting(track)
-        let isInPlay = track.indices.map { isPlaying[$0] && !isWaiting[$0] }
+        let isInGoal = track.indices.map { isPlaying[$0] && isWaiting[$0] && isInGoalmouth(normalized[$0]) }
+        // A goalkeeper's standing is the job: said so, or spent a good part of the match at it.
+        let isGoalkeeper = input.reportedPositions?.contains { $0.role == .goalkeeper } == true
+            || Double(isInGoal.filter { $0 }.count) >= goalkeepingShare * Double(max(isPlaying.filter { $0 }.count, 1))
+        let isInPlay = track.indices.map { isPlaying[$0] && (!isWaiting[$0] || (isGoalkeeper && isInGoal[$0])) }
         let onFieldTrack = track.indices.filter { isOnField[$0] }.map { track[$0] }
         // A run may carry over the line chasing a ball. One that never set foot on the pitch is
         // somebody warming up beside it.
@@ -168,7 +175,6 @@ public enum MatchAnalyzer {
         workrate.totalDistanceMeters = distance
 
         // The one direction every place below is drawn in.
-        let normalized = track.map { projector.normalizedPoint(for: $0.coordinate) }
         let placed = track.indices.compactMap { index in
             isInPlay[index] ? normalized[index].map { (date: track[index].timestamp, point: $0) } : nil
         }
@@ -219,6 +225,12 @@ public enum MatchAnalyzer {
     private static let placeholderRectangle = OrientedRectangle(
         center: Coordinate2D(latitude: 0, longitude: 0),
         lengthMeters: 40, widthMeters: 20, headingDegrees: 0, corners: [])
+
+    /// The box, near enough: the last sixth of the pitch, in front of goal.
+    private static func isInGoalmouth(_ point: CGPoint?) -> Bool {
+        guard let point else { return false }
+        return abs(point.x - 0.5) > 0.33 && abs(point.y - 0.5) < 0.25
+    }
 
     private static func resolveField(
         track: [TrackPoint], saved: FieldModel?

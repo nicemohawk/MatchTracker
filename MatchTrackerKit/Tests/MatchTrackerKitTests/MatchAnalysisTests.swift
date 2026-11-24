@@ -274,6 +274,22 @@ final class MatchAnalysisTests: XCTestCase {
         XCTAssertEqual(analytics.workrate.timeOnPitch / 60, 80, accuracy: 1, "still on the pitch, though")
     }
 
+    func testAGoalkeeperStandsInGoal() throws {
+        func heatInGoal(_ track: [TrackPoint], positions: [ReportedPosition]?) throws -> Float {
+            let analytics = try analyze(track, positions: positions, flips: false)
+            return try XCTUnwrap(analytics.heat.enumerated().filter { index, _ in
+                index / analytics.heatColumns >= analytics.heatRows - 6 && (9..<15).contains(index % analytics.heatColumns)
+            }.map(\.element).max())
+        }
+        var briefly = twoHalves()
+        for index in 600..<1200 { briefly[index] = point(Double(index), long: 0.05, speed: 0.2) }
+        XCTAssertLessThan(try heatInGoal(briefly, positions: nil), 0.05)
+        XCTAssertGreaterThan(try heatInGoal(briefly, positions: [ReportedPosition(role: .goalkeeper)]), 0.5)
+        var keeping = twoHalves()
+        for index in 0..<2400 { keeping[index] = point(Double(index), long: 0.05, speed: 0.2) }
+        XCTAssertEqual(try heatInGoal(keeping, positions: nil), 1)
+    }
+
     func testWaitingNeedsToBeLongAndStill() {
         let still = (0..<40).map { point(Double($0), long: 0.5, speed: 0.1) }
         XCTAssertFalse(WaitingDetector.isWaiting(still).contains(true), "40 s is a throw-in")
