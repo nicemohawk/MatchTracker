@@ -10,6 +10,7 @@
 //  flash, and WKInterfaceDevice haptics. No behavior or WorkoutManager API lives here.
 //
 
+import MatchTrackerKit
 import SwiftUI
 import WatchKit
 
@@ -70,10 +71,10 @@ enum WatchHaptics {
 
     /// The haptic that best fits a logged event — positive moments get a success tap, opponent
     /// goals a failure buzz, cards/fouls a notification, everything else a light click.
-    static func forEvent(positive: Bool, caution: Bool, negative: Bool) {
-        if negative { failure() }
-        else if caution { notify() }
-        else if positive { success() }
+    static func forEvent(_ kind: MatchEventKind) {
+        if kind.isNegativeMoment { failure() }
+        else if kind.isCaution { notify() }
+        else if kind.isPositiveMoment { success() }
         else { click() }
     }
 }

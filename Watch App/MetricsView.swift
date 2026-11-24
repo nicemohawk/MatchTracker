@@ -151,7 +151,7 @@ private struct LiveStatusLine: View {
             if hasScore, let warning, isSpelledOut(warning) {
                 line { score; Spacer(minLength: 8); label(warning) }
             }
-            if let warning, isSpelledOut(warning) {
+            if let warning, isSpelledOut(warning), !hasScore || !warning.isAlwaysSpelledOut {
                 line { label(warning); Spacer(minLength: 0) }
             }
             line {
@@ -182,7 +182,7 @@ private struct LiveStatusLine: View {
     private var hasScore: Bool { workoutManager.score.us + workoutManager.score.them > 0 }
 
     private var score: some View {
-        Text("\(workoutManager.score.us) – \(workoutManager.score.them)")
+        Text("\(workoutManager.score.us)–\(workoutManager.score.them)")
             .font(.system(size: height * 0.82, weight: .semibold, design: .rounded))
             .monospacedDigit()
             .accessibilityLabel("Score, us \(workoutManager.score.us), them \(workoutManager.score.them)")
@@ -228,8 +228,24 @@ private struct LiveStatusLine: View {
 private struct BenchView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @State private var confirmation: Confirmation?
 
     var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 8) {
+                    whileOff.frame(height: proxy.size.height)
+                    // The one calm moment to catch the score up.
+                    ScoreTiles(height: proxy.size.height * 0.62, confirmation: $confirmation)
+                    if !workoutManager.keepsScore { MomentTile(confirmation: $confirmation) }
+                }
+            }
+        }
+        .scenePadding(.horizontal)
+        .confirmationOverlay($confirmation)
+    }
+
+    private var whileOff: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let questionable = workoutManager.questionableSubOut(at: context.date)
             VStack(alignment: .leading, spacing: 8) {
@@ -237,12 +253,16 @@ private struct BenchView: View {
                     .font(.headline)
                     .foregroundStyle(.secondary)
                     .minimumScaleFactor(0.7)
-                Text(benchTime(at: context.date))
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .foregroundStyle(.white.opacity(isLuminanceReduced ? 0.65 : 1))
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(benchTime(at: context.date))
+                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.4)
+                        .foregroundStyle(.white.opacity(isLuminanceReduced ? 0.65 : 1))
+                    Spacer(minLength: 0)
+                    if workoutManager.heartRate > 0 { heartRate }
+                }
                 Spacer(minLength: 0)
                 Button {
                     if let questionable { workoutManager.stillOn(after: questionable) } else { workoutManager.toggleSub() }
@@ -254,7 +274,21 @@ private struct BenchView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .scenePadding(.horizontal)
+    }
+
+    private var heartRate: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text("\(Int(workoutManager.heartRate))")
+                .font(.system(size: 26, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Image(systemName: "heart.fill").font(.system(size: 15))
+        }
+        .foregroundStyle(WatchTheme.heart.opacity(isLuminanceReduced ? 0.65 : 1))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Heart rate")
+        .accessibilityValue("\(Int(workoutManager.heartRate)) beats per minute")
     }
 
     private func benchTime(at date: Date) -> String {
