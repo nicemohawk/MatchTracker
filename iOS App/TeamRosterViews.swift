@@ -78,6 +78,7 @@ enum TeamMetric: String, CaseIterable, Identifiable {
 /// The leaderboard as list sections, including its loading, empty and failed states.
 struct TeamLeaderboardSections: View {
     let team: TeamModel
+    let code: String
     let showsSquadLink: Bool
 
     @EnvironmentObject private var settings: SettingsStore
@@ -103,7 +104,18 @@ struct TeamLeaderboardSections: View {
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try Again") { Task { await team.load(code: settings.teamCode) } }
+                    Button("Try Again") { Task { await team.load(code: code) } }
+                        .buttonStyle(.prominentAction)
+                }
+            }
+        case .turnedAway(let message):
+            Section {
+                ContentUnavailableView {
+                    Label("You can't see this team", systemImage: "person.slash")
+                } description: {
+                    Text("\(message) Ask for a new invite, or leave it in Manage Team. The code here is \(code).")
+                } actions: {
+                    Button("Try Again") { Task { await team.load(code: code) } }
                         .buttonStyle(.prominentAction)
                 }
             }
@@ -112,17 +124,32 @@ struct TeamLeaderboardSections: View {
                 ContentUnavailableView {
                     Label("No matches yet", systemImage: "figure.soccer")
                 } description: {
-                    Text("Teammates appear here after their first match with MatchTracker. Invite them to get started.")
+                    Text("Anyone who joins sees the team right away, with or without a watch. Players appear after their first match. Your team code is \(code).")
                 } actions: {
-                    ShareLink(item: TeamInvite(code: settings.teamCode, name: settings.teamName(orNil: team.season?.teamName)).message) {
-                        Text("Invite Teammates")
-                    }
-                    .buttonStyle(.prominentAction)
+                    inviteButton
                 }
             }
         case .loaded:
             leaderboard
+            if let players = team.season?.players, players.allSatisfy({ settings.isMe($0.name) }) {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Just you so far").font(.headline)
+                        Text("Teammates appear after their first match.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        inviteButton
+                    }
+                }
+            }
         }
+    }
+
+    private var inviteButton: some View {
+        ShareLink(item: settings.invite(code, sharedName: team.season?.teamName).message) {
+            Text("Invite Teammates")
+        }
+        .buttonStyle(.prominentAction)
     }
 
     @ViewBuilder private var leaderboard: some View {
@@ -246,10 +273,61 @@ struct TeamPlayerName: View {
     }
 }
 
+// MARK: - Last match
+
+/// Who was in the newest match anyone shared, and for how long. Draws nothing when there isn't one.
+struct TeamLastMatchSection: View {
+    let match: TeamMatchMinutes?
+    let isLeastFirst: Bool
+
+    @State private var isShowingAll = false
+
+    private static let limit = 6
+
+    var body: some View {
+        if let match, !match.minutesByPlayer.isEmpty {
+            let rows = match.minutesByPlayer.sorted { lhs, rhs in
+                if lhs.value == rhs.value { return lhs.key < rhs.key }
+                return (lhs.value < rhs.value) == isLeastFirst
+            }
+            let goals = match.goalsByPlayer
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Last match").font(.title2.bold())
+                    Text("\(match.kickoff.formatted(.dateTime.weekday(.wide).month().day())), \(rows.count == 1 ? "1 player" : "\(rows.count) players")")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowSeparator(.hidden, edges: .bottom)
+                ForEach(isShowingAll ? rows : Array(rows.prefix(Self.limit)), id: \.key) { name, minutes in
+                    LabeledContent {
+                        Text("\(Int(minutes.rounded())) min")
+                            .monospacedDigit()
+                            .accessibilityLabel("\(Int(minutes.rounded())) minutes")
+                    } label: {
+                        TeamPlayerName(name: name)
+                        if let scored = goals[name] {
+                            Text(scored == 1 ? "1 goal" : "\(scored) goals")
+                        }
+                    }
+                }
+                if rows.count > Self.limit, !isShowingAll {
+                    Button("Show All \(rows.count)") { withAnimation { isShowingAll = true } }
+                }
+            } footer: {
+                Text("Counted from each player's watch. Anyone without one isn't listed, but sees this too.")
+            }
+        }
+    }
+}
+
 // MARK: - Squad
 
 struct TeamSquadView: View {
     let team: TeamModel
+    let code: String
+
+    @EnvironmentObject private var settings: SettingsStore
 
     var body: some View {
         List {
@@ -264,10 +342,16 @@ struct TeamSquadView: View {
                         }
                     }
                 }
+                if let captain = settings.team(code)?.captainName, !players.contains(where: { settings.isCaptain($0.name, of: code) }) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        TeamPlayerName(name: captain)
+                        Text("Captain, no matches yet").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
             } header: {
                 Text(TeamModel.seasonTitle)
             } footer: {
-                Text("Everyone who has shared a match with the team this season.")
+                Text("Players appear after sharing a match this season. Teammates without a watch can see the team but aren't listed yet.")
             }
         }
         .navigationTitle("Squad")
@@ -278,7 +362,8 @@ struct TeamSquadView: View {
     }
 
     private func summary(_ player: TeamStats.Player) -> String {
-        let matches = player.matchesPlayed == 1 ? "1 match" : "\(player.matchesPlayed) matches"
+        let played = player.matchesPlayed == 1 ? "1 match" : "\(player.matchesPlayed) matches"
+        let matches = settings.isCaptain(player.name, of: code) ? "Captain, \(played)" : played
         guard let minutes = player.minutesPlayed else { return matches }
         return "\(matches), \(Int(minutes.rounded())) minutes"
     }
@@ -287,11 +372,15 @@ struct TeamSquadView: View {
 struct TeamPlayerView: View {
     let name: String
     let team: TeamModel
+    let code: String
 
     @EnvironmentObject private var settings: SettingsStore
 
     var body: some View {
         List {
+            if settings.isCaptain(name, of: code) {
+                Section { Text("Captain") }
+            }
             if let player = team.week?.players.first(where: { $0.name == name }) {
                 Section("This week") { rows(player) }
             }

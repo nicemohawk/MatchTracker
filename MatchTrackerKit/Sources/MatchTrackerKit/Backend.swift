@@ -255,6 +255,19 @@ public struct TeamStats: Codable, Sendable {
             case minutesPlayed = "total_minutes"
             case sprints = "total_sprints"
         }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            // Somebody who never typed a name mustn't hide the team from everyone else.
+            name = try container.decodeIfPresent(String.self, forKey: .name) ?? "No name"
+            matchesPlayed = try container.decode(Int.self, forKey: .matchesPlayed)
+            totalDistanceMeters = try container.decode(Double.self, forKey: .totalDistanceMeters)
+            averageWorkrateScore = try container.decodeIfPresent(Double.self, forKey: .averageWorkrateScore) ?? 0
+            goals = try container.decode(Int.self, forKey: .goals)
+            assists = try container.decode(Int.self, forKey: .assists)
+            minutesPlayed = try container.decodeIfPresent(Double.self, forKey: .minutesPlayed)
+            sprints = try container.decodeIfPresent(Int.self, forKey: .sprints)
+        }
     }
 
     public var teamCode: String
@@ -319,6 +332,22 @@ public struct APIClient: Sendable {
 
     // MARK: - V2 team & live endpoints
 
+    /// Put this device on a team (`POST /devices/{id}/teams`, V2 §6): what lets it read the team
+    /// and upload to it. Idempotent.
+    public func joinTeam(code: String) async throws {
+        try await postJSON(path: "/devices/\(deviceID.uuidString)/teams", body: TeamPost(teamCode: code))
+    }
+
+    /// Take this device off a team (`DELETE /devices/{id}/teams/{code}`, V2 §6).
+    public func leaveTeam(code: String) async throws {
+        try await delete(path: "/devices/\(deviceID.uuidString)/teams/\(code)")
+    }
+
+    /// Show the server a StoreKit 2 signed transaction (`POST /devices/{id}/receipt`, V2 §7).
+    public func postReceipt(jws: String) async throws {
+        try await postJSON(path: "/devices/\(deviceID.uuidString)/receipt", body: ReceiptPost(jws: jws))
+    }
+
     /// Team chat for a match (`GET /matches/{uuid}/comments`), oldest-first.
     public func comments(match: UUID) async throws -> [MatchComment] {
         let data = try await get(path: "/matches/\(match.uuidString)/comments")
@@ -363,7 +392,7 @@ public struct APIClient: Sendable {
         return try Self.jsonDecoder().decode(TeamEventsEnvelope.self, from: data).events
     }
 
-    /// Attach (or overwrite) a coach label on one team event
+    /// Attach (or overwrite) a note on one team event
     /// (`POST /matches/{match_uuid}/events/{id}/annotation`, V2 §11). Idempotent: re-posting a
     /// different label replaces `coach_label`; the player's own note is never touched.
     public func annotateEvent(id: UUID, matchUUID: UUID, label: String) async throws {
@@ -387,11 +416,7 @@ public struct APIClient: Sendable {
 
     /// Request full server-side deletion of this device's data (`DELETE /devices/{id}`, V2 §5).
     public func requestDeletion() async throws {
-        var request = URLRequest(url: makeURL("/devices/\(deviceID.uuidString)"))
-        request.httpMethod = "DELETE"
-        applyHeaders(to: &request)
-        let (_, response) = try await session.data(for: request)
-        try Self.validate(response)
+        try await delete(path: "/devices/\(deviceID.uuidString)")
     }
 
     // MARK: - Private wire helpers
@@ -405,6 +430,11 @@ public struct APIClient: Sendable {
         }
     }
 
+    private struct TeamPost: Encodable {
+        var teamCode: String
+        enum CodingKeys: String, CodingKey { case teamCode = "team_code" }
+    }
+    private struct ReceiptPost: Encodable { var jws: String }
 
     private struct FieldsEnvelope: Encodable { var fields: [FieldWire] }
     private struct SessionsEnvelope: Encodable { var sessions: [MatchPayload] }
@@ -412,14 +442,14 @@ public struct APIClient: Sendable {
     private struct LiveEnvelope: Decodable { var players: [LivePlayerStatus] }
     private struct TeamEventsEnvelope: Decodable { var events: [TeamEvent] }
 
-    /// Coach annotation body: just the label. The server keys the event by the path uuids.
+    /// Note body: just the text. The server keys the event by the path uuids.
     private struct AnnotationPost: Encodable { var label: String }
 
     /// Minimal comment POST body: the backend derives `posted_at` and (usually) the author.
     private struct CommentPost: Encodable { var id: UUID; var body: String; var author: String }
 
     /// `LiveMatchUpdate` reduced to the backend contract: the raw track delta (`latestPoints`) is
-    /// dropped, but `newEvents` are forwarded as `new_events` so the server can append them to the
+    /// dropped, and so is heart rate: it's nobody else's to see. `newEvents` are forwarded as `new_events` so the server can append them to the
     /// team-scoped live event log (V2 §1/§11). Routing keys `matchUUID` / `teamCode` are added.
     private struct LiveWire: Encodable {
         var matchUUID: UUID
@@ -427,7 +457,6 @@ public struct APIClient: Sendable {
         var sequence: Int
         var timestamp: Date
         var elapsedSeconds: TimeInterval
-        var heartRate: Double?
         var distanceMeters: Double
         var currentSpeed: Double?
         var onPitch: Bool
@@ -442,7 +471,6 @@ public struct APIClient: Sendable {
             self.sequence = update.sequence
             self.timestamp = update.timestamp
             self.elapsedSeconds = update.elapsed
-            self.heartRate = update.heartRate
             self.distanceMeters = update.distanceMeters
             self.currentSpeed = update.currentSpeed
             self.onPitch = update.onPitch
@@ -457,7 +485,6 @@ public struct APIClient: Sendable {
             case sequence
             case timestamp
             case elapsedSeconds = "elapsed_s"
-            case heartRate = "heart_rate"
             case distanceMeters = "distance_m"
             case currentSpeed = "current_speed"
             case onPitch = "on_pitch"
@@ -485,6 +512,8 @@ public struct APIClient: Sendable {
     private func applyHeaders(to request: inout URLRequest) {
         request.setValue("APIKey \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
+        // Team reads are for members, and the key is everyone's (V2 §6).
+        request.setValue(deviceID.uuidString, forHTTPHeaderField: "X-Device-ID")
     }
 
     private func send<Body: Encodable>(path: String, body: Body) async throws {
@@ -512,6 +541,14 @@ public struct APIClient: Sendable {
         let (data, response) = try await session.data(for: request)
         try Self.validate(response)
         return data
+    }
+
+    private func delete(path: String) async throws {
+        var request = URLRequest(url: makeURL(path))
+        request.httpMethod = "DELETE"
+        applyHeaders(to: &request)
+        let (_, response) = try await session.data(for: request)
+        try Self.validate(response)
     }
 
     private func postJSON<Body: Encodable>(path: String, body: Body) async throws {

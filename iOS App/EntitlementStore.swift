@@ -7,9 +7,9 @@ import Foundation
 import Observation
 import StoreKit
 
-/// StoreKit 2 subscription state for team features (roster stats beyond one team, live team
-/// dashboard, chat, formation). Solo-player analytics stay free — gate checks call
-/// `entitledToTeam`, which is also granted in DEBUG via `-MatchTrackerEntitleTeam` for tests.
+/// StoreKit 2 subscription state. Being on a team and seeing it is free; the subscription buys
+/// extras, so far notes on teammates' moments. Gate checks call `entitledToTeam`, which is also
+/// granted in DEBUG via `-MatchTrackerEntitleTeam` for tests.
 @Observable
 @MainActor
 final class EntitlementStore {
@@ -64,6 +64,8 @@ final class EntitlementStore {
                transaction.productID == Self.teamMonthlyProductID,
                transaction.revocationDate == nil {
                 active = true
+                // The server takes notes only from subscribers it has seen proof of.
+                await TeamService.sendReceipt(entitlement.jwsRepresentation)
             }
         }
         entitledToTeam = active

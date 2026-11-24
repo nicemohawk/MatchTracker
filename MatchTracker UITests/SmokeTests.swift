@@ -62,6 +62,62 @@ final class SmokeTests: XCTestCase {
         closeSettings(app: app)
     }
 
+    /// Nobody else, no coach, no subscription.
+    func testACaptainStartsATeamAndLeavesIt() {
+        app.launchArguments += ["-TeamStub", "new"]
+        app.launch()
+        handleHealthKitPrompt(app: app)
+        XCTAssertTrue(selectTab("Team", expectingNavBar: "Team", in: app))
+        app.buttons["Start a Team"].tap()
+        let teamName = app.textFields["Team name"]
+        XCTAssertTrue(teamName.waitForExistence(timeout: 5))
+        teamName.tap()
+        teamName.typeText("Red Dragons")
+        let playerName = app.textFields["Name or initials"]
+        playerName.tap()
+        playerName.typeText("Cap")
+        app.navigationBars.buttons["Start"].tap()
+        XCTAssertTrue(app.buttons["Send Invite"].waitForExistence(timeout: 5), "The invite comes straight after the name")
+        app.buttons["Done"].tap()
+
+        XCTAssertTrue(app.navigationBars["Red Dragons"].waitForExistence(timeout: 5))
+        app.buttons["Formation"].tap()
+        app.buttons["Set Up by Hand"].tap()
+        app.buttons["Add a player"].tap()
+        app.buttons["Someone Else…"].tap()
+        let added = app.alerts["Add a Player"].textFields.firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 5))
+        added.typeText("Maya Ortiz")
+        app.alerts["Add a Player"].buttons["Add"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["Maya Ortiz"].waitForExistence(timeout: 5), "A teammate without the app has a place")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.buttons["Who's in"].tap()
+        XCTAssertTrue(app.buttons["Maya Ortiz"].waitForExistence(timeout: 5))
+        app.buttons["Maya Ortiz"].tap()
+        XCTAssertTrue(app.staticTexts["1 in"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.buttons["Manage team"].tap()
+        XCTAssertTrue(app.navigationBars["Manage Team"].waitForExistence(timeout: 5))
+        let leave = app.buttons["Leave Red Dragons"]
+        XCTAssertTrue(scrollUntilHittable(leave, in: app))
+        leave.tap()
+        app.alerts.buttons["Leave Team"].tap()
+        XCTAssertTrue(app.buttons["Start a Team"].waitForExistence(timeout: 5), "Leaving the only team goes back to the start")
+    }
+
+    func testAnInviteLinkOpensTheJoinScreen() {
+        app.launchArguments += ["-TeamStub", "new"]
+        app.launch()
+        handleHealthKitPrompt(app: app)
+        app.open(URL(string: "matchtracker-join://K7QM2P?team=Red%20Dragons&captain=Maya%20Ortiz")!)
+        XCTAssertTrue(app.navigationBars["Join a Team"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Red Dragons"].exists)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Start a Team"].waitForExistence(timeout: 5), "A link only asks; it never joins by itself")
+    }
+
     // MARK: - Steps
 
     private func generateSeason() {

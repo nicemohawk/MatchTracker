@@ -155,6 +155,15 @@ public final class UploadQueue {
         try persist(PendingUpload(id: UUID(), kind: .fields, payloadJSON: data))
     }
 
+    /// Drops matches waiting to go to a team, for somebody who has left it.
+    public func discardMatches(teamCode: String) {
+        for item in pending where item.kind == .match {
+            guard let payload = try? Self.payloadDecoder.decode(MatchPayload.self, from: item.payloadJSON),
+                  payload.teamCode == teamCode else { continue }
+            remove(id: item.id)
+        }
+    }
+
     // MARK: Flush
 
     /// Attempts every due item (`nextAttempt <= now`) serially, oldest first. Success removes the

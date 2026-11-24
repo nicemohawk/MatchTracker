@@ -11,17 +11,40 @@ public struct TeamMembership: Codable, Hashable, Sendable, Identifiable {
     /// Minors-privacy option: render this member as initials ("B. L.") everywhere their name would
     /// otherwise appear. The backend enforces it server-side; this flag mirrors that preference.
     public var displayInitialsOnly: Bool
+    /// Who the captain is, as far as this device knows: whoever started the team, or whoever the
+    /// invite named. The server doesn't keep one.
+    public var captainName: String?
+    /// The owner of this device coaches the team. Only changes what they see.
+    public var isCoach: Bool
+    /// Matches from before this stay the player's own. Nil for teams joined before it was noted.
+    public var joinedAt: Date?
 
-    public init(code: String, name: String? = nil, displayInitialsOnly: Bool = false) {
+    public init(code: String, name: String? = nil, displayInitialsOnly: Bool = false, captainName: String? = nil, isCoach: Bool = false, joinedAt: Date? = nil) {
         self.code = code
         self.name = name
         self.displayInitialsOnly = displayInitialsOnly
+        self.captainName = captainName
+        self.isCoach = isCoach
+        self.joinedAt = joinedAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case code
         case name
         case displayInitialsOnly = "initials_only"
+        case captainName = "captain_name"
+        case isCoach = "is_coach"
+        case joinedAt = "joined_at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decode(String.self, forKey: .code)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        displayInitialsOnly = try container.decodeIfPresent(Bool.self, forKey: .displayInitialsOnly) ?? false
+        captainName = try container.decodeIfPresent(String.self, forKey: .captainName)
+        isCoach = try container.decodeIfPresent(Bool.self, forKey: .isCoach) ?? false
+        joinedAt = try container.decodeIfPresent(Date.self, forKey: .joinedAt)
     }
 }
 
@@ -51,12 +74,12 @@ public struct MatchComment: Codable, Identifiable, Sendable {
 }
 
 /// One event from any teammate's match, as delivered by the unified team timeline
-/// (`GET /teams/{code}/events`, V2 §11). The coach view coalesces every player's tagged events
-/// into a single chronological feed and can attach a `coachLabel` to unlabeled ones.
+/// (`GET /teams/{code}/events`, V2 §11). Everyone's tagged events in one feed, to any of which
+/// a member can attach a note (`coachLabel`).
 ///
 /// `kind` is decoded tolerantly: the raw wire string is preserved in `kindRawValue` (so an
 /// event kind this client build doesn't know still renders), and `kind` is the parsed
-/// `MatchEventKind` when recognized, else nil. `coachLabel` is the coach's annotation and is
+/// `MatchEventKind` when recognized, else nil. `coachLabel` is the added note and is
 /// kept separate from the player's own `note` — the two render side by side, never overwriting.
 public struct TeamEvent: Codable, Identifiable, Sendable {
     /// The event's own uuid (stable across the player's upload and the live relay).
@@ -66,9 +89,9 @@ public struct TeamEvent: Codable, Identifiable, Sendable {
     /// Raw wire `kind` string, preserved verbatim so unknown kinds still display.
     public var kindRawValue: String
     public var date: Date
-    /// The player's own note on the event (never overwritten by a coach label).
+    /// The player's own note on the event (never overwritten by `coachLabel`).
     public var note: String?
-    /// The coach's annotation (`coach_label`), stored separately from `note`.
+    /// A note somebody else on the team added (`coach_label`), stored separately from `note`.
     public var coachLabel: String?
     /// `manual` / `automatic` when known; decoded tolerantly (unknown strings ⇒ nil).
     public var source: MatchEventSource?
@@ -103,7 +126,8 @@ public struct TeamEvent: Codable, Identifiable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-        playerName = try container.decode(String.self, forKey: .playerName)
+        // Somebody who never typed a name mustn't hide the team from everyone else.
+        playerName = try container.decodeIfPresent(String.self, forKey: .playerName) ?? "No name"
         matchUUID = try container.decode(UUID.self, forKey: .matchUUID)
         kindRawValue = try container.decode(String.self, forKey: .kindRawValue)
         date = try container.decode(Date.self, forKey: .date)

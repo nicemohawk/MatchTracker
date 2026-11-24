@@ -6,8 +6,10 @@ import EventKit
 import SwiftUI
 import MatchTrackerKit
 
-/// Team screens on their own for screenshots: `-TeamScreen home|squad|player|formation|coach|compare|fixtures|next|comments|join|create|manage`,
-/// with `-TeamStub` for the data and `-SeedFixtures YES` to put matches in a calendar.
+/// Team screens on their own for screenshots: `-TeamScreen home|squad|player|formation|matches|whosin|compare|fixtures|next|join|invited|create|ready|manage|privacy`,
+/// with `-TeamStub` for the data, `-SeedFixtures YES` to put matches in a calendar, `-NoTeam YES`,
+/// `-Captain somebody`, `-Coach YES`, `-TwoTeams YES`, `-NoTeamName YES` for a code typed by hand,
+/// `-TeamPane Live|Minutes|Events`.
 struct TeamDebugGallery: View {
     static let screen = UserDefaults.standard.string(forKey: "TeamScreen")
 
@@ -25,10 +27,16 @@ struct TeamDebugGallery: View {
 
     @ViewBuilder private var content: some View {
         switch Self.screen {
-        case "squad": stack { TeamSquadView(team: team) }
-        case "player": stack { TeamPlayerView(name: "Maya Ortiz", team: team) }
+        case "squad": stack { TeamSquadView(team: team, code: "K7QM2P") }
+        case "player": stack { TeamPlayerView(name: "Maya Ortiz", team: team, code: "K7QM2P") }
         case "formation": stack { FormationView(teamCode: "K7QM2P") }
-        case "coach": stack { CoachDashboardView(teamCode: "K7QM2P") }
+        case "matches": stack { TeamMatchesView(teamCode: "K7QM2P") }
+        case "whosin": stack { TeamWhosInView(teamCode: "K7QM2P", sharedName: "Red Dragons") }
+        case "privacy": stack { TeamPrivacyView() }
+        case "ready": stack { TeamReadyView(invite: TeamInvite(code: "K7QM2P", name: "Red Dragons", captain: "Ben Lachman")) {} }
+        case "invited": TeamView().sheet(isPresented: $isShowingSheet) {
+            TeamJoinSheet(invite: TeamInvite(code: "K7QM2P", name: "Red Dragons", captain: "Maya Ortiz"))
+        }
         case "compare": stack { CohortBenchmarkView() }
         case "fixtures": stack { FixturesListView() }
         case "next": stack { List { NextMatchCard() }.navigationTitle("Summary") }
@@ -44,11 +52,20 @@ struct TeamDebugGallery: View {
     }
 
     private func prepare() async {
+        let arguments = UserDefaults.standard
         settings.playerName = "Ben Lachman"
-        if UserDefaults.standard.bool(forKey: "NoTeam") {
-            settings.teamMemberships = []
-        } else {
-            settings.enterTeam(code: "K7QM2P", name: "Red Dragons")
+        settings.teamMemberships = []
+        TeamPlan.remove("K7QM2P")
+        FormationBoard.remove("K7QM2P")
+        TeamStub.current?.prepareCache(code: "K7QM2P")
+        if !arguments.bool(forKey: "NoTeam") {
+            let name = arguments.bool(forKey: "NoTeamName") ? nil : "Red Dragons"
+            settings.enterTeam(TeamInvite(code: "K7QM2P", name: name, captain: arguments.string(forKey: "Captain")))
+            if arguments.bool(forKey: "Coach") { settings.updateTeam("K7QM2P") { $0.isCoach = true } }
+            if arguments.bool(forKey: "TwoTeams") {
+                settings.enterTeam(TeamInvite(code: "R0VERS", name: "Tuesday Rovers"))
+                settings.viewedTeam = "K7QM2P"
+            }
         }
         await team.load(code: "K7QM2P")
         if UserDefaults.standard.bool(forKey: "SeedFixtures") { await seedFixtures() }

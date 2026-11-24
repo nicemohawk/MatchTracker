@@ -19,9 +19,7 @@ struct SettingsView: View {
     @Environment(\.isPresented) private var isPresented
 
     @State private var playerName = ""
-    @State private var teamCode = ""
-    @FocusState private var focus: Focus?
-    private enum Focus { case name, teamCode }
+    @FocusState private var isNameFocused: Bool
 
     @State private var showingFields = false
     @State private var showingImport = false
@@ -66,14 +64,13 @@ struct SettingsView: View {
             }
             .onAppear {
                 playerName = settings.playerName
-                teamCode = settings.teamCode
 #if DEBUG
                 serverOverride = settings.serverURLOverride
 #endif
             }
-            // Committed when you finish a field, not per keystroke: the watch and the server would
-            // otherwise see half-typed team codes.
-            .onChange(of: focus) { commitProfile() }
+            // Committed when you finish, not per keystroke: the watch and the server would otherwise
+            // see half-typed names.
+            .onChange(of: isNameFocused) { commitProfile() }
             .onDisappear { commitProfile() }
             .task { await backlogImporter.scanIfNeeded() }
             .sheet(isPresented: $showingImport) { BacklogImportView() }
@@ -108,15 +105,7 @@ struct SettingsView: View {
                     .textContentType(.name)
                     .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
                     .submitLabel(.done)
-                    .focused($focus, equals: .name)
-            }
-            LabeledContent("Team code") {
-                TextField("Team code", text: $teamCode)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-                    .submitLabel(.done)
-                    .focused($focus, equals: .teamCode)
+                    .focused($isNameFocused)
             }
             if entitlements.entitledToTeam {
                 Button("Manage Subscription") { managingSubscription = true }
@@ -127,17 +116,14 @@ struct SettingsView: View {
         } header: {
             Text("Profile")
         } footer: {
-            Text("Your team sees this name.")
+            Text("Teammates see exactly this name. Your teams are in the Team tab.")
         }
     }
 
     private func commitProfile() {
         let name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let code = teamCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard name != settings.playerName || code != settings.teamCode else { return }
-        settings.playerName = name
-        settings.teamCode = code
-        teamCode = code
+        guard name != settings.playerName else { return }
+        settings.rename(player: name)
         environment.settingsChanged()
     }
 
@@ -265,7 +251,7 @@ struct SettingsView: View {
         } header: {
             Text("Privacy")
         } footer: {
-            Text("Matches stay on your devices unless you’re on a team, which then sees the ones you record. Sharing fields sends only their outlines and names, so other players don’t have to draw them.")
+            Text("Matches stay on your devices unless you share them with a team. The Team tab says who sees what. Sharing fields sends only their outlines and names, so other players don’t have to draw them.")
         }
     }
 

@@ -24,7 +24,7 @@
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "Team stats, live dashboard, chat, formations",
+              "description" : "Notes on your team's moments",
               "displayName" : "MatchTracker Team",
               "locale" : "en_US"
             }

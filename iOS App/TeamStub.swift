@@ -5,12 +5,14 @@
 import Foundation
 import MatchTrackerKit
 
-/// Made-up team data for screenshots and UI tests: `-TeamStub full|new|quiet|error|live`.
+/// Made-up team data for screenshots and UI tests: `-TeamStub full|new|quiet|error|live`,
+/// `solo` (only you have played), `pair` (you and one teammate), `offline` (no signal, but something
+/// saved from before) or `removed` (the team has turned you away).
 @MainActor
 final class TeamStub {
     static let current: TeamStub? = UserDefaults.standard.string(forKey: "TeamStub").flatMap { TeamStub(rawValue: $0) }
 
-    private enum Scenario: String { case full, new, quiet, error, live }
+    private enum Scenario: String { case full, new, quiet, error, live, solo, pair, offline, removed }
     private let scenario: Scenario
 
     private init?(rawValue: String) {
@@ -18,12 +20,28 @@ final class TeamStub {
         self.scenario = scenario
     }
 
-    private let names = ["Maya Ortiz", "Ben Lachman", "Sam Whitfield", "Ana Kowalczyk", "Jordan Okafor", "Priya Raman", "Lou Bergström",
+    private var names: [String] {
+        switch scenario {
+        case .solo: return ["Ben Lachman"]
+        case .pair: return ["Maya Ortiz", "Ben Lachman"]
+        default: return Self.squad
+        }
+    }
+
+    private static let squad = ["Maya Ortiz", "Ben Lachman", "Sam Whitfield", "Ana Kowalczyk", "Jordan Okafor", "Priya Raman", "Lou Bergström",
                          "Theo Nakamura", "Chris Adeyemi", "Dana Fitzgerald-Moore", "Eli Sandoval", "Noor Haddad", "Gus Pereira"]
 
     private func respond() async throws {
         try? await Task.sleep(for: .milliseconds(150))
-        if scenario == .error { throw URLError(.notConnectedToInternet) }
+        if scenario == .error || scenario == .offline { throw URLError(.notConnectedToInternet) }
+        if scenario == .removed { throw APIError.httpStatus(403) }
+    }
+
+    /// Puts something from before on this device for `offline`, and nothing for the rest.
+    func prepareCache(code: String) {
+        TeamCache.remove(code)
+        guard scenario == .offline else { return }
+        TeamCache(season: makeStats(code: code, isWeek: false), lastMatch: TeamMinutes.matches(from: makeEvents()).first).save(code)
     }
 
     func stats(code: String, since: Date?) async throws -> TeamStats {
@@ -31,6 +49,10 @@ final class TeamStub {
         guard scenario != .new else { return TeamStats(teamCode: code, players: []) }
         let isWeek = since.map { $0 > Date().addingTimeInterval(-8 * 86_400) } ?? false
         if isWeek && scenario == .quiet { return TeamStats(teamCode: code, players: []) }
+        return makeStats(code: code, isWeek: isWeek)
+    }
+
+    private func makeStats(code: String, isWeek: Bool) -> TeamStats {
         let matches = isWeek ? 2.0 : 9.0
         let players = names.enumerated().compactMap { index, name -> TeamStats.Player? in
             if isWeek && index > 8 { return nil }
@@ -73,7 +95,10 @@ final class TeamStub {
 
     func events() async throws -> [TeamEvent] {
         try await respond()
-        guard scenario != .new else { return [] }
+        return scenario == .new ? [] : makeEvents()
+    }
+
+    private func makeEvents() -> [TeamEvent] {
         var events: [TeamEvent] = []
         for match in 0..<6 {
             let kickoff = Date().addingTimeInterval(Double(match) * -7 * 86_400 - (scenario == .live ? 1.2 : 26) * 3600)
