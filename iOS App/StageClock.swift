@@ -52,7 +52,7 @@ final class StageClock {
         buildUp = HeatBuildUp(analytics)
         // Its runs are new ones, and there may be none.
         spotlight = nil
-        if mode == .runs, analytics.keyRuns.isEmpty { mode = .heat }
+        if mode == .runs, analytics.matchRuns.isEmpty { mode = .heat }
         if !isPlaying, !isOpening { filmWholeMatch() }
     }
 
@@ -90,8 +90,17 @@ final class StageClock {
         spotlight = nil
     }
 
+    /// Picks out a run where it lies, or none.
+    func pick(_ run: UUID?) {
+        stop()
+        choices += 1
+        mode = .runs
+        time = nil
+        spotlight = run
+    }
+
     /// Plays a run from just before it to just after, drawing it.
-    func show(_ run: KeyRun) {
+    func show(_ run: MatchRun) {
         choices += 1
         mode = .runs
         spotlight = run.id
@@ -138,11 +147,18 @@ final class StageClock {
         let from = min(max(from, 0), duration), to = min(max(to, from), duration)
         film = StageFilm(analytics: analytics, from: from, to: to, speed: Self.clipSpeed)
         isClip = true
+        // A run that's been played lies there whole again.
+        let finish: (StageClock) -> Void = { clock in clock.mode == .runs ? clock.settle() : clock.hold(at: to) }
         if UIAccessibility.isReduceMotionEnabled {
-            hold(at: to)
+            finish(self)
         } else {
-            run(from: from) { $0.hold(at: to) }
+            run(from: from, then: finish)
         }
+    }
+
+    private func settle() {
+        stop()
+        time = nil
     }
 
     private func hold(at time: TimeInterval) {

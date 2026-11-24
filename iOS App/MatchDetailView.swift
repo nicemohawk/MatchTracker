@@ -100,6 +100,10 @@ struct MatchDetailView: View {
                 }
             }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { visibleSize = $0 }
+            .onChange(of: clock.mode) { _, mode in
+                // The runs, the chart and what's said of them are read together.
+                if mode == .runs, !isWide { scroller.scrollTo(Self.stage, anchor: .top) }
+            }
             // Any touch, on anything.
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in clock.endOpening() },
                                  including: clock.isOpening ? .all : .subviews)
@@ -146,12 +150,19 @@ struct MatchDetailView: View {
         }
     }
 
+    /// How to be told which way they attacked, where that would settle it.
+    private func direction(for detail: MatchDetailModel, _ analytics: MatchAnalytics) -> ((Bool) -> Void)? {
+        guard AttackDirection.canBeTold(format: detail.matchFormat, halftime: analytics.halftime, interval: analytics.interval) else { return nil }
+        let drawn = analytics.attackDirection.flipsAttack
+        return { isUp in store.setFlipsAttack(isUp ? drawn : !drawn, for: detail.matchIdentifier) }
+    }
+
     @ViewBuilder
     private func picture(_ detail: MatchDetailModel) -> some View {
         if let analytics = detail.analytics, analytics.hasRoute {
             MatchStage(clock: clock, analytics: analytics, events: detail.events,
                        seasonHeat: store.season(SeasonSummary.Term(containing: detail.matchStart)).heat,
-                       height: stageHeight)
+                       height: stageHeight, onDirection: direction(for: detail, analytics))
                 .id(Self.stage)
         } else if let analytics = detail.analytics, let stints = analytics.stints {
             StintsHero(stints: stints, playing: analytics.playingIntervals, series: detail.heartRateSeries,
@@ -179,8 +190,11 @@ struct MatchDetailView: View {
             }
             MomentsChapter(detail: detail, onEdit: { sheet = .edit },
                            onShow: detail.analytics?.hasRoute == true ? { moment in show(on: scroller) { clock.show(moment) } } : nil)
-            if let runs = detail.analytics?.keyRuns, !runs.isEmpty {
-                BestRunsChapter(runs: runs, minutes: detail.minutes) { run in show(on: scroller) { clock.show(run) } }
+            if let analytics = detail.analytics, !analytics.matchRuns.isEmpty {
+                RunsChapter(analytics: analytics, report: analytics.runReport, minutes: detail.minutes,
+                            usual: detail.digest?.usualRuns(among: Array(store.digests.values))) { run in
+                    show(on: scroller) { clock.pick(run.id) }
+                }
             }
             if let analytics = detail.analytics {
                 EffortChapter(detail: detail, analytics: analytics)

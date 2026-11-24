@@ -176,64 +176,6 @@ extension MatchEventKind {
     }
 }
 
-// MARK: - Best runs
-
-struct BestRunsChapter: View {
-    let runs: [KeyRun]
-    let minutes: MatchMinutes
-    /// Plays a run on the pitch.
-    let onShow: (KeyRun) -> Void
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Best runs").font(.name(.title3))
-            VStack(spacing: 0) {
-                ForEach(runs) { run in
-                    Button { onShow(run) } label: { row(run) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(spoken(run))
-                        .accessibilityHint("Plays it on the pitch")
-                }
-            }
-        }
-    }
-
-    private func start(of run: KeyRun) -> Date { run.segment.interval.start }
-
-    private func spoken(_ run: KeyRun) -> String {
-        let units = UnitSystem.current
-        return [run.title, "\(units.speed(run.peakSpeed).spoken) over \(units.shortDistance(run.distanceMeters).spoken)",
-                minutes.spoken(for: start(of: run)), run.detail].compactMap { $0 }.joined(separator: ", ")
-    }
-
-    private func row(_ run: KeyRun) -> some View {
-        let isLarge = dynamicTypeSize.isAccessibilitySize
-        let layout = isLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 14))
-        return layout {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(run.title).font(.body)
-                (Text(minutes.text(for: start(of: run))).foregroundStyle(.tint)
-                    + Text(run.detail.map { " · \($0)" } ?? ""))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            if !isLarge { Spacer(minLength: 8) }
-            VStack(alignment: isLarge ? .leading : .trailing, spacing: 2) {
-                Text(UnitSystem.current.speed(run.peakSpeed).text)
-                    .font(.figure(.title3))
-                    .monospacedDigit()
-                Text(UnitSystem.current.shortDistance(run.distanceMeters).text)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-        .padding(.vertical, isLarge ? 6 : 0)
-        .contentShape(Rectangle())
-    }
-}
-
 // MARK: - Effort
 
 /// How hard it was, in a word and one chart.

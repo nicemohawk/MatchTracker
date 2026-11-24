@@ -222,6 +222,52 @@ final class DesignCapture: XCTestCase {
         screenshot("73-kit-summary")
     }
 
+    func testRuns() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(8)
+        app.tabBars.buttons["Matches"].tap()
+        sleep(2)
+        app.collectionViews.cells.element(boundBy: 3).tap()
+        sleep(6)
+        app.segmentedControls.buttons["Runs"].tap()
+        sleep(2)
+        screenshot("76-runs-1")
+        if app.buttons["Up"].exists { app.buttons["Up"].tap(); sleep(5) }
+        screenshot("76-runs-2")
+        let strip = app.otherElements.matching(NSPredicate(format: "label CONTAINS 'Minute'")).firstMatch
+        let bar = strip.exists ? strip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                               : app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.5))
+        bar.press(forDuration: 0.5, thenDragTo: bar.withOffset(CGVector(dx: 6, dy: 0)))
+        sleep(1)
+        screenshot("76-runs-3")
+        app.swipeUp()
+        sleep(1)
+        screenshot("76-runs-4")
+        app.swipeUp()
+        sleep(1)
+        screenshot("76-runs-5")
+        let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'All ' AND label ENDSWITH 'runs'")).firstMatch
+        if all.waitForExistence(timeout: 3) { all.tap(); sleep(2); screenshot("76-runs-6") }
+    }
+
+    func testFirstRun() {
+        app.launchArguments += ["-hasOnboarded", "NO", "-serverURLOverride", "http://127.0.0.1:9"]
+        app.launch()
+        sleep(3)
+        screenshot("75-first-run-1")
+        app.buttons["Continue"].tap()
+        sleep(2)
+        screenshot("75-first-run-2")
+        app.buttons["Continue"].tap()
+        handleHealthKitPrompt(app: app, timeout: 6)
+        sleep(4)
+        screenshot("75-first-run-3")
+        app.swipeUp()
+        sleep(1)
+        screenshot("75-first-run-4")
+    }
+
     func testSettings() {
         app.launchArguments += ["-hasOnboarded", "YES", "-asksAfterMatches", "NO", "-serverURLOverride", "http://127.0.0.1:9"]
         app.launch()

@@ -11,11 +11,14 @@ struct MatchStage: View {
     let events: [MatchEvent]
     let seasonHeat: [Float]?
     let height: CGFloat
+    /// Told whether the wearer attacked up the screen, when that isn't known.
+    var onDirection: ((Bool) -> Void)?
 
     @State private var width: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var duration: TimeInterval { analytics.interval.duration }
+    private var runsHeight: CGFloat { min(height, 350) }
     private var isSeason: Bool { clock.mode == .season }
     /// Whether a moment, rather than the whole match, was asked for.
     private var isTimed: Bool { clock.time != nil && !clock.isOpening }
@@ -24,7 +27,7 @@ struct MatchStage: View {
         StageClock.Mode.allCases.filter { mode in
             switch mode {
             case .heat: return true
-            case .runs: return !analytics.keyRuns.isEmpty
+            case .runs: return !analytics.matchRuns.isEmpty
             case .season: return seasonHeat != nil
             }
         }
@@ -37,7 +40,7 @@ struct MatchStage: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 .gesture(scrub)
                 .accessibilityAdjustableAction { direction in
-                    guard !isSeason else { return }
+                    guard !isSeason, clock.mode != .runs else { return }
                     clock.scrub(to: (clock.time ?? 0) + (direction == .increment ? 300 : -300))
                 }
                 .accessibilityValue(spokenValue)
@@ -45,14 +48,18 @@ struct MatchStage: View {
                 .overlay(alignment: .bottom) { controls }
 
             VStack(spacing: 14) {
-                if isTimed {
-                    timeline.transition(.opacity.combined(with: .move(edge: .top)))
-                }
                 if modes.count > 1 {
                     Picker("Show", selection: Binding(get: { clock.mode }, set: { clock.select($0) })) {
                         ForEach(modes) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                }
+                if clock.mode == .runs {
+                    RunStrip(clock: clock, analytics: analytics, events: events)
+                    RunDetailCard(clock: clock, analytics: analytics, report: analytics.runReport,
+                                  onDirection: analytics.isDirectionConfident ? nil : onDirection)
+                } else if isTimed {
+                    timeline.transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
             .padding(.horizontal)
@@ -73,15 +80,33 @@ struct MatchStage: View {
         let picture = heat
         let player = isTimed ? clock.time : nil
         return HeatPitch(heat: picture.heat, heatReference: picture.reference,
-                         heatOpacity: clock.mode == .runs ? 0.25 : 1,
+                         heatOpacity: clock.mode == .runs ? 0.12 : 1,
                          size: PitchSize(analytics.rectangle), marks: marks,
                          runs: clock.mode == .runs ? runs : [],
                          currentPosition: player.flatMap { clock.film?.player(at: $0) },
                          trail: player.flatMap { clock.film?.trail(at: $0) } ?? [],
-                         insets: EdgeInsets(top: 16, leading: 12, bottom: 16, trailing: 12),
+                         insets: Self.insets,
                          directionIsKnown: analytics.isDirectionConfident)
-            .frame(height: height)
+            // The runs share the screen with what's said about them.
+            .frame(height: clock.mode == .runs ? runsHeight : height)
+            .onTapGesture { location in pickRun(at: location) }
     }
+
+    /// The run nearest a tap, if it was on one.
+    private func pickRun(at location: CGPoint) {
+        guard clock.mode == .runs, width > 0 else { return }
+        let artist = PitchArtist(size: PitchSize(analytics.rectangle), canvas: CGSize(width: width, height: runsHeight),
+                                 insets: Self.insets)
+        let nearest = analytics.matchRuns.compactMap { run -> (id: UUID, distance: CGFloat)? in
+            run.points.map { point in
+                let place = artist.place(PitchPoint(point))
+                return hypot(place.x - location.x, place.y - location.y)
+            }.min().map { (run.id, $0) }
+        }.min { $0.distance < $1.distance }
+        clock.pick(nearest.flatMap { $0.distance < 28 ? $0.id : nil })
+    }
+
+    private static let insets = EdgeInsets(top: 16, leading: 12, bottom: 16, trailing: 12)
 
     private var heat: (heat: PitchHeat, reference: Float?) {
         if isSeason, let seasonHeat { return (PitchHeat(digestHeat: seasonHeat), nil) }
@@ -112,17 +137,18 @@ struct MatchStage: View {
     }
 
     private var runs: [PitchRun] {
-        let best = clock.spotlight ?? analytics.keyRuns.first?.id
-        return analytics.keyRuns.map { run in
-            let isBest = run.id == best
-            var line = PitchRun(points: run.points.map { PitchPoint($0) }, isBest: isBest)
-            if isBest { line.label = UnitSystem.current.speed(run.peakSpeed).text }
-            if let spotlight = clock.spotlight {
-                if run.id != spotlight {
-                    line.opacity = 0.3
-                } else if let time = clock.time, run.toT > run.fromT {
+        analytics.matchRuns.filter { $0.points.count >= 2 }.map { run in
+            let isPicked = run.id == clock.spotlight
+            var line = PitchRun(points: run.points.map { PitchPoint($0) }, isBest: isPicked, yarn: run.heading?.yarn)
+            guard clock.spotlight != nil else { return line }
+            if isPicked {
+                line.label = UnitSystem.current.speed(run.peakSpeed).text
+                line.yarn = KitColors.ivory
+                if let time = clock.time, run.toT > run.fromT {
                     line.progress = min(max((time - run.fromT) / (run.toT - run.fromT), 0), 1)
                 }
+            } else {
+                line.opacity = 0.22
             }
             return line
         }
@@ -151,9 +177,9 @@ struct MatchStage: View {
     private func date(at time: TimeInterval) -> Date { analytics.interval.start.addingTimeInterval(time) }
 
     private var spokenValue: String {
-        let runs = analytics.keyRuns.map { "\($0.title), \(UnitSystem.current.speed($0.peakSpeed).spoken)" }
+        let runs = analytics.runReport
         return [clock.time.map { minutes.spoken(for: date(at: $0)) },
-                clock.mode == .runs ? runs.joined(separator: "; ") : nil].compactMap { $0 }.joined(separator: ". ")
+                clock.mode == .runs ? "\(runs.runs.count) runs. \(runs.headline ?? "")" : nil].compactMap { $0 }.joined(separator: ". ")
     }
 
     @ViewBuilder
@@ -172,11 +198,14 @@ struct MatchStage: View {
     private var controls: some View {
         if !isSeason {
             HStack {
-                Button { clock.isPlaying ? clock.pause() : clock.play() } label: {
-                    StageSymbol(title: clock.isPlaying ? "Pause" : "Play", name: clock.isPlaying ? "pause.fill" : "play.fill")
+                // Among the runs there's only one worth playing: the one picked out.
+                if clock.mode != .runs || clock.spotlight != nil {
+                    Button { clock.isPlaying ? clock.pause() : play() } label: {
+                        StageSymbol(title: clock.isPlaying ? "Pause" : "Play", name: clock.isPlaying ? "pause.fill" : "play.fill")
+                    }
                 }
                 Spacer()
-                if isTimed {
+                if isTimed, clock.mode != .runs {
                     Button { clock.showWholeMatch() } label: {
                         StageSymbol(title: "Whole Match", name: "arrow.counterclockwise")
                     }
@@ -184,6 +213,14 @@ struct MatchStage: View {
             }
             .modifier(StageButtons())
             .padding(12)
+        }
+    }
+
+    private func play() {
+        if clock.mode == .runs, let run = analytics.matchRuns.first(where: { $0.id == clock.spotlight }) {
+            clock.show(run)
+        } else {
+            clock.play()
         }
     }
 
@@ -198,7 +235,7 @@ struct MatchStage: View {
     private var scrub: some Gesture {
         DragGesture(minimumDistance: 24)
             .onChanged { value in
-                guard !isSeason, width > 0, abs(value.translation.width) > abs(value.translation.height) else { return }
+                guard !isSeason, clock.mode != .runs, width > 0, abs(value.translation.width) > abs(value.translation.height) else { return }
                 clock.scrub(to: value.location.x / width * duration)
             }
     }

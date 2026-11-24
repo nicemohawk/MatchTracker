@@ -171,9 +171,10 @@ private struct KitRow: View {
                             Button { settings.wear(kit) } label: {
                                 Circle()
                                     .fill(Color(cgColor: kit.cloth.cgColor))
-                                    .overlay { Circle().strokeBorder(Theme.ivory, lineWidth: isWorn ? 4 : 1.5) }
-                                    .frame(width: 40, height: 40)
+                                    .overlay { Circle().strokeBorder(Theme.ivory.opacity(0.5), lineWidth: 1) }
+                                    .frame(width: 36, height: 36)
                                     .frame(width: 48, height: 48)
+                                    .overlay { if isWorn { Circle().strokeBorder(.primary, lineWidth: 3) } }
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(preset.title)
@@ -289,6 +290,8 @@ private struct FirstMatchPage: View {
                 Text("For your next match").font(.name(.title3)).accessibilityAddTraits(.isHeader)
                 OnboardingRow(symbol: "applewatch", title: "Wear it snug",
                               detail: "Above the wrist bone, so it can read your heart rate.")
+                OnboardingRow(symbol: "shield", title: "Cover it",
+                              detail: "Wear a wrist sweatband over your watch to protect other players.")
                 OnboardingRow(symbol: "play", title: "Start at kickoff",
                               detail: "Open MatchTracker on your watch and tap the match you’re playing. Your iPhone can stay in your bag.")
                 OnboardingRow(symbol: "soccerball", title: "Log goals when play stops",

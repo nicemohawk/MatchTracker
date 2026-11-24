@@ -20,10 +20,11 @@ public struct KitNumber: View {
     private var rendered: CGFloat { min(size * scale, size * 1.6) }
 
     public var body: some View {
+        let isCut = rendered >= 44
         letters(isDigits: true)
             // The two halves slide home when the number arrives or changes.
             .keyframeAnimator(initialValue: CGFloat(0), trigger: arrivals) { number, slip in
-                if rendered < 44 {
+                if !isCut {
                     number
                 } else {
                     number.mask { Half(isUpper: true) }.offset(x: -slip)

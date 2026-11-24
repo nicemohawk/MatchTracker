@@ -57,7 +57,7 @@ public struct AttackDirection: Equatable, Sendable {
                                reportedPositions: [ReportedPosition]?, chosen: Bool?) -> AttackDirection {
         let halftime = format == .match ? halftime : nil
         // Two halves played in opposite directions with no idea where they meet: no answer fits both.
-        let isMixed = format == .match && halftime == nil && interval.duration > longestSingleHalf
+        let isMixed = !canBeTold(format: format, halftime: halftime, interval: interval)
         if let chosen {
             return AttackDirection(flipsAttack: chosen, halftime: halftime, isConfident: !isMixed)
         }
@@ -66,6 +66,11 @@ public struct AttackDirection: Equatable, Sendable {
         let evidence = evidence(forward: forward, events: events, reportedPositions: reportedPositions)
         let isConfident = abs(evidence) >= confidentEvidence && !isMixed
         return AttackDirection(flipsAttack: isConfident && evidence < 0, halftime: halftime, isConfident: isConfident)
+    }
+
+    /// Whether being told would settle it. Not for two halves with no idea where they meet.
+    public static func canBeTold(format: MatchFormat, halftime: DateInterval?, interval: DateInterval) -> Bool {
+        format != .match || halftime != nil || interval.duration <= longestSingleHalf
     }
 
     private static let longestSingleHalf: TimeInterval = 55 * 60

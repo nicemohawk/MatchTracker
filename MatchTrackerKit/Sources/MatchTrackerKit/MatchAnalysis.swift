@@ -86,12 +86,15 @@ public struct MatchAnalytics: Sendable {
     public var heat: [Float]
     public var thirds: PitchThirds?
     public var keyRuns: [KeyRun]
+    /// Every run on the pitch, in order.
+    public var matchRuns: [MatchRun] = []
 
     public var heatColumns: Int { PortraitHeat.columns }
     public var heatRows: Int { PortraitHeat.rows }
     public var isDirectionConfident: Bool { attackDirection.isConfident }
     public var halftime: DateInterval? { attackDirection.halftime }
     public var hasRoute: Bool { !pitchPath.isEmpty }
+    public var runReport: RunReport { RunReport(runs: matchRuns, playing: playingIntervals, halftime: halftime) }
 }
 
 public enum MatchAnalyzer {
@@ -205,15 +208,19 @@ public enum MatchAnalyzer {
             return (point, min(max(0, gap), maximumSampleSeconds))
         }
         let isInside = normalized.map { $0.map { (0...1).contains($0.x) && (0...1).contains($0.y) } ?? false }
+        func points(of run: RunSegment) -> [CGPoint] {
+            // An end past the lines would be drawn held at them, pointing at nothing.
+            let inside = run.pointRange.filter { isInside[$0] }
+            guard let first = inside.first, let last = inside.last else { return [] }
+            return portrait[first...last].compactMap { $0 }
+        }
         let keyRuns = KeyRunSelector.select(runs: runs, events: input.events, interval: interval).map { run in
             var run = run
-            // An end past the lines would be drawn held at them, pointing at nothing.
-            let inside = run.segment.pointRange.filter { isInside[$0] }
-            if let first = inside.first, let last = inside.last {
-                run.points = portrait[first...last].compactMap { $0 }
-            }
+            run.points = points(of: run.segment)
             return run
         }
+        let matchRuns = MatchRun.all(from: runs, points: points, keyRuns: keyRuns, field: field.rectangle,
+                                     knowsDirection: direction.isConfident, playing: playingIntervals, start: interval.start)
 
         return MatchAnalytics(
             interval: interval,
@@ -235,7 +242,8 @@ public enum MatchAnalyzer {
             pitchPath: pitchPath(track: track, portrait: portrait, isInPlay: isInPlay, start: interval.start),
             heat: PortraitHeat.compute(points: weighted),
             thirds: thirds(weighted),
-            keyRuns: keyRuns)
+            keyRuns: keyRuns,
+            matchRuns: matchRuns)
     }
 
     // MARK: Field
@@ -377,6 +385,7 @@ public extension MatchDigest {
         if hasRoute {
             topSpeedMetersPerSecond = analytics.topSpeedMetersPerSecond
             sprintCount = analytics.runs.sprintCount
+            runCount = analytics.matchRuns.count
             heat = PortraitHeat.thumbnail(analytics.heat)
             heatIsDirected = analytics.isDirectionConfident
         }

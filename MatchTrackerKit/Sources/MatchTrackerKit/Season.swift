@@ -7,7 +7,7 @@ import Foundation
 /// it has to open a route.
 public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     /// Bump when a definition changes, so stale digests are recomputed rather than compared.
-    public static let currentVersion = 7
+    public static let currentVersion = 8
 
     public var version: Int
     public var id: UUID
@@ -29,6 +29,8 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     public var effort: Double?
     public var topSpeedMetersPerSecond: Double?
     public var sprintCount: Int?
+    /// Sprints are runs too. Nil without a route.
+    public var runCount: Int?
     public var averageHeartRate: Double?
     public var hasRoute: Bool
     /// Where the match was played, as a portrait `PortraitHeat` thumbnail. Nil without a route.
@@ -62,6 +64,18 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
         if let games { return games.won > games.lost ? .won : games.won < games.lost ? .lost : .drawn }
         guard let goalsUs, let goalsThem else { return nil }
         return goalsUs > goalsThem ? .won : goalsUs < goalsThem ? .lost : .drawn
+    }
+
+    /// How many runs this match would usually have held, by how often the player ran in the last few
+    /// of its kind. Nil with too few to say.
+    public func usualRuns(among history: [MatchDigest]) -> Double? {
+        let rates = history
+            .filter { $0.id != id && $0.startDate < startDate && $0.format == format && $0.secondsOnPitch > 600 }
+            .sorted { $0.startDate > $1.startDate }
+            .compactMap { digest in digest.runCount.map { Double($0) / digest.secondsOnPitch } }
+            .prefix(8)
+        guard rates.count >= 3 else { return nil }
+        return rates.reduce(0, +) / Double(rates.count) * secondsOnPitch
     }
 
     public var distancePerHour: Double? {

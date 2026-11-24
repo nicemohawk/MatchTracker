@@ -25,6 +25,8 @@ struct PitchRun: Hashable, Sendable {
     /// How much of it has been run, 0...1.
     var progress: Double = 1
     var opacity: Double = 1
+    /// What it's drawn in; ivory unless told.
+    var yarn: KitColors.RGB?
 }
 
 struct HeatPitch: View {
@@ -139,11 +141,13 @@ private struct PitchRuns: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Between one run starting and the next.
-    fileprivate static let stagger = 0.15
     fileprivate static let drawing = 0.45
 
+    /// However many there are, they're all down in about a second.
+    fileprivate static func stagger(_ count: Int) -> Double { min(0.15, 0.6 / Double(max(count, 1))) }
+
     var body: some View {
-        let total = Self.drawing + Self.stagger * Double(runs.count)
+        let total = Self.drawing + Self.stagger(runs.count) * Double(runs.count)
         let isDrawnOn = drawsOn && !reduceMotion
         PitchRunsCanvas(runs: runs, artist: artist, seconds: isDrawnOn ? seconds : total)
             .onAppear { withAnimation(.linear(duration: total)) { seconds = total } }
@@ -165,7 +169,7 @@ private struct PitchRunsCanvas: View, Animatable {
             guard !artist.isThumbnail else { return }
             let best = runs.filter(\.isBest), others = runs.filter { !$0.isBest }
             for (position, run) in (best + others).enumerated().reversed() {
-                let drawn = min((seconds - Double(position) * PitchRuns.stagger) / PitchRuns.drawing, run.progress)
+                let drawn = min((seconds - Double(position) * PitchRuns.stagger(runs.count)) / PitchRuns.drawing, run.progress)
                 context.withCGContext { cg in
                     artist.drawRun(run, in: cg, opacity: run.opacity, progress: drawn)
                 }
@@ -585,7 +589,8 @@ struct PitchArtist: Sendable {
             // A dark edge keeps it legible over the hottest heat.
             drawTapered(visible, in: cg, width: width * 1.9, color: (0.01, 0.05, 0.04), opacity: 0.55)
         }
-        drawTapered(visible, in: cg, width: width, color: (1, 1, 1), opacity: 1)
+        let yarn = run.yarn ?? KitColors.ivory
+        drawTapered(visible, in: cg, width: width, color: (yarn.red, yarn.green, yarn.blue), opacity: 1)
         // Mid-run, the player is the tip.
         guard progress >= 1, let tip = visible.last else { return }
         let back = visible[max(0, visible.count - 1 - max(2, visible.count / 8))]
@@ -599,7 +604,7 @@ struct PitchArtist: Sendable {
         cg.addLine(to: CGPoint(x: -head * 0.35, y: 0))
         cg.addLine(to: CGPoint(x: -head * 0.7, y: -head * 0.85))
         cg.closePath()
-        cg.setFillColor(white(1))
+        cg.setFillColor(yarn.cgColor)
         cg.fillPath()
         cg.restoreGState()
     }

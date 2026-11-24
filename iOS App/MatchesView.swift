@@ -138,7 +138,7 @@ struct MatchList: View {
             Section(section.title) {
                 ForEach(section.items) { item in
                     NavigationLink(value: item.id) { MatchRow(item: item, transition: transition) }
-                        .listRowBackground(Theme.surface)
+                        .listRowBackground(selection == nil ? Theme.surface : nil)
                         .swipeActions {
                             Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
                         }
