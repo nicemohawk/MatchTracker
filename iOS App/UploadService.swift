@@ -100,7 +100,7 @@ final class UploadService: ObservableObject {
               let teamCode = settings.teamCode.isEmpty ? nil : settings.teamCode else { return }
         Task {
             do {
-                try await client.postLive(update, matchUUID: deviceScopedLiveMatchID, teamCode: teamCode)
+                try await client.postLive(update, matchUUID: update.matchID ?? deviceScopedLiveMatchID, teamCode: teamCode)
                 breaker.recordSuccess()
             } catch {
                 breaker.recordFailure(transportLevel: CircuitBreaker.isTransportFailure(error))
@@ -147,6 +147,8 @@ final class UploadService: ObservableObject {
         for summary in summaries {
             let detail = matches.detailModel(for: summary)
             await detail.load()
+            // An unreadable match would upload as an empty one; it isn't marked, so it's tried again.
+            guard detail.state == .loaded else { continue }
             payloads.append(buildPayload(summary: summary, detail: detail))
             sentIDs.append(summary.id)
         }
