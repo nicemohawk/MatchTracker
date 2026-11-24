@@ -6,142 +6,147 @@ public struct PeriodDetectorConfiguration: Sendable {
     public var minimumBreak: TimeInterval        // shortest gap that reads as a period break (halftime-ish)
     public var maximumBreak: TimeInterval         // longest gap still counted as a break, not "match over"
     public var expectedPeriods: Int               // how many periods the match is expected to have
+    /// Where halftime may fall, as a fraction of the playing time before and after it.
+    public var halftimeFraction: ClosedRange<Double>
 
     public init() {
-        self.minimumBreak = 300
+        self.minimumBreak = 180
         self.maximumBreak = 1500
         self.expectedPeriods = 2
+        self.halftimeFraction = 0.35...0.65
     }
 }
 
 public enum PeriodDetector {
-    /// How far outside the touchline (meters) counts as off-pitch for the break signal.
-    private static let offPitchToleranceMeters = 5.0
-    /// Below this speed (m/s) the wearer is "stationary" (matches the standing speed zone).
-    private static let stationarySpeed = SpeedThresholds.walking
-    /// Sub-break inactivity spans closer than this (seconds) are merged into one break.
-    private static let mergeToleranceSeconds = 10.0
+    private static let binSeconds = 10.0
+    /// Activity is averaged over this many bins either side, so one jog to fetch a ball doesn't
+    /// end halftime and one stoppage doesn't start it.
+    private static let smoothingBins = 3
+    /// A minute is quiet below this fraction of the match's usual activity.
+    private static let quietFraction = 0.4
+    /// Halftime isn't all standing still: quiet stretches with this little (seconds) between them
+    /// are one break, so long as what's between is gentler than play.
+    private static let bridgedSeconds = 120.0
+    private static let bridgedFraction = 0.8
+    /// Minutes below this speed (m/s) say nothing about how active the match usually was.
+    private static let activeSpeed = SpeedThresholds.walking
 
-    /// Infers `periodEnd`/`periodStart` pairs from sustained whole-team-off signals a single
-    /// device can see: long stretches where the wearer is off-pitch (when a projector is known)
-    /// or stationary-at-edge, plus GPS coverage holes. Breaks whose duration falls in
-    /// `minimumBreak...maximumBreak` are candidates; for a two-period match the candidate nearest
-    /// the match midpoint wins. Emits `periodEnd` at each break's start and `periodStart` at its
-    /// end (source `.automatic`). Returns `[]` when the track already carries period events, so it
-    /// never fights manual/existing markers.
+    /// Infers `periodEnd`/`periodStart` pairs from the stretches where the wearer all but stops
+    /// moving, or where there are no fixes at all. A field isn't needed, so a wrong one can't
+    /// mislead it.
+    ///
+    /// Standing about before kickoff and after the final whistle is not playing time. For a
+    /// two-period match the break must split the playing time near the middle
+    /// (`halftimeFraction`); the one nearest half wins, and none is better than a wrong one.
+    /// Emits `periodEnd` at each break's start and `periodStart` at its end (source `.automatic`).
+    /// Returns `[]` when period events already exist, so it never fights manual markers.
     public static func detectPeriods(track: [TrackPoint], events: [MatchEvent],
-                                     projector: FieldProjector?,
-                                     configuration: PeriodDetectorConfiguration) -> [MatchEvent] {
+                                     configuration: PeriodDetectorConfiguration = .init()) -> [MatchEvent] {
         // Never override existing period structure.
         if events.contains(where: { $0.kind == .periodStart || $0.kind == .periodEnd }) { return [] }
         // 0 = "no fixed period count" (pickup): return every qualifying break. Otherwise need >= 2
         // periods (a one-period match has no internal break to detect).
         guard configuration.expectedPeriods == 0 || configuration.expectedPeriods >= 2 else { return [] }
 
+        return breaks(in: track, configuration: configuration).flatMap {
+            [MatchEvent(kind: .periodEnd, date: $0.start, source: .automatic),
+             MatchEvent(kind: .periodStart, date: $0.end, source: .automatic)]
+        }
+    }
+
+    /// Halftime of a formal match: what the wearer marked, if believable, else what the track shows.
+    /// Automatic events already on the record are ignored; the track is the better witness.
+    public static func halftime(track: [TrackPoint], events: [MatchEvent], interval: DateInterval) -> DateInterval? {
+        let manual = events
+            .filter { $0.source == .manual && interval.contains($0.date) }
+            .sorted { $0.date < $1.date }
+        let marked = manual.filter { $0.kind == .periodEnd }.compactMap { end in
+            manual.first { $0.kind == .periodStart && $0.date > end.date }
+                .map { DateInterval(start: end.date, end: $0.date) }
+        }
+        let believable = marked.first {
+            let fraction = $0.start.timeIntervalSince(interval.start) / max(interval.duration - $0.duration, 1)
+            return $0.duration <= 45 * 60 && (0.2...0.8).contains(fraction)
+        }
+        return believable ?? breaks(in: track, configuration: .init()).first
+    }
+
+    private static func breaks(in track: [TrackPoint], configuration: PeriodDetectorConfiguration) -> [DateInterval] {
         let ordered = track.sorted { $0.timestamp < $1.timestamp }
-        guard ordered.count >= 2,
-              let matchStart = ordered.first?.timestamp,
-              let matchEnd = ordered.last?.timestamp,
-              matchEnd > matchStart else { return [] }
+        guard let start = ordered.first?.timestamp, let end = ordered.last?.timestamp, end > start else { return [] }
 
-        let speeds = rawPointSpeeds(ordered)
+        let activity = smoothedActivity(of: ordered, from: start, to: end)
+        let active = activity.filter { $0 >= activeSpeed }
+        guard !active.isEmpty else { return [] }
+        let usual = median(active)
+        let quiet = activity.map { $0 < quietFraction * usual }
 
-        // Raw break spans: runs of inactive fixes, plus inter-fix coverage holes.
-        var spans: [DateInterval] = []
+        guard let firstPlayed = quiet.firstIndex(of: false), let lastPlayed = quiet.lastIndex(of: false) else { return [] }
 
-        var runStart: Date?
-        var runEnd: Date?
-        for index in ordered.indices {
-            if isInactive(point: ordered[index], speed: speeds[index], projector: projector) {
-                if runStart == nil { runStart = ordered[index].timestamp }
-                runEnd = ordered[index].timestamp
-            } else if let start = runStart, let end = runEnd, end > start {
-                spans.append(DateInterval(start: start, end: end))
-                runStart = nil; runEnd = nil
+        // Runs of quiet bins strictly inside play.
+        var candidates: [Range<Int>] = []
+        var runStart: Int?
+        for index in firstPlayed...lastPlayed {
+            if quiet[index] {
+                runStart = runStart ?? index
+            } else if let first = runStart {
+                candidates.append(first..<index)
+                runStart = nil
+            }
+        }
+        candidates = candidates.reduce(into: []) { merged, next in
+            if let last = merged.last,
+               Double(next.lowerBound - last.upperBound) * binSeconds <= bridgedSeconds,
+               mean(Array(activity[last.upperBound..<next.lowerBound])) < bridgedFraction * usual {
+                merged[merged.count - 1] = last.lowerBound..<next.upperBound
             } else {
-                runStart = nil; runEnd = nil
-            }
-
-            // Coverage hole: a large jump to the next fix is itself a candidate break span.
-            if index < ordered.count - 1 {
-                let gap = ordered[index + 1].timestamp.timeIntervalSince(ordered[index].timestamp)
-                if gap > mergeToleranceSeconds {
-                    spans.append(DateInterval(start: ordered[index].timestamp, end: ordered[index + 1].timestamp))
-                }
+                merged.append(next)
             }
         }
-        if let start = runStart, let end = runEnd, end > start {
-            spans.append(DateInterval(start: start, end: end))
+        let qualifying = candidates.filter {
+            let duration = Double($0.count) * binSeconds
+            return duration >= configuration.minimumBreak && duration <= configuration.maximumBreak
         }
 
-        let breaks = candidateBreaks(from: spans, configuration: configuration)
-        guard !breaks.isEmpty else { return [] }
-
-        let chosen = selectBreaks(breaks, matchStart: matchStart, matchEnd: matchEnd, configuration: configuration)
-
-        var result: [MatchEvent] = []
-        for interval in chosen {
-            result.append(MatchEvent(kind: .periodEnd, date: interval.start, source: .automatic))
-            result.append(MatchEvent(kind: .periodStart, date: interval.end, source: .automatic))
+        func interval(_ bins: Range<Int>) -> DateInterval {
+            DateInterval(start: start.addingTimeInterval(Double(bins.lowerBound) * binSeconds),
+                         end: start.addingTimeInterval(Double(bins.upperBound) * binSeconds))
         }
-        return result.sorted { $0.date < $1.date }
+        func playedFraction(_ bins: Range<Int>) -> Double {
+            let before = Double(bins.lowerBound - firstPlayed), after = Double(lastPlayed + 1 - bins.upperBound)
+            return before / (before + after)
+        }
+
+        switch configuration.expectedPeriods {
+        case 0:
+            return qualifying.map(interval)
+        case 2:
+            return qualifying
+                .filter { configuration.halftimeFraction.contains(playedFraction($0)) }
+                .min { abs(playedFraction($0) - 0.5) < abs(playedFraction($1) - 0.5) }
+                .map { [interval($0)] } ?? []
+        default:
+            return qualifying
+                .sorted { $0.count > $1.count }
+                .prefix(configuration.expectedPeriods - 1)
+                .map(interval)
+                .sorted { $0.start < $1.start }
+        }
     }
 
-    /// Whether a fix reads as a break: off-pitch (needs a projector), or stationary — anywhere
-    /// when no field is known, otherwise only near a field edge (players idle at the touchline
-    /// during breaks, not mid-pitch).
-    private static func isInactive(point: TrackPoint, speed: Double, projector: FieldProjector?) -> Bool {
-        guard let projector else { return speed < stationarySpeed }
-        if !projector.contains(point.coordinate, toleranceMeters: offPitchToleranceMeters) { return true }
-        guard speed < stationarySpeed, let normalized = projector.normalizedPoint(for: point.coordinate) else { return false }
-        return normalized.x < 0.15 || normalized.x > 0.85 || normalized.y < 0.15 || normalized.y > 0.85
-    }
-
-    /// Merge overlapping/adjacent break spans, then keep those whose duration is in range.
-    private static func candidateBreaks(from spans: [DateInterval], configuration: PeriodDetectorConfiguration) -> [DateInterval] {
-        guard !spans.isEmpty else { return [] }
-        let sorted = spans.sorted { $0.start < $1.start }
-
-        var merged: [DateInterval] = [sorted[0]]
-        for span in sorted.dropFirst() {
-            let last = merged[merged.count - 1]
-            if span.start <= last.end.addingTimeInterval(mergeToleranceSeconds) {
-                merged[merged.count - 1] = DateInterval(start: last.start, end: max(last.end, span.end))
-            } else {
-                merged.append(span)
-            }
+    /// Mean speed per bin, smoothed. A bin without fixes is as quiet as one standing still.
+    private static func smoothedActivity(of track: [TrackPoint], from start: Date, to end: Date) -> [Double] {
+        let count = Int(end.timeIntervalSince(start) / binSeconds) + 1
+        var sums = [Double](repeating: 0, count: count)
+        var samples = [Double](repeating: 0, count: count)
+        for (point, speed) in zip(track, rawPointSpeeds(track)) {
+            let bin = Int(point.timestamp.timeIntervalSince(start) / binSeconds)
+            sums[bin] += min(speed, SpeedThresholds.plausibleMaximum)
+            samples[bin] += 1
         }
-
-        return merged.filter { $0.duration >= configuration.minimumBreak && $0.duration <= configuration.maximumBreak }
-    }
-
-    /// Pick which candidate breaks become period boundaries. For a pickup session
-    /// (`expectedPeriods == 0`) every qualifying break is a boundary. For two periods, take the
-    /// single break nearest the match midpoint; otherwise take the `expectedPeriods - 1` longest.
-    private static func selectBreaks(_ breaks: [DateInterval], matchStart: Date, matchEnd: Date,
-                                     configuration: PeriodDetectorConfiguration) -> [DateInterval] {
-        if configuration.expectedPeriods == 0 {
-            return breaks.sorted { $0.start < $1.start }
+        let activity = zip(sums, samples).map { $1 > 0 ? $0 / $1 : 0 }
+        return activity.indices.map { index in
+            mean(Array(activity[max(0, index - smoothingBins)...min(count - 1, index + smoothingBins)]))
         }
-
-        let wanted = configuration.expectedPeriods - 1
-        guard wanted >= 1 else { return [] }
-
-        if configuration.expectedPeriods == 2 {
-            let midpoint = matchStart.addingTimeInterval(matchEnd.timeIntervalSince(matchStart) / 2)
-            let nearest = breaks.min { lhs, rhs in
-                abs(center(of: lhs).timeIntervalSince(midpoint)) < abs(center(of: rhs).timeIntervalSince(midpoint))
-            }
-            return nearest.map { [$0] } ?? []
-        }
-
-        return breaks
-            .sorted { $0.duration > $1.duration }
-            .prefix(wanted)
-            .sorted { $0.start < $1.start }
-    }
-
-    private static func center(of interval: DateInterval) -> Date {
-        interval.start.addingTimeInterval(interval.duration / 2)
     }
 }

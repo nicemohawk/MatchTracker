@@ -79,10 +79,7 @@ struct WorkrateSection: View {
             Label("Load balance builds after a few more matches", systemImage: "chart.line.uptrend.xyaxis")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-        } else if let acwr = TrainingLoadService.acuteChronic(
-            acute: store.recentAverageWorkrate(days: 7, excluding: detail.matchIdentifier),
-            chronic: store.recentAverageWorkrate(days: 28, excluding: detail.matchIdentifier)
-        ) {
+        } else if let acwr = TrainingLoadService.acuteChronic(ratio: store.loadRatio(asOf: Date())) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text("7d : 28d load")

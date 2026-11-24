@@ -248,7 +248,7 @@ struct HeatmapSection: View {
             comparePitch(seasonAverage: cohort.average)
             HeatmapLegend()
         case .difference:
-            if let diff = analytics.heatmap.difference(from: cohort.average) {
+            if let diff = cohort.current.difference(from: cohort.average) {
                 PitchHeatmapCanvas(render: .difference(diff))
                     .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
                     .background(Theme.pitchTurfBottom)

@@ -1,7 +1,7 @@
 // MatchStore.swift
 // MatchTracker
 
-import Foundation
+import UIKit
 import HealthKit
 import MatchTrackerKit
 #if canImport(os)
@@ -17,8 +17,7 @@ struct MatchBadge: Codable, Equatable {
     var confidence: Double?
     var fieldName: String?
     var hasRoute: Bool
-    /// Route-integrated distance from the analysis — the number the detail view shows. Rows prefer
-    /// it over the HKWorkout total so list and detail never disagree. Optional for back-compat.
+    /// The analysis's distance. Optional for back-compat.
     var routeDistanceMeters: Double?
     /// Set when a field edit invalidates the field-derived parts (name, position). A stale badge
     /// still seeds the row instantly — crucially `hasRoute`, which no field edit can change — while
@@ -59,6 +58,9 @@ struct MatchSummary: Identifiable {
     var startDate: Date { workout?.startDate ?? record?.startDate ?? cached?.startDate ?? .distantPast }
 
     var duration: TimeInterval {
+        if let record, record.trimmedStart != nil || record.trimmedEnd != nil {
+            return record.played(within: recordedInterval).duration
+        }
         if let workout { return workout.duration }
         if let record, let end = record.endDate { return end.timeIntervalSince(record.startDate) }
         return cached?.duration ?? 0
@@ -68,6 +70,26 @@ struct MatchSummary: Identifiable {
         if let meters = workout?.statistics(for: HKQuantityType(.distanceWalkingRunning))?
             .sumQuantity()?.doubleValue(for: .meter()) { return meters }
         return cached?.distanceMeters ?? 0
+    }
+
+    /// Whether there is anything to read the match from. Not yet for a cold-cache row still waiting
+    /// for the workout it is known to have.
+    var hasSource: Bool { workout != nil || (record != nil && cached?.hasWorkout != true) }
+
+    var format: MatchTrackerKit.MatchFormat { Self.format(workout: workout, record: record) }
+
+    /// The whole recording, before any trim.
+    var recordedInterval: DateInterval { Self.recordedInterval(workout: workout, record: record) }
+
+    static func format(workout: HKWorkout?, record: MatchRecord?) -> MatchTrackerKit.MatchFormat {
+        if let format = record?.format { return format }
+        return workout?.metadata?[HKMetadataKeyIndoorWorkout] as? Bool == true ? .indoor : .match
+    }
+
+    static func recordedInterval(workout: HKWorkout?, record: MatchRecord?) -> DateInterval {
+        let start = record?.startDate ?? workout?.startDate ?? .distantPast
+        let end = record?.endDate ?? workout?.endDate ?? start
+        return DateInterval(start: start, end: max(start, end))
     }
 
     /// A `PersistedMatchSummary` snapshot of this row's top-line numbers, for the cold-launch cache.
@@ -109,6 +131,18 @@ final class MatchStore: ObservableObject {
     /// The in-flight badge-cache decode; `loadedBadge(for:)` awaits it so the expensive per-row
     /// cold path never fires just because the cache "looks empty" while still loading.
     private var badgeCacheLoadTask: Task<Void, Never>?
+    /// Every match's digest, for lists, seasons and comparisons: nothing that reads these has to
+    /// open a route. Loaded from disk at launch, filled and refreshed in the background.
+    @Published private(set) var digests: [UUID: MatchDigest] = [:]
+    private var digestCache = DigestCache()
+    private nonisolated static let digestCacheFileName = "matchDigests.json"
+    private var digestLoadTask: Task<Void, Never>?
+    private var digestFillTask: Task<Void, Never>?
+    private var needsAnotherDigestFill = false
+    /// Matches not worth reading again this launch: they failed, or still have no route.
+    private var digestsTriedThisLaunch: Set<UUID> = []
+    private var protectedDataObserver: NSObjectProtocol?
+
     private nonisolated static let badgeCacheFileName = "matchBadges.json"
     /// Persisted lightweight row snapshots (see `PersistedMatchSummary`) so the list paints the
     /// last-known rows synchronously on cold launch, before the HK workout query returns.
@@ -142,6 +176,18 @@ final class MatchStore: ObservableObject {
             self.badgeCache = loaded.merging(self.badgeCache) { _, fresh in fresh }
             self.contentVersion &+= 1
         }
+        digestLoadTask = Task { [weak self] in
+            let loaded = await Task.detached(priority: .userInitiated) { Self.loadDigestCache() }.value
+            guard let self else { return }
+            digestCache.entries.merge(loaded.entries) { fresh, _ in fresh }
+            digests = digestCache.entries.mapValues(\.digest)
+        }
+        // HealthKit is closed while the phone is locked; carry on when it opens.
+        protectedDataObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.fillDigests() }
+        }
         initialRecordsAttach = Task(priority: .userInitiated) { [weak self] in
             let records = await Task.detached(priority: .userInitiated) { Self.loadRecordsFromDisk() }.value
             self?.attach(records: records)
@@ -174,6 +220,30 @@ final class MatchStore: ObservableObject {
         guard updated else { return }
         matches = merged
         contentVersion &+= 1
+        updateDetailModels()
+    }
+
+    /// Hand open matches what the list just learned, so one opened before its workout or record
+    /// arrived doesn't stay empty.
+    private func updateDetailModels() {
+        for summary in matches {
+            detailCache[summary.id]?.update(from: summary)
+        }
+    }
+
+    /// Workouts as the list shows them: no deleted ones, and one per match when two apps recorded it.
+    func fetchListedWorkouts(records: [UUID: MatchRecord]) async throws -> [HKWorkout] {
+        listed(try await healthKit.fetchMatchWorkouts(), records: records)
+    }
+
+    private func listed(_ workouts: [HKWorkout], records: [UUID: MatchRecord]) -> [HKWorkout] {
+        let duplicates = WorkoutSpan.duplicates(among: workouts.map { workout in
+            let record = records[workout.uuid]
+            let recorded = MatchSummary.recordedInterval(workout: workout, record: record)
+            return WorkoutSpan(id: workout.uuid, interval: record?.played(within: recorded) ?? recorded,
+                               sourceIdentifier: workout.sourceIdentifier, hasRecord: record != nil)
+        })
+        return workouts.filter { !hiddenMatchIDs.contains($0.uuid) && !duplicates.contains($0.uuid) }
     }
 
     func refresh() async {
@@ -201,10 +271,9 @@ final class MatchStore: ObservableObject {
             // First paint never waits on this: the cold-cache rows are already on screen. This is the
             // only unavoidably-async phase — one anchored workout-list query. Per-workout route / HR
             // probes stay deferred to row appearance (MatchRow.loadBadge), never batched up-front here.
-            let workouts = try await healthKit.fetchSoccerWorkouts()
-                .filter { !hiddenMatchIDs.contains($0.uuid) }
+            let workouts = try await healthKit.fetchMatchWorkouts()
             #if DEBUG
-            mark("fetchSoccerWorkouts (\(workouts.count))", workoutsStart)
+            mark("fetchMatchWorkouts (\(workouts.count))", workoutsStart)
             let recordsStart = Date()
             #endif
             let loadedRecords = await Task.detached(priority: .userInitiated) { Self.loadRecordsFromDisk() }.value
@@ -220,7 +289,7 @@ final class MatchStore: ObservableObject {
             // older watch builds) so they join instead of ghosting as a duplicate row.
             let records = adoptOrphanRecords(loadedRecords, workouts: workouts, workoutIDs: workoutIDs)
 
-            let workoutSummaries = workouts.map { workout in
+            let workoutSummaries = listed(workouts, records: records).map { workout in
                 MatchSummary(id: workout.uuid, workout: workout, record: records[workout.uuid])
             }
             // Records with no matching HK workout still surface as record-only matches.
@@ -235,6 +304,10 @@ final class MatchStore: ObservableObject {
             reconcileToken &+= 1
             contentVersion &+= 1
             schedulePersistSummaries()
+            updateDetailModels()
+            // No workouts at all is more likely a permission than a season deleted.
+            if !workouts.isEmpty { forgetDigests(except: Set(matches.map(\.id))) }
+            fillDigests()
 
             let newlyArrived = matches.filter { !previousIDs.contains($0.id) && $0.record != nil }
             if !previousIDs.isEmpty || !newlyArrived.isEmpty {
@@ -246,6 +319,7 @@ final class MatchStore: ObservableObject {
         } catch {
             loadError = error.localizedDescription
             didCompleteInitialLoad = true
+            for model in detailCache.values { model.sourceUnavailable() }
         }
     }
 
@@ -311,7 +385,9 @@ final class MatchStore: ObservableObject {
     /// Store (or refresh) the badge for a match and persist the cache. Called once per match after
     /// its first analytics load.
     func storeBadge(_ badge: MatchBadge, for id: UUID) {
-        guard badgeCache[id] != badge else { return }
+        // A cold-launch row has nothing true to say about its route.
+        guard badgeCache[id] != badge,
+              matches.contains(where: { $0.id == id && $0.hasSource }) else { return }
         badgeCache[id] = badge
         schedulePersistBadgeCache()
     }
@@ -323,7 +399,12 @@ final class MatchStore: ObservableObject {
     nonisolated private static func loadBadgeCache() -> [UUID: MatchBadge] {
         guard let data = try? Data(contentsOf: badgeCacheURL),
               let decoded = try? JSONDecoder().decode([UUID: MatchBadge].self, from: data) else { return [:] }
-        return decoded
+        // Distances stored before they had one definition don't match anything else on screen.
+        return decoded.mapValues { badge in
+            var badge = badge
+            badge.routeDistanceMeters = nil
+            return badge
+        }
     }
 
     private var pendingBadgePersist: Task<Void, Never>?
@@ -362,14 +443,200 @@ final class MatchStore: ObservableObject {
             summaryPersistDirty = false
             Self.writeSummaries(matches)
         }
+        if digestPersistDirty {
+            pendingDigestPersist?.cancel()
+            digestPersistDirty = false
+            Self.writeDigestCache(digestCache)
+        }
+    }
+
+    // MARK: - Digests
+
+    func digest(for id: UUID) -> MatchDigest? { digests[id] }
+
+    /// Every match.
+    var season: SeasonSummary { SeasonSummary(Array(digests.values)) }
+
+    func season(_ term: SeasonSummary.Term) -> SeasonSummary {
+        SeasonSummary(digests.values.filter { SeasonSummary.Term(containing: $0.startDate) == term })
+    }
+
+    /// The seasons there are matches in, newest first.
+    var terms: [SeasonSummary.Term] {
+        Set(digests.values.map { SeasonSummary.Term(containing: $0.startDate) }).sorted(by: >)
+    }
+
+    /// The most interesting true thing about a match. Nil before its digest, or when there's nothing to say.
+    func headline(for id: UUID) -> String? {
+        digests[id].flatMap { MatchHeadline.make(for: $0, among: Array(digests.values)) }
+    }
+
+    /// A match's one distance; nil when nothing measured it.
+    func distanceMeters(for summary: MatchSummary) -> Double? {
+        digests[summary.id]?.distanceMeters ?? (summary.distanceMeters > 0 ? summary.distanceMeters : nil)
+    }
+
+    nonisolated private static var digestCacheURL: URL {
+        AppGroup.containerURL.appendingPathComponent(digestCacheFileName)
+    }
+
+    nonisolated private static func loadDigestCache() -> DigestCache {
+        guard let data = try? Data(contentsOf: digestCacheURL) else { return DigestCache() }
+        return (try? MatchTrackerJSON.decoder().decode(DigestCache.self, from: data)) ?? DigestCache()
+    }
+
+    private var pendingDigestPersist: Task<Void, Never>?
+    private var digestPersistDirty = false
+
+    private func schedulePersistDigests() {
+        digestPersistDirty = true
+        pendingDigestPersist?.cancel()
+        pendingDigestPersist = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.digestPersistDirty = false
+            Self.writeDigestCache(self.digestCache)
+        }
+    }
+
+    private nonisolated static func writeDigestCache(_ cache: DigestCache) {
+        Task.detached(priority: .utility) {
+            guard let data = try? MatchTrackerJSON.encoder().encode(cache) else { return }
+            try? data.write(to: digestCacheURL, options: .atomic)
+        }
+    }
+
+    private func store(_ entries: [UUID: DigestCache.Entry]) {
+        guard !entries.isEmpty else { return }
+        digestCache.entries.merge(entries) { _, fresh in fresh }
+        digests.merge(entries.mapValues(\.digest)) { _, fresh in fresh }
+        schedulePersistDigests()
+    }
+
+    private func forgetDigests(except ids: Set<UUID>) {
+        let gone = digestCache.entries.keys.filter { !ids.contains($0) }
+        guard !gone.isEmpty else { return }
+        for id in gone {
+            digestCache.entries[id] = nil
+            digests[id] = nil
+        }
+        schedulePersistDigests()
+    }
+
+    /// Compute whatever digests are missing or out of date, in the background: newest first, one at
+    /// a time. A phone that locks partway stops it; unlocking or the next refresh resumes it.
+    private func fillDigests() {
+        guard digestFillTask == nil else {
+            needsAnotherDigestFill = true
+            return
+        }
+        digestFillTask = Task(priority: .background) { [weak self] in
+            await self?.runDigestFill()
+            guard let self else { return }
+            digestFillTask = nil
+            if needsAnotherDigestFill {
+                needsAnotherDigestFill = false
+                fillDigests()
+            }
+        }
+    }
+
+    private func runDigestFill() async {
+        await digestLoadTask?.value
+        let stale = await staleDigests()
+        guard !stale.isEmpty else { return }
+        MatchLog.info("digests: \(stale.count) to compute", category: "matchstore")
+
+        // Published a dozen at a time: each publish re-evaluates every view watching the store.
+        var pending: [UUID: DigestCache.Entry] = [:]
+        defer { store(pending) }
+        for summary in stale {
+            // An open match keeps its own digest up to date.
+            if detailCache[summary.id]?.digest != nil { continue }
+            do {
+                let entry = try await digestEntry(for: summary)
+                pending[summary.id] = entry
+                // A route can reach the phone after its workout; look again next launch.
+                if !entry.digest.hasRoute { digestsTriedThisLaunch.insert(summary.id) }
+            } catch where HealthKitService.isLocked(error) {
+                MatchLog.info("digests: paused, health data is locked", category: "matchstore")
+                return
+            } catch {
+                MatchLog.error("digests: \(summary.id) failed: \(error.localizedDescription)", category: "matchstore")
+                digestsTriedThisLaunch.insert(summary.id)
+            }
+            if pending.count >= 12 {
+                store(pending)
+                pending = [:]
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    private func staleDigests() async -> [MatchSummary] {
+        let cache = digestCache, fields = fields.fields, tried = digestsTriedThisLaunch
+        let candidates = matches.filter(\.hasSource)
+        let recently = Date().addingTimeInterval(-7 * 86_400)
+        let awaitingRoute = Set(candidates.filter { summary in
+            summary.startDate > recently && summary.format != .indoor
+                && summary.workout?.sourceIdentifier.hasPrefix(WorkoutSpan.ownSourcePrefix) == true
+                && cache.entries[summary.id]?.digest.hasRoute == false
+        }.map(\.id))
+        // Off the main actor: stamping a record encodes it.
+        let records = candidates.map { (id: $0.id, record: $0.record) }
+        let staleIDs = await Task.detached(priority: .background) {
+            Set(records.filter { id, record in
+                guard cache.isCurrent(id, record: record, fields: fields) else { return true }
+                return awaitingRoute.contains(id)
+            }.map(\.id))
+        }.value
+        return candidates
+            .filter { summary in
+                staleIDs.contains(summary.id)
+                    // Once a launch, unless an edit has made what's stored wrong rather than incomplete.
+                    && !(tried.contains(summary.id) && (cache.entries[summary.id] == nil || awaitingRoute.contains(summary.id)))
+            }
+            .sorted { $0.startDate > $1.startDate }
+    }
+
+    private func digestEntry(for summary: MatchSummary) async throws -> DigestCache.Entry {
+        let record = summary.record, recorded = summary.recordedInterval, format = summary.format
+        let played = record?.played(within: recorded) ?? recorded
+        let samples = try await healthKit.fetchSamples(for: summary.workout, record: record,
+                                                       recorded: recorded, played: played)
+        let input = MatchAnalysisInput(
+            record: record, interval: played, format: format, track: samples.track, heartRate: samples.heartRate,
+            healthDistanceMeters: samples.distanceMeters,
+            savedField: fields.store.resolve(recordFieldID: record?.fieldID, track: samples.track))
+        let fields = fields.fields
+        return await Task.detached(priority: .background) {
+            let analytics = MatchAnalyzer.analyze(input)
+            return DigestCache.Entry(
+                digest: MatchDigest(id: summary.id, interval: played, format: format, record: record, analytics: analytics),
+                record: record, center: analytics?.hasRoute == true ? analytics?.rectangle.center : nil, fields: fields)
+        }.value
+    }
+
+    /// Keep what an open match just worked out.
+    private func storeDigest(of model: MatchDetailModel) {
+        guard let digest = model.digest else { return }
+        let center = model.analytics?.hasRoute == true ? model.analytics?.rectangle.center : nil
+        store([digest.id: DigestCache.Entry(digest: digest, record: model.record, center: center, fields: fields.fields)])
     }
 
     /// Cached detail model for a match; call `load()` on it to fetch the track and analytics.
     func detailModel(for summary: MatchSummary) -> MatchDetailModel {
         if let existing = detailCache[summary.id] { return existing }
+        // A view may still be holding the row as it was before its workout arrived.
+        let summary = matches.first { $0.id == summary.id } ?? summary
         let model = MatchDetailModel(summary: summary, healthKit: healthKit, fields: fields)
         // Let the model persist reconciled records (e.g. auto-detected subs) through the store.
         model.persist = { [weak self] record in self?.save(record: record) }
+        model.onAnalyzed = { [weak self] model in self?.storeDigest(of: model) }
+        model.refreshMatches = { [weak self] in await self?.refresh() }
+        model.makeHeadline = { [weak self] digest in
+            self.flatMap { MatchHeadline.make(for: digest, among: Array($0.digests.values)) }
+        }
         detailCache[summary.id] = model
         return model
     }
@@ -390,131 +657,129 @@ final class MatchStore: ObservableObject {
         return map
     }
 
-    /// One analyzed match's heatmap plus the metadata the Compare cohort filters on: which venue its
-    /// pitch sits in (fields within 250 m cluster into one venue — see `VenueClustering`), its format
-    /// (GPS formats never compare against indoor), and when it was played (for the time window).
-    struct CohortHeatmapEntry {
-        let id: UUID
-        let heatmap: HeatmapGrid
-        let venue: Int?
-        let format: MatchTrackerKit.MatchFormat
-        let date: Date
-    }
-
-    /// Every OTHER analyzed match's heatmap, tagged with venue / format / date so the Compare view can
-    /// build a *like-for-like* cohort instead of averaging the whole cache blindly. Cached details
-    /// only — never triggers a HealthKit load, so the cohort grows lazily as matches are opened
-    /// (same as today's season average). Indoor / route-less matches carry an empty grid and are
-    /// dropped by the shape filter.
-    func cohortHeatmapEntries(excluding excludedID: UUID, matchingShapeOf template: HeatmapGrid,
-                              venueMap: VenueMap? = nil) -> [CohortHeatmapEntry] {
-        let venueMap = venueMap ?? currentVenueMap()
-        return detailCache.compactMap { id, model in
-            guard id != excludedID, let analytics = model.analytics else { return nil }
-            let heatmap = analytics.heatmap
-            guard heatmap.columns == template.columns, heatmap.rows == template.rows,
-                  !heatmap.cells.isEmpty else { return nil }
-            let venue = analytics.rectangle.corners.count == 4
-                ? venueMap.venue(forCenter: analytics.rectangle.center)
-                : nil
-            return CohortHeatmapEntry(id: id, heatmap: heatmap, venue: venue,
-                                      format: model.matchFormat, date: model.matchStart)
-        }
-    }
-
     /// The peer-cohort average heatmap for the Compare overlay, filtered to matches that are actually
     /// comparable to `detail`, with an honest caption for whatever cohort was used. Walks a fallback
     /// ladder — same venue + format + window, then same format anywhere in the window, then same
     /// format all-time — and always labels which rung it landed on so the caption never lies about
-    /// scope. Nil for indoor matches (no GPS to compare) or when no comparable match is cached yet.
+    /// scope. Nil without a route to compare, or when no comparable match has been played.
     func cohortComparison(for detail: MatchDetailModel, window: CompareWindow) -> CohortComparison? {
-        // GPS-only: indoor sessions have no route, so there's nothing to compare on the pitch.
-        guard detail.matchFormat != .indoor,
-              let analytics = detail.analytics,
-              analytics.heatmap.columns > 0, !analytics.heatmap.cells.isEmpty else { return nil }
-
-        let format = detail.matchFormat
+        guard let digest = detail.digest, let heat = digest.heat else { return nil }
         let venueMap = currentVenueMap()
-        let entries = cohortHeatmapEntries(excluding: detail.matchIdentifier,
-                                           matchingShapeOf: analytics.heatmap, venueMap: venueMap)
-        guard !entries.isEmpty else { return nil }
+        func venue(of id: UUID) -> Int? {
+            digestCache.entries[id]?.center.flatMap(venueMap.venue(forCenter:))
+        }
+        let peers = digests.values.filter { $0.id != digest.id && $0.format == digest.format && $0.heat != nil }
+        let recent = peers.filter { window.contains($0.startDate) }
 
-        let currentVenue = analytics.rectangle.corners.count == 4
-            ? venueMap.venue(forCenter: analytics.rectangle.center) : nil
-        let now = Date()
-
-        func build(_ pool: [CohortHeatmapEntry], scope: CohortComparison.Scope) -> CohortComparison? {
-            guard let average = Self.averageHeatmap(pool.map(\.heatmap)) else { return nil }
-            return CohortComparison(average: average, count: pool.count, scope: scope, window: window)
+        func build(_ pool: [MatchDigest], scope: CohortComparison.Scope) -> CohortComparison? {
+            PortraitHeat.average(pool.compactMap(\.heat)).map {
+                CohortComparison(current: Self.landscapeGrid(heat), average: Self.landscapeGrid($0),
+                                 count: pool.count, scope: scope, window: window)
+            }
         }
 
         // Rung 1: same venue + format, inside the window — the honest "vs N here" cohort.
-        if let currentVenue {
-            let sameVenue = entries.filter {
-                $0.venue == currentVenue && $0.format == format && window.contains($0.date, now: now)
-            }
+        if let here = venue(of: digest.id) {
+            let sameVenue = recent.filter { venue(of: $0.id) == here }
             if sameVenue.count >= 3 { return build(sameVenue, scope: .venue) }
         }
         // Rung 2: same format anywhere, still inside the window.
-        let sameFormatInWindow = entries.filter { $0.format == format && window.contains($0.date, now: now) }
-        if sameFormatInWindow.count >= 3 { return build(sameFormatInWindow, scope: .anyFieldWindowed) }
+        if recent.count >= 3 { return build(recent, scope: .anyFieldWindowed) }
         // Rung 3 (safety net): same format, all time — the broadest honest baseline.
-        let sameFormat = entries.filter { $0.format == format }
-        if !sameFormat.isEmpty { return build(sameFormat, scope: .anyFieldAllTime) }
-        return nil
+        return peers.isEmpty ? nil : build(peers, scope: .anyFieldAllTime)
     }
 
-    /// Cell-wise average of same-shaped heatmaps, renormalized so the peak cell is 1 (matching a
-    /// single match's grid so the two read on the identical warm ramp). Nil for an empty pool.
-    static func averageHeatmap(_ grids: [HeatmapGrid]) -> HeatmapGrid? {
-        guard let first = grids.first else { return nil }
-        var averaged = first
-        let count = Double(grids.count)
-        for index in averaged.cells.indices {
-            averaged.cells[index] = grids.reduce(0) { $0 + $1.cells[index] } / count
+    /// A portrait thumbnail laid on its side, attacking right, as the landscape heatmap views draw it.
+    private static func landscapeGrid(_ heat: [Float]) -> HeatmapGrid {
+        let columns = PortraitHeat.thumbnailRows, rows = PortraitHeat.thumbnailColumns
+        var grid = HeatmapGrid(columns: columns, rows: rows, cells: Array(repeating: 0, count: columns * rows))
+        for (index, value) in heat.enumerated() {
+            let (portraitRow, portraitColumn) = index.quotientAndRemainder(dividingBy: rows)
+            grid.cells[portraitColumn * columns + (columns - 1 - portraitRow)] = Double(value)
         }
-        let peak = averaged.cells.max() ?? 1
-        if peak > 0 {
-            for index in averaged.cells.indices { averaged.cells[index] /= peak }
-        }
-        return averaged
+        return grid
     }
 
-    /// The player's season-to-date run norms (mean/σ of run distance and peak speed) pooled across
-    /// every OTHER analyzed match currently cached, so a run can be judged unusual for *this*
-    /// player. Uses only already-cached analytics — never triggers a HealthKit load — and returns
-    /// nil until at least two matches are cached, when a mean/σ would be meaningless.
-    func runBaselines(excluding excludedID: UUID) -> RunBaselines? {
-        let otherRuns = detailCache
-            .filter { $0.key != excludedID }
-            .compactMap { $0.value.analytics?.runs }
-        guard otherRuns.count >= 2 else { return nil }
-        let runs = otherRuns.flatMap { $0 }
-        guard runs.count >= 2 else { return nil }
-
-        let (meanDistance, stdDistance) = Self.meanAndStandardDeviation(runs.map(\.distanceMeters))
-        let (meanPeak, stdPeak) = Self.meanAndStandardDeviation(runs.map(\.peakSpeed))
-        return RunBaselines(meanDistance: meanDistance, stdDistance: stdDistance,
-                            meanPeakSpeed: meanPeak, stdPeakSpeed: stdPeak)
-    }
-
-    /// Population mean and standard deviation of a non-empty sample.
-    private static func meanAndStandardDeviation(_ values: [Double]) -> (mean: Double, std: Double) {
-        guard !values.isEmpty else { return (0, 0) }
-        let mean = values.reduce(0, +) / Double(values.count)
-        let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count)
-        return (mean, variance.squareRoot())
-    }
-
-    /// Average workrate score across matches analyzed in the last `days`, for training-load
-    /// context. Only already-cached details count — this never triggers HealthKit loads.
+    /// Average effort of the matches in the last `days`.
     func recentAverageWorkrate(days: Int, excluding excludedID: UUID? = nil) -> Double? {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-        let scores = matches
-            .filter { $0.startDate >= cutoff && $0.id != excludedID }
-            .compactMap { detailCache[$0.id]?.analytics?.workrate.workrateScore }
-        guard !scores.isEmpty else { return nil }
-        return scores.reduce(0, +) / Double(scores.count)
+        season.averageEffort(days: days, asOf: Date(), excluding: excludedID)
+    }
+
+    /// The week's load against the usual week's (see `SeasonSummary.loadRatio`).
+    func loadRatio(asOf date: Date) -> Double? { season.loadRatio(asOf: date) }
+
+    // MARK: - Editing a match
+
+    /// `date` is kept inside the match. Nil when the match is unknown.
+    @discardableResult
+    func addEvent(_ kind: MatchEventKind, at date: Date, note: String? = nil, to matchID: UUID) -> MatchEvent? {
+        var added: MatchEvent?
+        edit(matchID) { record, recorded in
+            let event = MatchEvent(kind: kind, date: min(max(date, recorded.start), recorded.end), note: note)
+            record.add(event)
+            added = event
+        }
+        return added
+    }
+
+    /// Change an event; nil leaves a detail alone, and an empty note clears it.
+    func setEvent(_ eventID: UUID, in matchID: UUID, kind: MatchEventKind? = nil, date: Date? = nil, note: String? = nil) {
+        edit(matchID) { record, recorded in
+            record.setEvent(eventID, kind: kind, date: date.map { min(max($0, recorded.start), recorded.end) }, note: note)
+        }
+    }
+
+    /// Returns the event, for `restoreEvent` to undo with.
+    @discardableResult
+    func deleteEvent(_ eventID: UUID, from matchID: UUID) -> MatchEvent? {
+        var removed: MatchEvent?
+        edit(matchID) { record, _ in removed = record.removeEvent(eventID) }
+        return removed
+    }
+
+    func restoreEvent(_ event: MatchEvent, to matchID: UUID) {
+        edit(matchID) { record, _ in record.add(event) }
+    }
+
+    /// Say when the match really started and ended; nil for where the recording did. Nothing
+    /// recorded is lost, and `trim(id, start: nil, end: nil)` undoes it.
+    func trim(_ matchID: UUID, start: Date?, end: Date?) {
+        edit(matchID) { record, _ in
+            record.trimmedStart = start
+            record.trimmedEnd = end
+        }
+    }
+
+    func setOpponent(_ opponent: String?, for matchID: UUID) {
+        edit(matchID) { record, _ in record.opponent = Self.trimmed(opponent) }
+    }
+
+    func setNotes(_ notes: String?, for matchID: UUID) {
+        edit(matchID) { record, _ in record.notes = Self.trimmed(notes) }
+    }
+
+    /// To turn a pitch around, pass the opposite of `analytics.attackDirection.flipsAttack`.
+    func setFlipsAttack(_ flipsAttack: Bool?, for matchID: UUID) {
+        edit(matchID) { record, _ in record.flipsAttack = flipsAttack }
+    }
+
+    private static func trimmed(_ text: String?) -> String? {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Change a match's record, starting one for a match that has none.
+    private func edit(_ matchID: UUID, _ change: (inout MatchRecord, DateInterval) -> Void) {
+        guard let summary = matches.first(where: { $0.id == matchID }) else { return }
+        // The record may be on disk and not yet attached to a cold-launch row.
+        let existing = summary.record ?? Self.decodeRecord(from: AppGroup.matchRecordURL(for: matchID))
+        guard existing != nil || summary.workout != nil else { return }
+        let recorded = MatchSummary.recordedInterval(workout: summary.workout, record: existing)
+        var record = existing ?? MatchRecord(
+            id: matchID, startDate: recorded.start, endDate: recorded.end, fieldID: nil, events: [], teamCode: nil,
+            format: summary.format == .indoor ? .indoor : nil)
+        change(&record, recorded)
+        save(record: record)
     }
 
     // MARK: - Match record persistence
@@ -631,11 +896,13 @@ final class MatchStore: ObservableObject {
         }
 
         if let index = matches.firstIndex(where: { $0.id == record.id }) {
-            let summary = MatchSummary(id: record.id, workout: matches[index].workout, record: record)
+            let summary = MatchSummary(id: record.id, workout: matches[index].workout, record: record,
+                                       cached: matches[index].cached)
             matches[index] = summary
             contentVersion &+= 1
             detailCache[record.id]?.updateRecord(record)
         }
+        fillDigests()
     }
 
     // MARK: - Match deletion
@@ -677,6 +944,9 @@ final class MatchStore: ObservableObject {
 
         matches.removeAll { $0.id == summary.id }
         detailCache.removeValue(forKey: summary.id)
+        digestCache.entries[summary.id] = nil
+        digests[summary.id] = nil
+        schedulePersistDigests()
         if badgeCache.removeValue(forKey: summary.id) != nil {
             schedulePersistBadgeCache()
         }
@@ -706,11 +976,10 @@ final class MatchStore: ObservableObject {
 
     /// A saved field's geometry changed (a corner edit — from a match's Adjust Field flow or the
     /// Fields tab). The field rectangle is the projection basis for every match that resolves to it,
-    /// so the persisted row badges (position / field name) and the in-memory analytics that back the
-    /// season-comparison heatmaps + run baselines are all stale. Without a field → match index we
+    /// so the persisted row badges (position / field name) and the in-memory analytics are stale. Without a field → match index we
     /// can't cheaply tell which matches resolve to the edited field, so this clears conservatively:
     /// drop every cached badge (rows recompute lazily on next render) and reproject every cached
-    /// detail model (which also refreshes the Compare cohort / `runBaselines`, both derived from it).
+    /// detail model. Digests know which fields they were drawn from and refresh themselves.
     func invalidateForFieldChange() {
         venueMapCache = nil
         if !badgeCache.isEmpty {
@@ -735,6 +1004,7 @@ final class MatchStore: ObservableObject {
                 model.reanalyze()
                 await Task.yield()
             }
+            fillDigests()
         }
     }
 

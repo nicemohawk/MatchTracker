@@ -163,8 +163,11 @@ extension ConnectivityManager: WCSessionDelegate {
 
     private func handleMatchRecord(data: Data?) {
         guard let data else { return }
-        guard let record = try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data) else { return }
-        try? data.write(to: AppGroup.matchRecordURL(for: record.id), options: .atomic)
+        guard let received = try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data) else { return }
+        let url = AppGroup.matchRecordURL(for: received.id)
+        let existing = try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: Data(contentsOf: url))
+        let record = existing.map(received.keepingEdits(from:)) ?? received
+        try? MatchTrackerJSON.encoder().encode(record).write(to: url, options: .atomic)
         Task { @MainActor in
             onMatchRecordReceived?(record)
         }

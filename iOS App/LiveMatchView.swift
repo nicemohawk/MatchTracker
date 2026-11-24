@@ -13,9 +13,6 @@ struct LiveMatchView: View {
     let store: LiveMatchStore
     var projector: FieldProjector?
 
-    /// Rising-edge sprint threshold (m/s). ~5.5 m/s ≈ 19.8 km/h — a genuine burst, not a jog.
-    private static let sprintSpeed = 5.5
-
     @State private var showingCamera = false
 
     var body: some View {
@@ -128,7 +125,7 @@ struct LiveMatchView: View {
                      String(format: "%.2f", update.distanceMeters / 1000),
                      "KM", Theme.pace)
             heroStat("bolt.fill",
-                     "\(sprintCount(store.recentPoints))",
+                     "\(store.sprintCount)",
                      "Sprints", Theme.sprint)
             heroStat("heart.fill",
                      update.heartRate.map { "\(Int($0))" } ?? "—",
@@ -151,23 +148,6 @@ struct LiveMatchView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
         .metricTile(tint: tint)
-    }
-
-    /// Rising-edge sprint count over the recent track: each time speed climbs past the threshold
-    /// (with hysteresis so a jitter around the line isn't counted twice) is one sprint.
-    private func sprintCount(_ points: [TrackPoint]) -> Int {
-        var count = 0
-        var inSprint = false
-        for point in points {
-            let speed = point.speedMetersPerSecond
-            if !inSprint, speed >= Self.sprintSpeed {
-                count += 1
-                inSprint = true
-            } else if inSprint, speed < Self.sprintSpeed * 0.8 {
-                inSprint = false
-            }
-        }
-        return count
     }
 
     // MARK: - Pitch

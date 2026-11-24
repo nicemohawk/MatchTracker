@@ -537,6 +537,7 @@ final class WorkoutManager: NSObject {
         let score = score
         let hasScore = score.us + score.them > 0
         return LiveMatchUpdate(
+            matchID: matchID,
             sequence: liveStreamer.nextSequence,
             timestamp: Date(),
             elapsed: elapsedTime(at: Date()),
@@ -801,20 +802,16 @@ final class WorkoutManager: NSObject {
 
         // Automatic period detection: no-op when the wearer tagged periods manually. A formal
         // match expects two halves; pickup/indoor sessions have variable breaks (expectedPeriods 0).
-        let projector = match.fieldID
-            .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id } }
-            .map { FieldProjector(rectangle: $0.rectangle) }
         var periodConfiguration = PeriodDetectorConfiguration()
         periodConfiguration.expectedPeriods = match.format == .match ? 2 : 0
         let configuration = periodConfiguration
-        let runConfiguration = RunDetectorConfiguration.scaled(for: match.context)
         let track = match.track
         let recordID = workout?.uuid ?? match.id
 
         // Off the main actor: the detectors sweep the whole track and the record is megabytes.
         let (record, runCounts, recordSaved) = await Task.detached(priority: .userInitiated) {
             let periods = PeriodDetector.detectPeriods(track: track, events: match.events,
-                                                       projector: projector, configuration: configuration)
+                                                       configuration: configuration)
             if !periods.isEmpty {
                 let boundaries = periods.map { String(Int($0.date.timeIntervalSince(match.start)) / 60) }
                 MatchLog.info("endMatch: detected \(periods.count) period events at minutes [\(boundaries.joined(separator: ", "))]",
@@ -824,9 +821,8 @@ final class WorkoutManager: NSObject {
             let saved = AppGroupStorage.persistFinished(record) != nil
             // At once: two copies on disk at the next launch would reach the phone as two matches.
             if saved, recordID != match.id { AppGroupStorage.removeFinished(id: match.id) }
-            let runs = RunDetector.detectRuns(in: track, configuration: runConfiguration)
-            let counts = (runs: runs.filter { $0.intensity == .run }.count,
-                          sprints: runs.filter { $0.intensity == .sprint }.count)
+            let runs = RunDetector.detectRuns(in: track)
+            let counts = (runs: runs.runCount, sprints: runs.sprintCount)
             return (record, counts, saved)
         }.value
 
