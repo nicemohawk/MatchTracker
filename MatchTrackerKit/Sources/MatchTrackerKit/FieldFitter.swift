@@ -247,8 +247,8 @@ private struct GridKey: Hashable {
 
 public enum PlayIntervalDeriver {
     /// Replay sub detection over a finished track, so that correcting a field recomputes
-    /// time-on-pitch: a spell `AutoSubDetector` calls the bench is off the pitch, and so is one the
-    /// wearer logged. Returns the on-pitch intervals between `matchStart` and `matchEnd`. With no such spell the whole match
+    /// time-on-pitch: a spell `AutoSubDetector` calls the bench is off the pitch. Once the wearer has
+    /// logged any, the logged ones are it. Returns the on-pitch intervals between `matchStart` and `matchEnd`. With no such spell the whole match
     /// is one interval.
     public static func playingIntervals(track: [TrackPoint],
                                         field: OrientedRectangle,
@@ -261,13 +261,17 @@ public enum PlayIntervalDeriver {
 
         let projector = FieldProjector(rectangle: field)
         let manualSubs = events.filter { $0.source == .manual && ($0.kind == .subIn || $0.kind == .subOut) }
+        // Half of a pair is often the watch's and half the wearer's, so they only make sense together.
+        guard manualSubs.isEmpty else {
+            return SubstitutionTracker.playingIntervals(events: events, matchStart: matchStart, matchEnd: matchEnd)
+        }
         let transitions = AutoSubDetector.transitions(
             track: track,
             projector: projector,
-            existingEvents: manualSubs,
+            existingEvents: [],
             heartRate: heartRate,
             motion: motion
         )
-        return SubstitutionTracker.playingIntervals(events: manualSubs + transitions, matchStart: matchStart, matchEnd: matchEnd)
+        return SubstitutionTracker.playingIntervals(events: transitions, matchStart: matchStart, matchEnd: matchEnd)
     }
 }

@@ -50,8 +50,9 @@ final class StageClock {
         self.analytics = analytics
         self.events = events
         buildUp = HeatBuildUp(analytics)
-        // Its runs are new ones.
+        // Its runs are new ones, and there may be none.
         spotlight = nil
+        if mode == .runs, analytics.keyRuns.isEmpty { mode = .heat }
         if !isPlaying, !isOpening { filmWholeMatch() }
     }
 
@@ -158,12 +159,13 @@ final class StageClock {
         // Without motion, the match steps forward rather than flying past.
         let framesPerSecond = UIAccessibility.isReduceMotionEnabled ? 4 : 60
         frames = FrameTimer(framesPerSecond: framesPerSecond) { [weak self] elapsed in
-            guard let self else { return }
+            guard let self else { return false }
             if offset + elapsed < film.duration {
                 time = min(film.time(at: offset + elapsed), duration)
             } else {
                 finish(self)
             }
+            return true
         }
     }
 
@@ -179,10 +181,12 @@ final class StageClock {
 @MainActor
 private final class FrameTimer: NSObject {
     private var link: CADisplayLink?
-    private var started: CFTimeInterval?
-    private let onFrame: (TimeInterval) -> Void
+    private var elapsed: TimeInterval = 0
+    private var last: CFTimeInterval?
+    /// Returns whether anyone is still watching.
+    private let onFrame: (TimeInterval) -> Bool
 
-    init(framesPerSecond: Int, onFrame: @escaping (TimeInterval) -> Void) {
+    init(framesPerSecond: Int, onFrame: @escaping (TimeInterval) -> Bool) {
         self.onFrame = onFrame
         super.init()
         let link = CADisplayLink(target: self, selector: #selector(frame))
@@ -199,9 +203,10 @@ private final class FrameTimer: NSObject {
     }
 
     @objc private func frame(_ link: CADisplayLink) {
-        let started = started ?? link.timestamp
-        self.started = started
-        onFrame(link.timestamp - started)
+        // Time spent in the background isn't time shown.
+        elapsed += min(link.timestamp - (last ?? link.timestamp), 0.5)
+        last = link.timestamp
+        if !onFrame(elapsed) { stop() }
     }
 }
 

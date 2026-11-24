@@ -107,7 +107,7 @@ struct MatchDetailView: View {
         .onChange(of: detail.analyticsRevision, initial: true) {
             guard let analytics = detail.analytics, analytics.hasRoute else { return }
             clock.load(analytics, events: detail.events)
-            clock.playOpening(of: detail.matchIdentifier)
+            if sheet == nil { clock.playOpening(of: detail.matchIdentifier) }
         }
     }
 

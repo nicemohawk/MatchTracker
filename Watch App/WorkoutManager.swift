@@ -661,10 +661,16 @@ final class WorkoutManager: NSObject {
     /// Last time GPS saw real movement; where a forgotten match is trimmed back to.
     @ObservationIgnored private(set) var lastMovingDate: Date?
     @ObservationIgnored private var lastAskedStillPlaying: Date?
+    @ObservationIgnored private var heartRateDate: Date?
 
     private let stillnessBeforeAsking: TimeInterval = 20 * 60
     /// Long enough that even a match with breaks, or indoors without GPS, is worth asking about.
     private let durationBeforeAsking: TimeInterval = 150 * 60
+
+    /// Where a match that was left running ends. Never so early that ending it would discard it.
+    var forgottenEnd: Date {
+        lastMovingDate.map { max($0, matchStartDate.addingTimeInterval(minimumMatchDuration * 2)) } ?? Date()
+    }
 
     /// Called with every fix and heart-rate sample: both keep arriving in the background.
     private func askIfStillPlaying(now: Date = Date()) {
@@ -702,7 +708,6 @@ final class WorkoutManager: NSObject {
         MatchLog.info("auto-sub: OUT rejected by the wearer", category: "autosub")
         rejectedSubOuts += 1
         onPitch = true
-        // Wrong twice is a field in the wrong place, and it would be wrong all match.
         if rejectedSubOuts < 2 {
             autoSubDetector?.recordManualEvent(MatchEvent(kind: .subIn, date: Date(), source: .manual))
         } else {
@@ -757,7 +762,7 @@ final class WorkoutManager: NSObject {
         let score: (us: Int, them: Int)
         let sportID: String
         let teamCode: String?
-        let detection: Int?
+        let rejectedSubOuts: Int?
         let file = FinishedRecordFile()
 
         var track: [TrackPoint] { fixes.map(\.point) }
@@ -771,7 +776,7 @@ final class WorkoutManager: NSObject {
             // The full-resolution track travels with the record too, so the phone can analyze the
             // match even if the HealthKit route was never saved.
             record.track = fixes.isEmpty ? nil : track
-            record.detection = detection
+            record.rejectedSubOuts = rejectedSubOuts
             return record
         }
     }
@@ -810,7 +815,8 @@ final class WorkoutManager: NSObject {
             motion: motionRecorder.trace, context: matchContext,
             session: session, builder: builder, elapsed: elapsed,
             distanceMeters: distanceMeters, score: score,
-            sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode, detection: detection)
+            sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode,
+            rejectedSubOuts: rejectedSubOuts > 0 ? rejectedSubOuts : nil)
         finishedRecordFile = match.file
         savingIDs.insert(match.id)
         session = nil
@@ -1064,6 +1070,7 @@ final class WorkoutManager: NSObject {
         events = []
         track = []
         heartRate = 0
+        heartRateDate = nil
         activeCalories = 0
         distanceMeters = 0
         currentSpeed = 0
@@ -1119,12 +1126,10 @@ final class WorkoutManager: NSObject {
     /// A resolved field gives the detector a touchline to reason about; without one, automatic
     /// substitution detection is off. Referees are never "subbed", and indoor has no GPS.
     private func makeAutoSubDetector(for field: FieldModel) -> AutoSubDetector? {
-        guard !WatchSettings.refereeMode, !isIndoor else { return nil }
+        // Wrong twice is a field in the wrong place, and it would be wrong all match.
+        guard !WatchSettings.refereeMode, !isIndoor, rejectedSubOuts < 2 else { return nil }
         return AutoSubDetector(projector: FieldProjector(rectangle: field.rectangle), initiallyOnPitch: onPitch)
     }
-
-    /// Set once the wearer has corrected the detector, so the phone keeps the events as they are.
-    private var detection: Int? { rejectedSubOuts > 0 ? MatchRecord.currentDetection : nil }
 
     private func persistInProgress() {
         // Snapshot the observable state here (cheap); build, encode and write on the serial
@@ -1136,7 +1141,7 @@ final class WorkoutManager: NSObject {
         let field = fieldID
         let loggedEvents = events
         let format = matchFormat
-        let detection = detection
+        let rejected = rejectedSubOuts > 0 ? rejectedSubOuts : nil
         persistQueue.async {
             var record = MatchRecord(
                 id: id,
@@ -1147,7 +1152,7 @@ final class WorkoutManager: NSObject {
                 teamCode: AppGroupStorage.teamCode
             )
             record.format = format
-            record.detection = detection
+            record.rejectedSubOuts = rejected
             AppGroupStorage.persistInProgress(record)
         }
     }
@@ -1358,7 +1363,7 @@ final class WorkoutManager: NSObject {
         matchStartDate = saved?.startDate ?? sessionStart
         fieldID = saved?.fieldID
         events = saved?.events ?? []
-        rejectedSubOuts = saved?.detection == nil ? 0 : 1
+        rejectedSubOuts = saved?.rejectedSubOuts ?? 0
         // Restore on-pitch state from the last substitution event (a subIn or subOut), ignoring
         // any later non-sub events that would otherwise mask it.
         onPitch = events.last { $0.kind == .subIn || $0.kind == .subOut }?.kind != .subOut
@@ -1491,7 +1496,10 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
         DispatchQueue.main.async {
             guard workoutBuilder === self.builder else { return }
             self.askIfStillPlaying()
-            if let newHeartRate { self.heartRate = newHeartRate }
+            if let newHeartRate {
+                self.heartRate = newHeartRate
+                self.heartRateDate = Date()
+            }
             if let newCalories { self.activeCalories = newCalories }
             if let newDistance { self.distanceMeters = newDistance }
         }
@@ -1506,7 +1514,8 @@ extension WorkoutManager {
     /// wrong, and the bench screen is where to say so. Runs on the main queue with the published metrics.
     private func runAutoSubDetection(on points: [TrackPoint]) {
         guard let detector = autoSubDetector else { return }
-        let latestHeartRate = heartRate > 0 ? heartRate : nil
+        // A reading that stopped coming says nothing about now.
+        let latestHeartRate = heartRateDate.map { Date().timeIntervalSince($0) < 15 } == true ? heartRate : nil
         for point in points {
             guard let event = detector.process(point: point, heartRate: latestHeartRate, motion: motionRecorder.trace) else { continue }
             let elapsed = Int(point.timestamp.timeIntervalSince(matchStartDate))

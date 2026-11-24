@@ -38,7 +38,11 @@ public extension MatchRecord {
     /// The removed event, to hand back to `add` on undo.
     @discardableResult
     mutating func removeEvent(_ id: UUID) -> MatchEvent? {
-        events.firstIndex { $0.id == id }.map { events.remove(at: $0) }
+        let removed = events.firstIndex { $0.id == id }.map { events.remove(at: $0) }
+        if let removed, removed.source == .automatic, removed.kind == .subOut || removed.kind == .subIn {
+            rejectedSubOuts = (rejectedSubOuts ?? 0) + 1
+        }
+        return removed
     }
 
     /// The watch's copy of a match, sent again, with what has been said about it on the phone since.
@@ -56,6 +60,7 @@ public extension MatchRecord {
         merged.track = track ?? existing.track
         merged.headings = headings ?? existing.headings
         merged.motion = motion ?? existing.motion
+        if let rejected = [rejectedSubOuts, existing.rejectedSubOuts].compactMap({ $0 }).max() { merged.rejectedSubOuts = rejected }
         merged.endDate = endDate ?? existing.endDate
         merged.startedOnPhone = existing.startedOnPhone == true ? startedOnPhone : nil
         if existing.detection != nil, existing.startedOnPhone != true {
@@ -71,15 +76,20 @@ public extension MatchRecord {
     }
 
     /// Swap the automatic subs and periods for what today's detectors find, once per detector
-    /// version. Manual events are never touched, and a match with manual subs gets no others.
+    /// version. Manual events are never touched, and substitutions the wearer had a say in are only
+    /// cleared of half-time and the walk off.
     mutating func redetectEvents(track: [TrackPoint], projector: FieldProjector, halftime: DateInterval?,
                                  heartRate: [HeartRateSample] = []) {
         guard (detection ?? 0) < Self.currentDetection, !track.isEmpty else { return }
         detection = Self.currentDetection
-        events.removeAll {
-            $0.source == .automatic && [.subIn, .subOut, .periodStart, .periodEnd].contains($0.kind)
-        }
-        if !events.contains(where: { $0.kind == .subIn || $0.kind == .subOut }) {
+        let isSettled = hasSettledSubs
+        events.removeAll { $0.source == .automatic && [.periodStart, .periodEnd].contains($0.kind) }
+        if isSettled {
+            let end = track.map(\.timestamp).max() ?? startDate, subs = events.filter { $0.kind == .subIn || $0.kind == .subOut }
+            let kept = Set(AutoSubDetector.substitutions(in: subs, start: startDate, end: end, halftime: halftime).map(\.id))
+            events.removeAll { $0.source == .automatic && ($0.kind == .subIn || $0.kind == .subOut) && !kept.contains($0.id) }
+        } else {
+            events.removeAll { $0.source == .automatic && ($0.kind == .subIn || $0.kind == .subOut) }
             events += AutoSubDetector.detectEvents(track: track, projector: projector,
                                                    existingEvents: events, halftime: halftime, heartRate: heartRate,
                                                    motion: motion)

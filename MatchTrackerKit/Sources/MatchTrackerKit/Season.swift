@@ -7,7 +7,7 @@ import Foundation
 /// it has to open a route.
 public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     /// Bump when a definition changes, so stale digests are recomputed rather than compared.
-    public static let currentVersion = 4
+    public static let currentVersion = 5
 
     public var version: Int
     public var id: UUID

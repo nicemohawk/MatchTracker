@@ -135,6 +135,9 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     public var finalScore: FinalScore?
     /// How hard the wrist was moving (see `MotionTrace`).
     public var motion: MotionTrace?
+    /// Automatic substitutions the wearer has said were wrong. Any at all, and the ones in `events`
+    /// are taken as they are.
+    public var rejectedSubOuts: Int?
     /// The phone made this for a workout whose record hasn't come from the watch, if it ever will.
     public var startedOnPhone: Bool?
 
@@ -174,6 +177,12 @@ public struct FinalScore: Codable, Sendable, Equatable {
 }
 
 public extension MatchRecord {
+    /// Whether the wearer has had a say in the substitutions, which settles them.
+    var hasSettledSubs: Bool {
+        (rejectedSubOuts ?? 0) > 0
+            || events.contains { $0.source == .manual && ($0.kind == .subIn || $0.kind == .subOut) }
+    }
+
     /// What was logged as it happened. Nil with no goals: that may be 0–0, or nobody counting.
     var loggedScore: FinalScore? {
         let mine = events.filter { $0.kind == .goalMine }.count

@@ -156,6 +156,37 @@ final class AutoSubDetectorTests: XCTestCase {
         ]).contains { $0.minute < 26 && $0.kind == .subOut })
     }
 
+    /// The wearer says they never came off, and rests a while longer before playing on.
+    func testBeingToldItIsWrongLeavesNothingBehind() throws {
+        let match = match([(20, .playing), (7, .bench), (40, .playing)])
+        let detector = AutoSubDetector(projector: projector)
+        var events: [MatchEvent] = [], rateIndex = 0, rejected = false
+        for point in match.track {
+            var rate: Double?
+            while rateIndex < match.heartRate.count, match.heartRate[rateIndex].date <= point.timestamp {
+                rate = match.heartRate[rateIndex].bpm
+                rateIndex += 1
+            }
+            guard let event = detector.process(point: point, heartRate: rate) else { continue }
+            if event.kind == .subOut, !rejected {
+                rejected = true
+                detector.recordManualEvent(MatchEvent(kind: .subIn, date: point.timestamp))
+            } else {
+                events.append(event)
+            }
+        }
+        XCTAssertTrue(rejected)
+        XCTAssertTrue(events.isEmpty, "found \(events.map(\.kind))")
+    }
+
+    func testMotionIsReadFromTheRightMoment() {
+        var trace = MotionTrace(start: epoch)
+        for index in 0..<40 { trace.append(index == 20 ? 1 : 0.2, at: epoch.addingTimeInterval(Double(index) * 5 + 2.5)) }
+        XCTAssertEqual(trace.level(at: epoch.addingTimeInterval(102.5)), 1)
+        XCTAssertEqual(trace.level(at: epoch.addingTimeInterval(107.5)), 0.2)
+        XCTAssertNil(trace.level(at: epoch.addingTimeInterval(-3)))
+    }
+
     func testLowAccuracyFixesDoNotTrigger() {
         let match = match([(20, .playing), (9, .bench)])
         let blind = match.track.map { sample -> TrackPoint in
@@ -235,7 +266,7 @@ final class AutoSubDetectorTests: XCTestCase {
         var trace = MotionTrace(start: epoch)
         trace.append(0.05, at: trace.start)
         trace.append(0.7, at: trace.start.addingTimeInterval(600))
-        XCTAssertNil(trace.level(endingAt: trace.start.addingTimeInterval(300)))
+        XCTAssertNil(trace.level(at: trace.start.addingTimeInterval(300)))
         XCTAssertFalse(trace.hasRun(before: trace.start.addingTimeInterval(605), runningLevel: 0.5),
                        "one sample in a minute says nothing")
         XCTAssertEqual(try JSONDecoder().decode(MotionTrace.self, from: JSONEncoder().encode(trace)), trace)

@@ -83,7 +83,7 @@ private struct StillPlayingSheet: View {
                 Button("End Match") {
                     WatchHaptics.stop()
                     dismiss()
-                    Task { await workoutManager.endMatch(at: workoutManager.lastMovingDate ?? Date()) }
+                    Task { await workoutManager.endMatch(at: workoutManager.forgottenEnd) }
                 }
                 .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.loss, minHeight: 52))
                 Button("Still Playing") { dismiss() }

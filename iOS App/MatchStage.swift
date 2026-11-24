@@ -58,6 +58,9 @@ struct MatchStage: View {
             .padding(.horizontal)
             .animation(reduceMotion ? nil : .snappy, value: isTimed)
         }
+        .onChange(of: modes) { _, modes in
+            if !modes.contains(clock.mode) { clock.select(.heat) }
+        }
         .sensoryFeedback(.selection, trigger: clock.choices)
         .sensoryFeedback(.impact(weight: .light), trigger: marks.count) { before, after in
             after > before && (clock.isPlaying || clock.isOpening)

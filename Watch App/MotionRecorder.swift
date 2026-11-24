@@ -35,8 +35,9 @@ final class MotionRecorder {
             let now = Date()
             guard now.timeIntervalSince(began) >= MotionTrace.interval else { return }
             let level = (sumOfSquares / Double(count)).squareRoot()
+            let middle = began.addingTimeInterval(now.timeIntervalSince(began) / 2)
             (sumOfSquares, count, began) = (0, 0, now)
-            DispatchQueue.main.async { self?.trace?.append(level, at: now) }
+            DispatchQueue.main.async { self?.trace?.append(level, at: middle) }
         }
     }
 

@@ -178,7 +178,11 @@ final class MatchDetailModel: ObservableObject {
                 record.redetectEvents(track: track, projector: analytics.projector, halftime: analytics.halftime, heartRate: heartRate)
                 return record
             }.value
-            // An edit made meanwhile wins; detection runs again next time.
+            // An edit made meanwhile wins, as does a newer copy from the watch that's on disk and not
+            // here yet; detection runs again next time.
+            let id = record.id
+            let onDisk = await Task.detached { MatchStore.decodeRecord(from: AppGroup.matchRecordURL(for: id)) }.value
+            guard onDisk == nil || onDisk?.digestStamp == record.digestStamp else { return }
             guard self.record?.digestStamp == record.digestStamp, self.record?.notes == record.notes else { return }
             save(redetected)
         }

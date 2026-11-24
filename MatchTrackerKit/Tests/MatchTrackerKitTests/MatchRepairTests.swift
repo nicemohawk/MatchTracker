@@ -266,4 +266,40 @@ final class MatchRepairTests: XCTestCase {
         XCTAssertNil(merged.startedOnPhone)
         XCTAssertNil(merged.detection, "the watch's events haven't been looked at yet")
     }
+
+    // MARK: - Substitutions the wearer had a say in
+
+    func testAnAutomaticSubOffAndAManualReturnStayAPair() {
+        var record = MatchRecord(id: UUID(), startDate: at(0), endDate: at(90), fieldID: nil, events: [
+            MatchEvent(kind: .subOut, date: at(20), source: .automatic), MatchEvent(kind: .subIn, date: at(30)),
+            MatchEvent(kind: .subOut, date: at(45), source: .automatic), MatchEvent(kind: .subIn, date: at(54), source: .automatic)
+        ], teamCode: nil)
+        let rectangle = makeOrientedRectangle(center: Coordinate2D(latitude: 40, longitude: -83), lengthMeters: 100,
+                                              widthMeters: 60, headingDegrees: 0)
+        let track = (0..<(90 * 12)).map {
+            TrackPoint(coordinate: rectangle.center, timestamp: at(Double($0) / 12), speedMetersPerSecond: 2,
+                       courseDegrees: 0, horizontalAccuracy: 5)
+        }
+        record.redetectEvents(track: track, projector: FieldProjector(rectangle: rectangle),
+                              halftime: DateInterval(start: at(45), end: at(55)))
+        XCTAssertEqual(record.events.filter { $0.kind == .subIn || $0.kind == .subOut }.map(\.date), [at(20), at(30)],
+                       "half-time isn't a substitution, whoever noticed it")
+        let intervals = PlayIntervalDeriver.playingIntervals(track: track, field: rectangle, events: record.events,
+                                                             matchStart: at(0), matchEnd: at(90))
+        XCTAssertEqual(intervals, [DateInterval(start: at(0), end: at(20)), DateInterval(start: at(30), end: at(90))])
+    }
+
+    func testARejectedSubIsNotFoundAgain() {
+        var record = MatchRecord(id: UUID(), startDate: at(0), endDate: at(90), fieldID: nil, events: [
+            MatchEvent(kind: .subOut, date: at(20), source: .automatic)
+        ], teamCode: nil)
+        XCTAssertFalse(record.hasSettledSubs)
+        record.removeEvent(record.events[0].id)
+        XCTAssertTrue(record.hasSettledSubs)
+        let input = MatchAnalysisInput(record: record, interval: DateInterval(start: at(0), end: at(90)), format: .match,
+                                       track: [], heartRate: [], healthDistanceMeters: nil, savedField: nil)
+        XCTAssertTrue(input.hasSettledSubs)
+        XCTAssertEqual(record.keepingEdits(from: MatchRecord(id: record.id, startDate: at(0), endDate: nil, fieldID: nil,
+                                                             events: [], teamCode: nil)).rejectedSubOuts, 1)
+    }
 }

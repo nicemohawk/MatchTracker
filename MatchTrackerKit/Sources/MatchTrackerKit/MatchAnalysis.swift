@@ -17,6 +17,8 @@ public struct MatchAnalysisInput: Sendable {
     public var track: [TrackPoint]
     public var heartRate: [HeartRateSample]
     public var motion: MotionTrace?
+    /// `MatchRecord.hasSettledSubs`: the substitutions in `events` are the last word.
+    public var hasSettledSubs: Bool
     /// Distance HealthKit measured inside `interval`.
     public var healthDistanceMeters: Double?
     /// The saved field the match was played on, from `FieldStore.resolve`; nil infers one.
@@ -35,6 +37,7 @@ public struct MatchAnalysisInput: Sendable {
         self.heartRate = heartRate
         self.healthDistanceMeters = healthDistanceMeters
         self.savedField = savedField
+        hasSettledSubs = events.contains { $0.source == .manual && ($0.kind == .subIn || $0.kind == .subOut) }
     }
 
     public init(record: MatchRecord?, interval: DateInterval, format: MatchFormat, track: [TrackPoint],
@@ -44,6 +47,7 @@ public struct MatchAnalysisInput: Sendable {
                   track: track, heartRate: heartRate, healthDistanceMeters: healthDistanceMeters,
                   savedField: savedField)
         motion = record?.motion
+        hasSettledSubs = record?.hasSettledSubs ?? false
     }
 }
 
@@ -138,7 +142,7 @@ public enum MatchAnalyzer {
         let projector = FieldProjector(rectangle: field.rectangle)
         let halftime = input.format == .match
             ? PeriodDetector.halftime(track: track, events: input.events, interval: interval) : nil
-        let derivedIntervals = PlayIntervalDeriver.playingIntervals(
+        let derivedIntervals = input.hasSettledSubs ? recordedIntervals : PlayIntervalDeriver.playingIntervals(
             track: track, field: field.rectangle, events: input.events, heartRate: heartRate, motion: input.motion,
             matchStart: interval.start, matchEnd: interval.end)
         // Nobody was playing after the last movement, however long the recording ran on.

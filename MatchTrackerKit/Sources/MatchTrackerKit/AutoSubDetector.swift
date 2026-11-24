@@ -55,6 +55,7 @@ public final class AutoSubDetector {
     private var runningSpeed = AutoSubDetector.runningSpeeds.upperBound
     private var heartRates: [(date: Date, value: Double)] = []
     private var suppressUntil: Date?
+    private var lastManualDate: Date?
     public private(set) var motion = MotionCalibration()
 
     public init(projector: FieldProjector,
@@ -72,8 +73,8 @@ public final class AutoSubDetector {
     /// this wrist.
     public func process(point: TrackPoint, heartRate: Double?, motion trace: MotionTrace? = nil) -> MatchEvent? {
         if let heartRate, heartRate > 0 { recordHeartRate(heartRate, at: point.timestamp) }
-        defer { previousPoint = point }
         guard point.horizontalAccuracy <= configuration.maximumFixAccuracy else { return nil }
+        defer { previousPoint = point }
 
         let start = start ?? point.timestamp
         self.start = start
@@ -93,19 +94,29 @@ public final class AutoSubDetector {
 
     private func close(_ open: (index: Int, speeds: [Double], edges: [Double]), motion trace: MotionTrace?) -> MatchEvent? {
         let speed = mean(open.speeds)
-        let end = date(ofBin: open.index + 1)
-        let level = trace?.level(endingAt: end)
-        if let level { motion.learn(level: level, speed: speed) }
-        let isRun = speed >= runningSpeed || motion.isRunning(level)
-        if isRun {
-            if open.index - (lastRunBin ?? 0) >= Self.runWindowBins { runResumedBin = open.index }
-            lastRunBin = open.index
-        }
+        readMotion(trace)
+        let isRun = speed >= runningSpeed
+        if isRun { recordRun(open.index) }
         if isOnPitch { playingSpeeds.append(speed) }
         let isDue = bins.last.map { $0.index / 2 != open.index / 2 } ?? false
         bins.append(Bin(index: open.index, speed: speed, edge: medianValue(open.edges), isRun: isRun))
         bins.removeAll { $0.index <= open.index - Self.windowBins }
         return isDue ? evaluate(at: open.index) : nil
+    }
+
+    /// The wrist's reading for the bin before, which is the newest sure to be in.
+    private func readMotion(_ trace: MotionTrace?) {
+        guard let previous = bins.indices.last, let level = trace?.level(at: date(ofBin: bins[previous].index)
+            .addingTimeInterval(Self.binSeconds / 2)) else { return }
+        motion.learn(level: level, speed: bins[previous].speed)
+        guard !bins[previous].isRun, motion.isRunning(level) else { return }
+        bins[previous].isRun = true
+        recordRun(bins[previous].index)
+    }
+
+    private func recordRun(_ index: Int) {
+        if index - (lastRunBin ?? 0) >= Self.runWindowBins { runResumedBin = index }
+        lastRunBin = max(index, lastRunBin ?? index)
     }
 
     /// Every ten seconds, weigh the last two minutes.
@@ -124,21 +135,26 @@ public final class AutoSubDetector {
         logOdds = log(carried / (1 - carried)) + evidence(at: index, lastMinute: lastMinute, now: now) / 6
         logOdds = min(max(logOdds, -5), 4)
 
+        // The wearer has just said. What it looks like can wait until that's had time to be true.
+        if let suppressUntil, now < suppressUntil {
+            logOdds = isOnPitch ? min(logOdds, 0) : max(logOdds, 0)
+            return nil
+        }
         if isOnPitch, logOdds > 2 {
             isOnPitch = false
             runResumedBin = nil
-            return emit(.subOut, at: date(ofBin: (lastRunBin ?? -1) + 1), detectedAt: now)
+            return event(.subOut, at: date(ofBin: (lastRunBin ?? -1) + 1))
         }
         if !isOnPitch, logOdds < -1.5 {
             isOnPitch = true
-            return emit(.subIn, at: date(ofBin: runResumedBin ?? index), detectedAt: now)
+            return event(.subIn, at: date(ofBin: runResumedBin ?? index))
         }
         return nil
     }
 
     /// Positive for the bench. Each weight is how much likelier that reading was off than on.
     private func evidence(at index: Int, lastMinute: [Bin], now: Date) -> Double {
-        let sinceRun = Double(index - (lastRunBin ?? bins.first?.index ?? index)) * Self.binSeconds
+        let sinceRun = Double(index - (lastRunBin ?? 0)) * Self.binSeconds
         var evidence = Self.weight(sinceRun, below: [20, 60, 120, 180, 300], [-1.4, -0.7, -0.2, 0.6, 1.4, 2])
         evidence += Self.weight(medianValue(bins.map(\.speed)), below: [0.4, 0.7, 1, 1.3], [1, 0.5, -0.1, -0.6, -1.2])
         evidence += Self.weight(medianValue(bins.map(\.edge)), below: [-0.45, -0.3, -0.2, -0.1, 0, 0.12],
@@ -162,12 +178,14 @@ public final class AutoSubDetector {
         case .subOut: (isOnPitch, logOdds) = (false, 4)
         default: return
         }
+        lastManualDate = event.date
+        runResumedBin = nil
         suppressUntil = event.date.addingTimeInterval(configuration.manualOverrideCooldown)
     }
 
-    private func emit(_ kind: MatchEventKind, at date: Date, detectedAt: Date) -> MatchEvent? {
-        if let suppressUntil, detectedAt < suppressUntil { return nil }
-        return MatchEvent(kind: kind, date: date, source: .automatic)
+    /// Never dated before what the wearer said: that settled everything up to it.
+    private func event(_ kind: MatchEventKind, at date: Date) -> MatchEvent {
+        MatchEvent(kind: kind, date: max(date, lastManualDate ?? date), source: .automatic)
     }
 
     // MARK: Readings
@@ -252,10 +270,11 @@ public final class AutoSubDetector {
                 kept.append(off)
                 continue
             }
-            let back = index < events.count ? events[index] : nil
+            let next = index < events.count ? events[index] : nil
+            let back = next?.kind == .subIn ? next : nil
             index += back == nil ? 0 : 1
             if let before = average(off.date.addingTimeInterval(-120), off.date),
-               let during = average(off.date.addingTimeInterval(60), back?.date ?? end),
+               let during = average(off.date.addingTimeInterval(60), next?.date ?? end),
                during > before - 8 { continue }
             kept.append(off)
             if let back { kept.append(back) }
@@ -280,6 +299,11 @@ public final class AutoSubDetector {
         let events = transitions(track: track, projector: projector,
                                  existingEvents: existingEvents, heartRate: heartRate, motion: motion,
                                  configuration: configuration)
+        return substitutions(in: events, start: start, end: end, halftime: halftime)
+    }
+
+    /// Those of the spells off that are substitutions. Other kinds of event pass through.
+    static func substitutions(in events: [MatchEvent], start: Date, end: Date, halftime: DateInterval?) -> [MatchEvent] {
         var kept: [MatchEvent] = []
         var index = 0
         while index < events.count {
@@ -289,7 +313,8 @@ public final class AutoSubDetector {
                 index += 1
                 continue
             }
-            let back = index + 1 < events.count ? events[index + 1] : nil
+            let next = index + 1 < events.count ? events[index + 1] : nil
+            let back = next?.kind == .subIn ? next : nil
             index += back == nil ? 1 : 2
 
             let isHalftime = halftime.map { event.date < $0.end && (back?.date ?? end) > $0.start } ?? false

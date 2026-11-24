@@ -677,8 +677,8 @@ final class MatchStore: ObservableObject {
     /// Change a match's record, starting one for a match that has none.
     private func edit(_ matchID: UUID, _ change: (inout MatchRecord, DateInterval) -> Void) {
         guard let summary = matches.first(where: { $0.id == matchID }) else { return }
-        // The record may be on disk and not yet attached to a cold-launch row.
-        let existing = summary.record ?? Self.decodeRecord(from: AppGroup.matchRecordURL(for: matchID))
+        // The disk has the last word: a record may be there before it reaches the row.
+        let existing = Self.decodeRecord(from: AppGroup.matchRecordURL(for: matchID)) ?? summary.record
         guard existing != nil || summary.workout != nil else { return }
         let recorded = MatchSummary.recordedInterval(workout: summary.workout, record: existing)
         var record = existing ?? MatchRecord(
@@ -882,7 +882,7 @@ final class MatchStore: ObservableObject {
     /// The in-flight incremental reanalysis pass from `invalidateForFieldChange`.
     private var reanalyzeTask: Task<Void, Never>?
 
-    static func decodeRecord(from url: URL) -> MatchRecord? {
+    nonisolated static func decodeRecord(from url: URL) -> MatchRecord? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data)
     }

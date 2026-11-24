@@ -15,7 +15,8 @@ public struct MotionTrace: Codable, Equatable, Sendable {
         self.start = start
     }
 
-    /// Intervals skipped since the last one (the app was relaunched) stay unknown.
+    /// - Parameter date: The middle of the interval it was measured over. Intervals skipped since
+    ///   the last one (the app was relaunched) stay unknown.
     public mutating func append(_ level: Double, at date: Date) {
         let index = Int(date.timeIntervalSince(start) / Self.interval)
         guard index >= levels.count, index < 24 * 3600 / Int(Self.interval) else { return }
@@ -32,16 +33,18 @@ public struct MotionTrace: Codable, Equatable, Sendable {
         return known.count * 2 >= wanted ? known.map { Double($0) / 100 } : []
     }
 
-    /// The interval that ended at `date`. Nil when it's unknown.
-    public func level(endingAt date: Date) -> Double? {
-        let index = Int(date.timeIntervalSince(start) / Self.interval) - 1
+    /// The interval around `date`. Nil when it's unknown.
+    public func level(at date: Date) -> Double? {
+        guard date >= start else { return nil }
+        let index = Int(date.timeIntervalSince(start) / Self.interval)
         guard levels.indices.contains(index), levels[index] != Self.missing else { return nil }
         return Double(levels[index]) / 100
     }
 
-    /// Whether the last minute held any running, on a wrist known to run at `runningLevel`.
+    /// Whether the last minute held some running, on a wrist known to run at `runningLevel`. One
+    /// interval of it is a wave or a clap.
     public func hasRun(before date: Date, runningLevel: Double) -> Bool {
-        levels(inLast: 60, before: date).contains { $0 >= runningLevel }
+        levels(inLast: 60, before: date).filter { $0 >= runningLevel }.count >= 3
     }
 }
 
