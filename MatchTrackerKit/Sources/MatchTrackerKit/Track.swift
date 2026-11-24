@@ -125,6 +125,10 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     /// The recording itself is never cut.
     public var trimmedStart: Date?
     public var trimmedEnd: Date?
+    /// The trim was the app's doing: the way there or home, plainly not play.
+    public var trimmedAutomatically: Bool?
+    /// Asked for all of it, so nothing is trimmed again.
+    public var keepsWholeRecording: Bool?
     /// Which way the wearer's team attacked in the first half: true toward the low end of the
     /// field's long axis. Nil leaves it to `AttackDirection`.
     public var flipsAttack: Bool?

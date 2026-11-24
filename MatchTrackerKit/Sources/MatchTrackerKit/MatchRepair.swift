@@ -10,6 +10,18 @@ public extension MatchRecord {
         return start < end ? DateInterval(start: start, end: end) : recorded
     }
 
+    /// Leave out the way there and the way home, once, unless the wearer has said when it was played.
+    /// - Returns: Whether anything was left out.
+    @discardableResult
+    mutating func trimJourneys(recorded: DateInterval, track: [TrackPoint], field: OrientedRectangle?) -> Bool {
+        guard trimmedStart == nil, trimmedEnd == nil, keepsWholeRecording != true,
+              let played = TrimAdvisor.atThePitch(recorded: recorded, track: track, field: field) else { return false }
+        trimmedStart = played.start > recorded.start ? played.start : nil
+        trimmedEnd = played.end < recorded.end ? played.end : nil
+        trimmedAutomatically = true
+        return true
+    }
+
     mutating func add(_ event: MatchEvent) {
         events.append(event)
         events.sort { $0.date < $1.date }
@@ -52,6 +64,8 @@ public extension MatchRecord {
         merged.notes = existing.notes ?? notes
         merged.trimmedStart = existing.trimmedStart ?? trimmedStart
         merged.trimmedEnd = existing.trimmedEnd ?? trimmedEnd
+        merged.trimmedAutomatically = existing.trimmedAutomatically ?? trimmedAutomatically
+        merged.keepsWholeRecording = existing.keepsWholeRecording ?? keepsWholeRecording
         merged.flipsAttack = existing.flipsAttack ?? flipsAttack
         merged.reportedPositions = existing.reportedPositions ?? reportedPositions
         merged.format = existing.format ?? format
@@ -119,6 +133,82 @@ public enum TrimAdvisor {
               last.timeIntervalSince(recorded.start) >= minimumMatch,
               recorded.end.timeIntervalSince(last) > patience else { return nil }
         return last.addingTimeInterval(60)
+    }
+
+    // MARK: Coming and going
+
+    /// Faster than anyone runs for this long is a vehicle.
+    private static let vehicleSpeed = 7.0
+    private static let vehicleDuration: TimeInterval = 20
+    /// Farther from play than any bench, toilet or car park.
+    private static let farMeters = 300.0
+
+    /// The part of a recording spent at the pitch, when the rest was plainly getting there or going
+    /// home: driven, or far away, and never back. Nil when there's nothing to leave out.
+    public static func atThePitch(recorded: DateInterval, track: [TrackPoint], field: OrientedRectangle?) -> DateInterval? {
+        let ordered = track.filter { recorded.contains($0.timestamp) && $0.horizontalAccuracy <= 50 }
+            .sorted { $0.timestamp < $1.timestamp }
+        guard let place = PlaceOfPlay(track: ordered, field: field) else { return nil }
+        let near = ordered.indices.filter { place.isNear(ordered[$0].coordinate) }
+        guard let first = near.first, let last = near.last else { return nil }
+
+        var start = recorded.start, end = recorded.end
+        if isJourney(ordered[..<first], from: place) { start = ordered[first].timestamp }
+        if isJourney(ordered[(last + 1)...], from: place) {
+            end = ordered[last].timestamp
+            // Standing about and packing up came before the car.
+            if let moving = lastMovement(recorded: DateInterval(start: start, end: max(end, start)), track: ordered, field: field) {
+                end = min(end, moving.addingTimeInterval(60))
+            }
+        }
+        guard start > recorded.start || end < recorded.end, end.timeIntervalSince(start) >= minimumMatch else { return nil }
+        return DateInterval(start: start, end: end)
+    }
+
+    /// Whether somebody still recording has left for good, judging by the last few minutes of fixes.
+    public static func hasLeft(track: [TrackPoint], field: OrientedRectangle?) -> Bool {
+        guard let place = PlaceOfPlay(track: track, field: field), let now = track.last?.timestamp,
+              let lastNear = track.lastIndex(where: { place.isNear($0.coordinate) }) else { return false }
+        let away = track[(lastNear + 1)...]
+        return now.timeIntervalSince(track[lastNear].timestamp) >= 60 && isJourney(away, from: place)
+    }
+
+    private static func isJourney(_ points: ArraySlice<TrackPoint>, from place: PlaceOfPlay) -> Bool {
+        if points.contains(where: { place.distance(to: $0.coordinate) > farMeters }) { return true }
+        var began: Date?, previous: Date?
+        for point in points {
+            if point.speedMetersPerSecond < vehicleSpeed || previous.map({ point.timestamp.timeIntervalSince($0) > 30 }) == true {
+                began = nil
+            }
+            if point.speedMetersPerSecond >= vehicleSpeed {
+                began = began ?? point.timestamp
+                if let began, point.timestamp.timeIntervalSince(began) >= vehicleDuration { return true }
+            }
+            previous = point.timestamp
+        }
+        return false
+    }
+
+    /// The pitch and what's around it: a saved one, or else wherever the running was.
+    private struct PlaceOfPlay {
+        private let center: Coordinate2D
+        private let radius: Double
+
+        init?(track: [TrackPoint], field: OrientedRectangle?) {
+            if let field {
+                center = field.center
+                radius = hypot(field.lengthMeters, field.widthMeters) / 2 + 100
+                return
+            }
+            let running = track.filter { (2.2...6.5).contains($0.speedMetersPerSecond) }.map(\.coordinate)
+            guard running.count >= 60 else { return nil }
+            let latitudes = running.map(\.latitude).sorted(), longitudes = running.map(\.longitude).sorted()
+            center = Coordinate2D(latitude: latitudes[running.count / 2], longitude: longitudes[running.count / 2])
+            radius = 160
+        }
+
+        func distance(to coordinate: Coordinate2D) -> Double { haversineMeters(center, coordinate) - radius }
+        func isNear(_ coordinate: Coordinate2D) -> Bool { distance(to: coordinate) <= 0 }
     }
 
     /// The end of the last half minute spent mostly moving, two in a row, at walking pace or better.

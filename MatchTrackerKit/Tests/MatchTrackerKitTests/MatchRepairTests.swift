@@ -302,4 +302,59 @@ final class MatchRepairTests: XCTestCase {
         XCTAssertEqual(record.keepingEdits(from: MatchRecord(id: record.id, startDate: at(0), endDate: nil, fieldID: nil,
                                                              events: [], teamCode: nil)).rejectedSubOuts, 1)
     }
+
+    // MARK: - Coming and going
+
+    private static let pitch = Coordinate2D(latitude: 40, longitude: -83)
+
+    /// Fixes every two seconds: how far from the pitch, and how fast.
+    private func journey(_ legs: [(minutes: Double, from: Double, to: Double, speed: Double)]) -> [TrackPoint] {
+        var points: [TrackPoint] = [], t = 0.0
+        for leg in legs {
+            let count = Int(leg.minutes * 30)
+            for index in 0..<count {
+                let meters = leg.from + (leg.to - leg.from) * Double(index) / Double(count)
+                let sway = leg.speed < 7 ? 20 * sin(t / 15) : 0
+                points.append(TrackPoint(
+                    coordinate: Coordinate2D(latitude: Self.pitch.latitude + sway / 111_320,
+                                             longitude: Self.pitch.longitude + meters / (111_320 * cos(40 * .pi / 180))),
+                    timestamp: at(t / 60), speedMetersPerSecond: leg.speed, courseDegrees: 0, horizontalAccuracy: 5))
+                t += 2
+            }
+        }
+        return points
+    }
+
+    func testTheDriveHomeIsLeftOut() throws {
+        let track = journey([(60, 0, 0, 2.6), (5, 0, 60, 0.6), (10, 60, 6000, 12)])
+        let recorded = DateInterval(start: at(0), end: at(75))
+        let played = try XCTUnwrap(TrimAdvisor.atThePitch(recorded: recorded, track: track, field: nil))
+        XCTAssertEqual(played.start, at(0))
+        XCTAssertEqual(played.end.timeIntervalSince(at(0)) / 60, 61, accuracy: 1.5, "nor the walk to the car")
+        XCTAssertTrue(TrimAdvisor.hasLeft(track: track, field: nil))
+
+        var record = MatchRecord(id: UUID(), startDate: at(0), endDate: at(75), fieldID: nil, events: [], teamCode: nil)
+        XCTAssertTrue(record.trimJourneys(recorded: recorded, track: track, field: nil))
+        XCTAssertEqual(record.trimmedEnd, played.end)
+        record.trimmedEnd = nil
+        record.keepsWholeRecording = true
+        XCTAssertFalse(record.trimJourneys(recorded: recorded, track: track, field: nil), "asked for all of it")
+    }
+
+    func testTheDriveThereIsLeftOut() throws {
+        let track = journey([(10, 5000, 120, 10), (5, 120, 0, 1.2), (60, 0, 0, 2.6)])
+        let played = try XCTUnwrap(TrimAdvisor.atThePitch(recorded: DateInterval(start: at(0), end: at(75)), track: track, field: nil))
+        XCTAssertEqual(played.start.timeIntervalSince(at(0)) / 60, 10, accuracy: 1)
+        XCTAssertEqual(played.end, at(75))
+    }
+
+    func testPlayingIsNeverLeaving() {
+        let recorded = DateInterval(start: at(0), end: at(90))
+        for track in [journey([(90, 0, 0, 2.6)]),
+                      journey([(45, 0, 0, 2.6), (10, 0, 140, 0.8), (35, 0, 0, 2.6)]),      // half-time at the car
+                      journey([(45, 0, 0, 2.6), (5, 0, 3000, 12), (5, 3000, 0, 12), (35, 0, 0, 2.6)])] {   // and back
+            XCTAssertNil(TrimAdvisor.atThePitch(recorded: recorded, track: track, field: nil))
+            XCTAssertFalse(TrimAdvisor.hasLeft(track: track, field: nil))
+        }
+    }
 }
