@@ -13,7 +13,6 @@ struct RunsSection: View {
     let analytics: MatchAnalytics
 
     @EnvironmentObject private var store: MatchStore
-    @State private var narrator = RunNarrator()
     @State private var data: RunsData?
     @State private var selectedRunID: RunSegment.ID?
     @State private var scrolledKeyRunID: RunSegment.ID?
@@ -31,7 +30,6 @@ struct RunsSection: View {
                 hero
                 summaryLine
                 carousel
-                aiLabelsFootnote
                 allRunsDisclosure
             }
         }
@@ -150,7 +148,6 @@ struct RunsSection: View {
                     ForEach(scoredRuns) { scoredRun in
                         KeyRunCard(
                             run: scoredRun,
-                            aiTitle: narrator.title(forRun: scoredRun.id, inMatch: detail.matchIdentifier),
                             minute: minute(for: scoredRun.segment),
                             isSelected: scoredRun.id == selectedRunID
                         )
@@ -172,26 +169,6 @@ struct RunsSection: View {
                 Haptics.selection()
                 withAnimation(.easeInOut(duration: 0.35)) { selectedRunID = newValue }
             }
-        }
-    }
-
-    /// True once at least one carousel card is showing an on-device AI title for this match.
-    private var hasAILabels: Bool {
-        guard let scoredRuns = data?.scoredRuns else { return false }
-        return scoredRuns.contains { narrator.title(forRun: $0.id, inMatch: detail.matchIdentifier) != nil }
-    }
-
-    /// A quiet attribution shown only while AI labels are on screen.
-    @ViewBuilder
-    private var aiLabelsFootnote: some View {
-        if hasAILabels {
-            HStack(spacing: 4) {
-                Image(systemName: "sparkles")
-                Text("Labels by Apple Intelligence")
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -229,7 +206,7 @@ struct RunsSection: View {
     private func tint(for runID: RunSegment.ID?) -> Color {
         guard let runID else { return Theme.turf }
         if let scoredRun = data?.scoredRuns.first(where: { $0.id == runID }) {
-            return scoredRun.category?.tint ?? Theme.turf
+            return scoredRun.categories.first?.tint ?? Theme.turf
         }
         if let run = runs.first(where: { $0.id == runID }) {
             return run.intensity.color
@@ -242,17 +219,13 @@ struct RunsSection: View {
     }
 
     /// Compute the curated key runs + normalized pitch geometry once per appearance, defaulting the
-    /// selection/carousel to the first key run. Re-appearing with data already built only re-warms
-    /// the labels (selection is preserved); a reprojection routes through `rebuildData()` instead.
+    /// selection/carousel to the first key run.
     private func prepare() {
         if data == nil {
             rebuildData()
-        } else {
-            if selectedRunID == nil, let first = data?.scoredRuns.first?.id {
-                selectedRunID = first
-                scrolledKeyRunID = first
-            }
-            requestLabels()
+        } else if selectedRunID == nil, let first = data?.scoredRuns.first?.id {
+            selectedRunID = first
+            scrolledKeyRunID = first
         }
     }
 
@@ -262,64 +235,12 @@ struct RunsSection: View {
         let prepared = RunsData.build(
             runs: runs, track: detail.track, projector: analytics.projector,
             events: detail.events, playingIntervals: analytics.playingIntervals,
-            matchStart: detail.matchStart, matchEnd: detail.matchEnd,
-            baselines: store.runBaselines(excluding: detail.matchIdentifier)
+            matchStart: detail.matchStart, matchEnd: detail.matchEnd, keyRuns: analytics.keyRuns
         )
         data = prepared
         let first = prepared.scoredRuns.first?.id
         selectedRunID = first
         scrolledKeyRunID = first
-        requestLabels()
-    }
-
-    /// Warm the on-device model and kick off labeling for this match's curated runs. Idempotent —
-    /// `RunNarrator` caches per match id, so re-appearing or scrubbing never re-runs the model.
-    private func requestLabels() {
-        narrator.prewarm()
-        guard let scoredRuns = data?.scoredRuns, !scoredRuns.isEmpty else { return }
-
-        let features = scoredRuns.enumerated().map { index, scoredRun in
-            RunFeature(
-                id: scoredRun.id,
-                index: index,
-                minute: minute(for: scoredRun.segment),
-                distanceMeters: scoredRun.segment.distanceMeters,
-                peakSpeedKmh: scoredRun.segment.peakSpeed * 3.6,
-                direction: data?.directionLabels[scoredRun.id] ?? "",
-                reasons: scoredRun.reasons,
-                nearbyEventKinds: nearbyEventKinds(for: scoredRun.segment)
-            )
-        }
-        let context = narrationContext()
-        let matchID = detail.matchIdentifier
-        Task { await narrator.generateLabels(matchID: matchID, features: features, context: context) }
-    }
-
-    /// Meaningful match events within ±30 s of a run, as raw kind names for the model prompt.
-    private func nearbyEventKinds(for segment: RunSegment) -> [String] {
-        let window = DateInterval(start: segment.interval.start.addingTimeInterval(-30),
-                                  end: segment.interval.end.addingTimeInterval(30))
-        let kinds: Set<MatchEventKind> = [.goalForUs, .goalAgainstUs, .goalMine,
-                                          .assist, .flag, .yellowCard, .redCard]
-        return detail.events
-            .filter { kinds.contains($0.kind) && window.contains($0.date) }
-            .map { $0.kind.rawValue }
-    }
-
-    /// Final score (us–them) and goal minutes, framing the runs for the model.
-    private func narrationContext() -> MatchNarrationContext {
-        let us = detail.events.filter { $0.kind == .goalForUs || $0.kind == .goalMine }.count
-        let them = detail.events.filter { $0.kind == .goalAgainstUs }.count
-        let goalKinds: Set<MatchEventKind> = [.goalForUs, .goalAgainstUs, .goalMine]
-        let goalMinutes = detail.events
-            .filter { goalKinds.contains($0.kind) }
-            .map { minute(for: $0.date) }
-            .sorted()
-        return MatchNarrationContext(finalScore: "\(us)-\(them)", goalMinutes: goalMinutes)
-    }
-
-    private func minute(for date: Date) -> Int {
-        max(0, Int(date.timeIntervalSince(detail.matchStart) / 60))
     }
 }
 
@@ -328,13 +249,9 @@ struct RunsSection: View {
 /// Everything the section renders that is derived from the (immutable) analytics + track: the
 /// curated key runs, each run's normalized pitch polyline, and per-half attack direction.
 struct RunsData {
-    var scoredRuns: [ScoredRun]
+    var scoredRuns: [KeyRun]
     var normalizedRuns: [RunSegment.ID: [CGPoint]]
     var halfDirections: [HalfDirection]
-    /// Per-run attacking-relative direction label ("toward attacking goal" / "toward own goal" /
-    /// "lateral"), for grounding the AI prompt. Empty when the attack direction is unknown.
-    var directionLabels: [RunSegment.ID: String]
-
     struct HalfDirection: Equatable {
         var label: String?
         var attacksPositiveX: Bool
@@ -342,13 +259,7 @@ struct RunsData {
 
     static func build(runs: [RunSegment], track: [TrackPoint], projector: FieldProjector?,
                       events: [MatchEvent], playingIntervals: [DateInterval],
-                      matchStart: Date, matchEnd: Date, baselines: RunBaselines?) -> RunsData {
-        let scoredRuns = KeyRunSelector.scoredSelection(
-            runs: runs, track: track, projector: projector,
-            events: events, matchStart: matchStart, matchEnd: matchEnd,
-            baselines: baselines, limit: 6
-        )
-
+                      matchStart: Date, matchEnd: Date, keyRuns: [KeyRun]) -> RunsData {
         // Index-aligned normalized track (x = long axis, y = short axis), with a bounding-box
         // fallback so something sensible renders even without a resolved field projector.
         let normalizedTrack = normalize(track: track, projector: projector)
@@ -371,38 +282,7 @@ struct RunsData {
             events: events, playingIntervals: playingIntervals,
             matchStart: matchStart, matchEnd: matchEnd
         )
-        let directionLabels = runDirectionLabels(
-            runs: runs, normalizedRuns: normalizedRuns, halfDirections: directions,
-            events: events, playingIntervals: playingIntervals,
-            matchStart: matchStart, matchEnd: matchEnd
-        )
-
-        return RunsData(scoredRuns: scoredRuns, normalizedRuns: normalizedRuns,
-                        halfDirections: directions, directionLabels: directionLabels)
-    }
-
-    /// Per-run attack-relative direction, derived from each run's normalized long-axis travel and
-    /// its period's attacking direction (index-aligned with `halfDirections`). Empty when the
-    /// attack direction couldn't be resolved (no projector), so the AI prompt simply omits it.
-    private static func runDirectionLabels(
-        runs: [RunSegment], normalizedRuns: [RunSegment.ID: [CGPoint]], halfDirections: [HalfDirection],
-        events: [MatchEvent], playingIntervals: [DateInterval], matchStart: Date, matchEnd: Date
-    ) -> [RunSegment.ID: String] {
-        let periods = periodsForDirection(
-            events: events, intervals: playingIntervals, matchStart: matchStart, matchEnd: matchEnd
-        )
-        guard !halfDirections.isEmpty, periods.count == halfDirections.count else { return [:] }
-
-        var result: [RunSegment.ID: String] = [:]
-        for run in runs {
-            guard let points = normalizedRuns[run.id], let first = points.first, let last = points.last else { continue }
-            let dx = Double(last.x - first.x)
-            guard abs(dx) > 0.03 else { result[run.id] = "lateral"; continue }
-            let periodIndex = periods.firstIndex { $0.contains(run.interval.start) } ?? 0
-            let towardAttack = (dx > 0) == halfDirections[periodIndex].attacksPositiveX
-            result[run.id] = towardAttack ? "toward attacking goal" : "toward own goal"
-        }
-        return result
+        return RunsData(scoredRuns: keyRuns, normalizedRuns: normalizedRuns, halfDirections: directions)
     }
 
     /// Clamp a normalized pitch point into the unit box so a rendered polyline never leaves the
@@ -520,41 +400,27 @@ struct RunsData {
 // MARK: - Key-run card
 
 struct KeyRunCard: View {
-    let run: ScoredRun
-    /// On-device AI title, when generated; nil until it arrives (or on devices without it).
-    let aiTitle: String?
+    let run: KeyRun
     let minute: Int
     let isSelected: Bool
 
-    /// Category tint when the run is a category winner, else the app's turf accent.
-    private var tint: Color { run.category?.tint ?? Theme.turf }
-
-    /// Headline: the AI label when present, otherwise the top deterministic reason (fallback chain).
-    private var title: String {
-        aiTitle ?? run.reasons.first ?? run.category?.label ?? run.segment.intensity.label
-    }
-
-    /// When the AI title is showing, the top reason becomes the grounding subtitle. The line is
-    /// always reserved (rendered even when empty) so cards never jump as labels stream in.
-    private var subtitle: String? {
-        aiTitle != nil ? run.reasons.first : nil
-    }
+    private var tint: Color { run.categories.first?.tint ?? Theme.turf }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(run.category?.label ?? "Run").captionLabel().foregroundStyle(tint)
+                Text(run.categories.first?.label ?? "Run").captionLabel().foregroundStyle(tint)
                 Spacer(minLength: 8)
                 Text("\(minute)'").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(run.title)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
-                Text(subtitle ?? " ")
+                Text(run.detail ?? " ")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -588,21 +454,17 @@ extension KeyRunCategory {
     /// Category tint per the design brief (mapped onto the Theme accent set).
     var tint: Color {
         switch self {
+        case .fastest: return Theme.heart
         case .longest: return Theme.pace
-        case .fastestSprint: return Theme.heart
-        case .deepestAttack: return Theme.sprint
-        case .longestRecovery: return Theme.signal
-        case .lateBurst: return Theme.goal
+        case .decisive: return Theme.goal
         }
     }
 
     var label: String {
         switch self {
-        case .longest: return "Longest Run"
-        case .fastestSprint: return "Fastest Sprint"
-        case .deepestAttack: return "Deepest Attack"
-        case .longestRecovery: return "Recovery Run"
-        case .lateBurst: return "Late Burst"
+        case .fastest: return "Fastest"
+        case .longest: return "Longest"
+        case .decisive: return "Decisive"
         }
     }
 }

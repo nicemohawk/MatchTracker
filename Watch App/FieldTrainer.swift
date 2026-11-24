@@ -44,6 +44,7 @@ final class FieldTrainer: NSObject {
     private let healthStore = HKHealthStore()
     private var gpsSession: HKWorkoutSession?
     private var outline: [CLLocation] = []
+    private var backgroundActivity: CLBackgroundActivitySession?
     private var startLocation: CLLocation?
     private var walkBegan: Date?
     private var lastAcceptedAt: Date?
@@ -55,6 +56,17 @@ final class FieldTrainer: NSObject {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.activityType = .fitness
+    }
+
+    /// The walk so far, in meters east and north of where it began.
+    var outlinePoints: [CGPoint] {
+        _ = sampleCount   // the observed property that changes with `outline`
+        guard let origin = outline.first?.coordinate else { return [] }
+        let metersPerLongitude = 111_320 * cos(origin.latitude * .pi / 180)
+        return outline.map {
+            CGPoint(x: ($0.coordinate.longitude - origin.longitude) * metersPerLongitude,
+                    y: ($0.coordinate.latitude - origin.latitude) * 110_540)
+        }
     }
 
     func start() {
@@ -73,6 +85,10 @@ final class FieldTrainer: NSObject {
         MatchLog.info("field walk: started (location auth \(locationManager.authorizationStatus.rawValue), gate \(Int(TrackPoint.fieldTrainingHorizontalAccuracy)) m)",
                       category: "training")
         startGPSSession()
+        // Claimed from the tap: the wrist drops for most of a walk, and under When In Use
+        // authorization updates only carry on in the background if they began in the foreground.
+        locationManager.allowsBackgroundLocationUpdates = true
+        backgroundActivity = CLBackgroundActivitySession()
         locationManager.startUpdatingLocation()
         startStarvationWatchdog()
     }
@@ -99,6 +115,9 @@ final class FieldTrainer: NSObject {
 
     private func stopRecording() {
         locationManager.stopUpdatingLocation()
+        locationManager.allowsBackgroundLocationUpdates = false
+        backgroundActivity?.invalidate()
+        backgroundActivity = nil
         starvationWatchdog?.cancel()
         starvationWatchdog = nil
         gpsSession?.end()

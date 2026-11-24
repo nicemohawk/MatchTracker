@@ -119,10 +119,25 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     /// phone can still render the route. Nil on in-progress records and records written before
     /// this field existed.
     public var track: [TrackPoint]?
+    public var opponent: String?
+    public var notes: String?
+    /// Where the match really started and ended, when the recording ran on either side of it.
+    /// The recording itself is never cut.
+    public var trimmedStart: Date?
+    public var trimmedEnd: Date?
+    /// Which way the wearer's team attacked in the first half: true toward the low end of the
+    /// field's long axis. Nil leaves it to `AttackDirection`.
+    public var flipsAttack: Bool?
+    /// The `MatchRecord.currentDetection` that last replaced this record's automatic events, so
+    /// the phone re-detects once and never restores one the wearer deleted.
+    public var detection: Int?
+
+    /// Bump when the sub or period detectors change enough to redo old matches.
+    public static let currentDetection = 1
 
     // Synthesized Codable: every added field is optional, so JSON written before they existed
     // still decodes cleanly (the keys are simply absent, `format` nil ≡ .match).
-    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil, reportedPositions: [ReportedPosition]? = nil, track: [TrackPoint]? = nil) {
+    public init(id: UUID, startDate: Date, endDate: Date?, fieldID: UUID?, events: [MatchEvent], teamCode: String?, sportID: String? = nil, headings: [HeadingSample]? = nil, format: MatchFormat? = nil, reportedPositions: [ReportedPosition]? = nil, track: [TrackPoint]? = nil, opponent: String? = nil, notes: String? = nil) {
         self.id = id
         self.startDate = startDate
         self.endDate = endDate
@@ -134,6 +149,8 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
         self.format = format
         self.reportedPositions = reportedPositions
         self.track = track
+        self.opponent = opponent
+        self.notes = notes
     }
 }
 

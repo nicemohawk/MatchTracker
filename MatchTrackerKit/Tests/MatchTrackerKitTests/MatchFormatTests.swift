@@ -95,33 +95,6 @@ final class MatchFormatTests: XCTestCase {
         XCTAssertEqual(MatchContext(format: .indoor, fieldLengthMeters: nil).pitchScale, 0.6, accuracy: 1e-9)
     }
 
-    // MARK: - RunDetectorConfiguration.scaled
-
-    func testScaledConfigurationAppliesFloors() {
-        // Indoor scale 0.6: jog 2*0.6=1.2 → floored 1.6; run 4*0.6=2.4 → 2.8; sprint 5.5*0.6=3.3 → 4.0.
-        let scaled = RunDetectorConfiguration.scaled(for: MatchContext(format: .indoor))
-        XCTAssertEqual(scaled.jogThreshold, 1.6, accuracy: 1e-9)
-        XCTAssertEqual(scaled.runThreshold, 2.8, accuracy: 1e-9)
-        XCTAssertEqual(scaled.sprintThreshold, 4.0, accuracy: 1e-9)
-    }
-
-    func testSmallFieldScalingDetectsSubFiveFiveBurstAsSprint() {
-        // ~40 m field: pitchScale ≈ 0.617, sprint threshold floors at 4.0 m/s.
-        let context = MatchContext(format: .smallSided, fieldLengthMeters: 40)
-        // A 5 s burst at 4.5 m/s (below the full-pitch 5.5 sprint line) inside a slow track.
-        let track = movingTrack(durationSeconds: 60, baseSpeed: 1.0, sprintSpeed: 4.5,
-                                 sprintDuration: 5, sprintPeriod: 60)
-
-        let scaledRuns = RunDetector.detectRuns(in: track, configuration: .scaled(for: context))
-        XCTAssertEqual(scaledRuns.filter { $0.intensity == .sprint }.count, 1,
-                       "a 4.5 m/s burst should read as a sprint once thresholds scale to the small field")
-
-        // The same burst under the default full-pitch config is only a run, never a sprint.
-        let defaultRuns = RunDetector.detectRuns(in: track, configuration: RunDetectorConfiguration())
-        XCTAssertEqual(defaultRuns.filter { $0.intensity == .sprint }.count, 0)
-        XCTAssertEqual(defaultRuns.filter { $0.intensity == .run }.count, 1)
-    }
-
     // MARK: - Effort blending weights & source
 
     func testLegacySignatureDelegatesToGPSOnly() {
@@ -182,18 +155,18 @@ final class MatchFormatTests: XCTestCase {
         let duration = 1200.0
         let intervals = wholeSpan(duration)
 
-        // (a) Full pitch, GPS only — ~110 m/min with ~17% high-intensity share and 3 sprints/10 min.
-        let fullTrack = profileTrack(seconds: 1200, highFraction: 0.17, highSpeed: 5.0, lowSpeed: 1.2)
-        let fullReport = WorkrateAnalyzer.analyze(track: fullTrack, runs: sprintRuns(count: 6),
+        // (a) Full pitch, GPS only — ~66 m/min with 5% high-intensity share and a sprint every 10 min.
+        let fullTrack = profileTrack(seconds: 1200, highFraction: 0.05, highSpeed: 5.0, lowSpeed: 0.9)
+        let fullReport = WorkrateAnalyzer.analyze(track: fullTrack, runs: sprintRuns(count: 2),
                                                   playingIntervals: intervals,
                                                   heartRate: [], context: MatchContext(format: .match))
 
         // (b) Small-sided (~55 m), GPS + HR — the same effort covers less ground; the pitch-scaled
         // distance/sprint curves and the heart-rate signal (0.68 %HRR) keep the components comparable.
         let smallContext = MatchContext(format: .smallSided, fieldLengthMeters: 55)
-        let smallTrack = profileTrack(seconds: 1200, highFraction: 0.18, highSpeed: 4.5, lowSpeed: 0.29)
+        let smallTrack = profileTrack(seconds: 1200, highFraction: 0.05, highSpeed: 4.5, lowSpeed: 0.49)
         let smallHR = heartRate(durationSeconds: duration, bpm: 60 + 0.68 * 130)
-        let smallReport = WorkrateAnalyzer.analyze(track: smallTrack, runs: sprintRuns(count: 4),
+        let smallReport = WorkrateAnalyzer.analyze(track: smallTrack, runs: sprintRuns(count: 2),
                                                    playingIntervals: intervals,
                                                    heartRate: smallHR, context: smallContext)
 
@@ -223,10 +196,10 @@ final class MatchFormatTests: XCTestCase {
     func testArchetypeProfilesLandInBands() {
         // (highFraction, highSpeed, lowSpeed, sprints, hrr, band)
         let cases: [(name: String, hf: Double, hs: Double, ls: Double, sprints: Int, hrr: Double, band: ClosedRange<Double>)] = [
-            ("casual",  0.06, 4.5, 0.66, 1,  0.48, 25...45),
-            ("average", 0.11, 4.8, 0.90, 3,  0.55, 50...65),
-            ("strong",  0.18, 5.0, 1.05, 6,  0.65, 65...80),
-            ("proLike", 0.28, 5.6, 1.50, 12, 0.78, 80...95),
+            ("casual",  0.01,  4.5, 0.75, 0, 0.48, 25...45),
+            ("average", 0.025, 4.5, 0.80, 1, 0.55, 50...65),
+            ("strong",  0.05,  5.0, 0.90, 2, 0.65, 65...80),
+            ("proLike", 0.10,  5.6, 1.10, 6, 0.78, 80...95),
         ]
         for test in cases {
             let track = profileTrack(seconds: 1200, highFraction: test.hf, highSpeed: test.hs, lowSpeed: test.ls)
@@ -246,12 +219,12 @@ final class MatchFormatTests: XCTestCase {
     }
 
     /// The bottom of the scale must be honest: a player who barely exerts scores low, and clamping
-    /// at the near-zero anchors can't gift points. "Coasting" (55 m/min, ≤1 sprint, 4% high-intensity,
+    /// at the near-zero anchors can't gift points. "Coasting" (37 m/min, no sprints, 0.3% high-intensity,
     /// 0.40 %HRR) lands 12–32; a "walked around" extreme (40 m/min, no sprints, 0.30 %HRR) below 20.
     func testLowEffortScoresHonestlyLow() {
         let intervals = wholeSpan(1200)
 
-        let coastTrack = profileTrack(seconds: 1200, highFraction: 0.04, highSpeed: 4.2, lowSpeed: 0.75)
+        let coastTrack = profileTrack(seconds: 1200, highFraction: 0.003, highSpeed: 4.2, lowSpeed: 0.6)
         let coastGPS = WorkrateAnalyzer.analyze(track: coastTrack, runs: sprintRuns(count: 0),
                                                 playingIntervals: intervals, heartRate: [],
                                                 context: MatchContext(format: .match))
@@ -292,16 +265,15 @@ final class MatchFormatTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(high, mid)
     }
 
-    /// Demo plausibility: the seeded demo match (75 m/min, 20 sprints / 70 min ≈ 2.9 per 10 min,
-    /// 14% high-intensity share, mean 0.58 %HRR) should read as a solid-average outing, 55–70.
-    func testDemoMatchPlausibility() {
-        let intervals = wholeSpan(4200)
-        let track = profileTrack(seconds: 4200, highFraction: 0.14, highSpeed: 4.5, lowSpeed: 0.72)
-        let hr = heartRate(durationSeconds: 4200, bpm: 60 + 0.58 * 130)
-        let report = WorkrateAnalyzer.analyze(track: track, runs: sprintRuns(count: 20),
-                                              playingIntervals: intervals, heartRate: hr,
+    /// A typical recorded amateur match (57 m/min, 3 sprints in 70 min, 2% high-intensity share,
+    /// mean 0.62 %HRR) should read as a solid-average outing.
+    func testTypicalAmateurMatch() {
+        let track = profileTrack(seconds: 4200, highFraction: 0.02, highSpeed: 4.5, lowSpeed: 0.88)
+        let report = WorkrateAnalyzer.analyze(track: track, runs: sprintRuns(count: 3),
+                                              playingIntervals: wholeSpan(4200),
+                                              heartRate: heartRate(durationSeconds: 4200, bpm: 60 + 0.62 * 130),
                                               context: MatchContext(format: .match))
-        XCTAssert((55.0...70.0).contains(report.workrateScore), "demo \(report.workrateScore)")
+        XCTAssert((50.0...65.0).contains(report.workrateScore), "amateur \(report.workrateScore)")
         XCTAssertEqual(report.isLowConfidence, false)
     }
 

@@ -55,11 +55,9 @@ final class PeriodDetectorTests: XCTestCase {
 
     func testFindsTwelveMinuteHalftimeGap() throws {
         let rectangle = rect()
-        let projector = FieldProjector(rectangle: rectangle)
         let track = halftimeMatch(rect: rectangle)
 
-        let events = PeriodDetector.detectPeriods(track: track, events: [], projector: projector,
-                                                  configuration: PeriodDetectorConfiguration())
+        let events = PeriodDetector.detectPeriods(track: track, events: [])
 
         XCTAssertEqual(events.count, 2, "one halftime break -> a periodEnd/periodStart pair")
         let end = try XCTUnwrap(events.first { $0.kind == .periodEnd })
@@ -73,12 +71,10 @@ final class PeriodDetectorTests: XCTestCase {
 
     func testReturnsEmptyWhenPeriodEventsExist() {
         let rectangle = rect()
-        let projector = FieldProjector(rectangle: rectangle)
         let track = halftimeMatch(rect: rectangle)
 
         let existing = [MatchEvent(kind: .periodStart, date: start, source: .manual)]
-        let events = PeriodDetector.detectPeriods(track: track, events: existing, projector: projector,
-                                                  configuration: PeriodDetectorConfiguration())
+        let events = PeriodDetector.detectPeriods(track: track, events: existing)
         XCTAssertTrue(events.isEmpty, "existing period markers suppress auto-detection")
     }
 
@@ -94,8 +90,7 @@ final class PeriodDetectorTests: XCTestCase {
             points.append(playingPoint(rectangle, at: offset, seed: seed)); seed += 1
         }
 
-        let events = PeriodDetector.detectPeriods(track: points, events: [], projector: nil,
-                                                  configuration: PeriodDetectorConfiguration())
+        let events = PeriodDetector.detectPeriods(track: points, events: [])
         XCTAssertEqual(events.count, 2, "the coverage hole alone marks the halftime break")
         let endOffset = events.first { $0.kind == .periodEnd }?.date.timeIntervalSince(start) ?? -1
         let resumeOffset = events.first { $0.kind == .periodStart }?.date.timeIntervalSince(start) ?? -1
@@ -109,7 +104,6 @@ final class PeriodDetectorTests: XCTestCase {
     /// `expectedPeriods == 0` every qualifying break becomes a boundary, not just one midpoint gap.
     func testPickupSessionReturnsAllQualifyingBreaks() throws {
         let rectangle = rect()
-        let projector = FieldProjector(rectangle: rectangle)
         let benchCoordinate = place(rectangle, x: 1.6, y: 0.5)   // well past the end line
 
         var points: [TrackPoint] = []
@@ -134,8 +128,7 @@ final class PeriodDetectorTests: XCTestCase {
 
         var configuration = PeriodDetectorConfiguration()
         configuration.expectedPeriods = 0
-        let events = PeriodDetector.detectPeriods(track: points, events: [], projector: projector,
-                                                  configuration: configuration)
+        let events = PeriodDetector.detectPeriods(track: points, events: [], configuration: configuration)
 
         XCTAssertEqual(events.filter { $0.kind == .periodEnd }.count, 3)
         XCTAssertEqual(events.filter { $0.kind == .periodStart }.count, 3)
@@ -145,5 +138,68 @@ final class PeriodDetectorTests: XCTestCase {
         for (detected, expected) in zip(ends, breakStarts) {
             XCTAssertEqual(detected, expected, accuracy: 60)
         }
+    }
+
+    // MARK: - Implausible halves
+
+    /// Alternating stretches of play (2.5 m/s) and standing (0), in minutes.
+    private func match(_ stretches: [(minutes: Double, playing: Bool)]) -> [TrackPoint] {
+        var points: [TrackPoint] = []
+        var offset = 0.0
+        for stretch in stretches {
+            let end = offset + stretch.minutes * 60
+            while offset < end {
+                var point = playingPoint(rect(), at: offset, seed: offset)
+                if !stretch.playing { point.speedMetersPerSecond = 0 }
+                points.append(point)
+                offset += 2
+            }
+        }
+        return points
+    }
+
+    private func detectedMinutes(_ track: [TrackPoint]) -> [Int] {
+        PeriodDetector.detectPeriods(track: track, events: []).map {
+            Int(($0.date.timeIntervalSince(start) / 60).rounded())
+        }
+    }
+
+    func testEarlyAndLateBreaksAreNotHalftime() {
+        XCTAssertEqual(detectedMinutes(match([(3, true), (5, false), (71, true)])), [])
+        XCTAssertEqual(detectedMinutes(match([(79, true), (6, false), (3, true)])), [])
+    }
+
+    func testStandingAboutBeforeAndAfterIsNotPlayingTime() {
+        // Twenty minutes of waiting first would put the true halftime at two thirds of the recording.
+        XCTAssertEqual(detectedMinutes(match([(20, false), (30, true), (8, false), (30, true), (10, false)])), [50, 58])
+    }
+
+    func testBreakTooShortOrTooLongIsNotHalftime() {
+        XCTAssertEqual(detectedMinutes(match([(40, true), (2, false), (40, true)])), [])
+        XCTAssertEqual(detectedMinutes(match([(40, true), (30, false), (40, true)])), [])
+    }
+
+    func testAJogInTheMiddleDoesNotEndHalftime() {
+        var track = match([(40, true), (12, false), (40, true)])
+        for index in track.indices where (45 * 60..<46 * 60).contains(Int(track[index].timestamp.timeIntervalSince(start))) {
+            track[index].speedMetersPerSecond = 1.5
+        }
+        XCTAssertEqual(detectedMinutes(track), [40, 52])
+    }
+
+    func testMarkedHalftimeBeatsDetectionUnlessItIsImplausible() {
+        let track = match([(40, true), (10, false), (40, true)])
+        let interval = DateInterval(start: start, duration: 90 * 60)
+        func marks(_ end: Double, _ resume: Double, _ source: MatchEventSource = .manual) -> [MatchEvent] {
+            [MatchEvent(kind: .periodEnd, date: start.addingTimeInterval(end * 60), source: source),
+             MatchEvent(kind: .periodStart, date: start.addingTimeInterval(resume * 60), source: source)]
+        }
+        func halftimeStart(_ events: [MatchEvent]) -> Double? {
+            PeriodDetector.halftime(track: track, events: events, interval: interval)
+                .map { $0.start.timeIntervalSince(start) / 60 }
+        }
+        XCTAssertEqual(try XCTUnwrap(halftimeStart(marks(43, 49))), 43, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(halftimeStart(marks(3, 8))), 40, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(halftimeStart(marks(30, 35, .automatic))), 40, accuracy: 1)
     }
 }

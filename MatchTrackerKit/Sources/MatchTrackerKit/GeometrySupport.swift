@@ -13,7 +13,7 @@ public let metersPerDegreeLatitude = 111_320.0
 /// Local tangent-plane (East-North-Up) projection around a reference coordinate.
 /// Projected points use `x` = meters east, `y` = meters north. Accurate to well under a meter
 /// at soccer-pitch scale; shared by the analytics engine and app-layer geometry.
-public struct ENUFrame {
+public struct ENUFrame: Sendable {
     public let referenceLatitude: Double
     public let referenceLongitude: Double
     public let metersPerDegreeLongitude: Double

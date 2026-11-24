@@ -12,6 +12,9 @@ import Foundation
 /// for the watch -> phone link (so the phone can extend its track and event list live); the phone
 /// strips them before relaying to the backend (see `APIClient.postLive`).
 public struct LiveMatchUpdate: Codable, Sendable {
+    /// Which match this belongs to (watch -> phone only): `sequence` starts over with each one.
+    /// Nil from watches that predate it.
+    public var matchID: UUID?
     public var sequence: Int
     public var timestamp: Date
     public var elapsed: TimeInterval
@@ -28,10 +31,11 @@ public struct LiveMatchUpdate: Codable, Sendable {
     public var usGoals: Int?
     public var themGoals: Int?
 
-    public init(sequence: Int, timestamp: Date, elapsed: TimeInterval, heartRate: Double? = nil,
+    public init(matchID: UUID? = nil, sequence: Int, timestamp: Date, elapsed: TimeInterval, heartRate: Double? = nil,
                 distanceMeters: Double, currentSpeed: Double? = nil, onPitch: Bool,
                 latestPoints: [TrackPoint] = [], newEvents: [MatchEvent] = [],
                 usGoals: Int? = nil, themGoals: Int? = nil) {
+        self.matchID = matchID
         self.sequence = sequence
         self.timestamp = timestamp
         self.elapsed = elapsed
@@ -46,6 +50,7 @@ public struct LiveMatchUpdate: Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case matchID = "match_id"
         case sequence
         case timestamp
         case elapsed = "elapsed_s"
@@ -57,5 +62,47 @@ public struct LiveMatchUpdate: Codable, Sendable {
         case newEvents = "new_events"
         case usGoals = "us_goals"
         case themGoals = "them_goals"
+    }
+}
+
+public extension LiveMatchUpdate {
+    /// Whether this opens another match than `previous`. Watches that don't send a match id give
+    /// themselves away by counting from the start again.
+    func startsNewMatch(after previous: LiveMatchUpdate) -> Bool {
+        guard timestamp > previous.timestamp else { return false }
+        if let matchID, let previousID = previous.matchID { return matchID != previousID }
+        return sequence <= previous.sequence && elapsed < previous.elapsed
+    }
+
+    /// Whether this is newer news of the same match.
+    func follows(_ previous: LiveMatchUpdate) -> Bool {
+        if let matchID, let previousID = previous.matchID, matchID != previousID { return false }
+        return sequence > previous.sequence
+    }
+}
+
+/// Counts sprints as points arrive: sprint speed held across two samples, then well below it
+/// before another counts.
+public struct LiveSprintCounter: Sendable {
+    public private(set) var count = 0
+    private var last: TrackPoint?
+    private var isSprinting = false
+
+    public init() {}
+
+    public mutating func add(_ point: TrackPoint) {
+        // Redelivered points were counted the first time.
+        guard last.map({ point.timestamp > $0.timestamp }) ?? true else { return }
+        defer { last = point }
+        func isSprintSpeed(_ point: TrackPoint) -> Bool {
+            (SpeedThresholds.sprinting...SpeedThresholds.plausibleMaximum).contains(point.speedMetersPerSecond)
+        }
+        if isSprinting {
+            isSprinting = point.speedMetersPerSecond >= SpeedThresholds.sprinting * 0.8
+        } else if let last, isSprintSpeed(last), isSprintSpeed(point),
+                  point.timestamp.timeIntervalSince(last.timestamp) <= 2.5 {
+            isSprinting = true
+            count += 1
+        }
     }
 }
