@@ -43,7 +43,7 @@ struct TeamMatchesView: View {
             .padding(.vertical, 8)
             .readableWidth()
         }
-        .background(Color(.systemGroupedBackground))
+        .canvasBackground()
         .navigationTitle("Team Matches")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.loadHistory() }
@@ -88,21 +88,24 @@ private struct TeamLivePane: View {
                 pitch
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                List { playerSections }
+                List { Group { playerSections }.listRowBackground(Theme.surface) }
                     .frame(width: 320)
             }
         } else {
             List {
-                if model.players.contains(where: \.hasPlace) {
-                    Section {
-                        pitch
-                            .frame(height: 400)
-                            .frame(maxWidth: .infinity)
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
+                Group {
+                    if model.players.contains(where: \.hasPlace) {
+                        Section {
+                            pitch
+                                .frame(height: 400)
+                                .frame(maxWidth: .infinity)
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Color.clear)
+                        }
                     }
+                    playerSections
                 }
-                playerSections
+                .listRowBackground(Theme.surface)
             }
             .contentMargins(.top, 8, for: .scrollContent)
         }
@@ -162,9 +165,9 @@ private struct TeamMarker: View {
         VStack(spacing: 2) {
             Text(RosterAvatar.initials(from: player.playerName))
                 .font(.subheadline.weight(.bold))
-                .foregroundStyle(player.stale ? .white : .black)
+                .foregroundStyle(player.stale ? Color.white : Theme.cloth)
                 .frame(width: 36, height: 36)
-                .background(player.stale ? Color.gray : isMe ? Theme.turf : .white, in: Circle())
+                .background(player.stale ? Color.gray : isMe ? Color(cgColor: Knit.yarns[2]) : Theme.ivory, in: Circle())
             Text(isMe ? "You" : RosterAvatar.shortName(player.playerName))
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white)
@@ -225,24 +228,27 @@ private struct TeamMinutesPane: View {
                                    description: Text("Minutes appear once someone records a match on Apple Watch."))
         case .loaded:
             List {
-                Section {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline) {
-                            title
-                            Spacer()
-                            orderPicker
+                Group {
+                    Section {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline) {
+                                title
+                                Spacer()
+                                orderPicker
+                            }
+                            VStack(alignment: .leading) {
+                                title
+                                orderPicker.padding(.leading, -12)
+                            }
                         }
-                        VStack(alignment: .leading) {
-                            title
-                            orderPicker.padding(.leading, -12)
+                        ForEach(rows, id: \.name) { row in
+                            TeamMinutesRow(name: row.name, load: row.load)
                         }
+                    } footer: {
+                        Text("Counted from each player's watch, without half-time or time on the bench. A dash means nothing was recorded.")
                     }
-                    ForEach(rows, id: \.name) { row in
-                        TeamMinutesRow(name: row.name, load: row.load)
-                    }
-                } footer: {
-                    Text("Counted from each player's watch, without half-time or time on the bench. A dash means nothing was recorded.")
                 }
+                .listRowBackground(Theme.surface)
             }
             .contentMargins(.top, 8, for: .scrollContent)
             .readableFormWidth()
@@ -252,7 +258,7 @@ private struct TeamMinutesPane: View {
 
     private var title: some View {
         Text(model.matches.count == 1 ? "Last match" : "Last \(min(5, model.matches.count)) matches")
-            .font(.title2.bold())
+            .font(.name(.title3))
     }
 
     private var orderPicker: some View {
@@ -299,7 +305,7 @@ private struct TeamMinutesRow: View {
             HStack(spacing: 12) {
                 bars
                 Text(load.matchesPlayed == 0 ? "—" : "\(Int(load.minutes.rounded())) min")
-                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .font(.figure(.body))
                     .monospacedDigit()
                     .frame(minWidth: 72, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
             }
@@ -366,24 +372,27 @@ private struct TeamEventsPane: View {
                                    description: Text("Goals, cards and flags the team logs on Apple Watch appear here."))
         case .loaded:
             List {
-                ForEach(days, id: \.day) { day in
-                    Section(day.day.formatted(.dateTime.weekday(.wide).month().day())) {
-                        ForEach(day.events) { event in
-                            if entitlements.entitledToTeam {
-                                noteButton(event)
-                            } else {
-                                row(event)
+                Group {
+                    ForEach(days, id: \.day) { day in
+                        Section(day.day.formatted(.dateTime.weekday(.wide).month().day())) {
+                            ForEach(day.events) { event in
+                                if entitlements.entitledToTeam {
+                                    noteButton(event)
+                                } else {
+                                    row(event)
+                                }
                             }
                         }
                     }
-                }
-                if !entitlements.entitledToTeam {
-                    Section {
-                        Button("Add Notes with MatchTracker Team") { isShowingPlan = true }
-                    } footer: {
-                        Text("Reading the team's moments and notes is free. Writing notes is a paid extra.")
+                    if !entitlements.entitledToTeam {
+                        Section {
+                            Button("Add Notes with MatchTracker Team") { isShowingPlan = true }
+                        } footer: {
+                            Text("Reading the team's moments and notes is free. Writing notes is a paid extra.")
+                        }
                     }
                 }
+                .listRowBackground(Theme.surface)
             }
             .contentMargins(.top, 8, for: .scrollContent)
             .readableFormWidth()

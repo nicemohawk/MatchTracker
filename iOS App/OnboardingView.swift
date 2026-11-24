@@ -158,7 +158,7 @@ private struct OnboardingHeading: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+            Text(title).font(.name(.title)).accessibilityAddTraits(.isHeader)
             Text(detail).font(.title3).foregroundStyle(Theme.secondaryLabel)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -248,7 +248,7 @@ private struct FirstMatchPage: View {
         VStack(alignment: .leading, spacing: 32) {
             history
             VStack(alignment: .leading, spacing: 20) {
-                Text("For your next match").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                Text("For your next match").font(.name(.title3)).accessibilityAddTraits(.isHeader)
                 OnboardingRow(symbol: "applewatch", title: "Wear it snug",
                               detail: "Above the wrist bone, so it can read your heart rate.")
                 OnboardingRow(symbol: "play", title: "Start at kickoff",
@@ -264,7 +264,7 @@ private struct FirstMatchPage: View {
         if let summary = importer.summary {
             VStack(alignment: .leading, spacing: 4) {
                 Text(summary.totalMatches.formatted()).heroNumeral().foregroundStyle(Theme.turf)
-                Text(summary.totalMatches == 1 ? "match imported" : "matches imported").font(.title2.bold())
+                Text(summary.totalMatches == 1 ? "match imported" : "matches imported").font(.name(.title3))
                 if summary.fieldsCreated > 0 {
                     Text(summary.fieldsCreated == 1 ? "On 1 field" : "On \(summary.fieldsCreated) fields")
                         .font(.title3).foregroundStyle(Theme.secondaryLabel)
@@ -275,7 +275,7 @@ private struct FirstMatchPage: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(importer.pendingCount.formatted()).heroNumeral().foregroundStyle(Theme.turf)
                 Text(importer.pendingCount == 1 ? "match already in Health" : "matches already in Health")
-                    .font(.title2.bold())
+                    .font(.name(.title3))
                 if let earliest = importer.earliestDate {
                     Text("Going back to \(earliest.formatted(.dateTime.month(.wide).year())). Start with a history.")
                         .font(.title3).foregroundStyle(Theme.secondaryLabel)

@@ -27,7 +27,7 @@ struct CohortBenchmarkView: View {
                 .padding(.vertical, 8)
                 .readableWidth()
             }
-            .background(Color(.systemGroupedBackground))
+            .canvasBackground()
             .navigationTitle("How You Compare")
             .navigationBarTitleDisplayMode(.inline)
             .task(id: cohort) { await load() }
@@ -52,26 +52,29 @@ struct CohortBenchmarkView: View {
         case .loaded(let benchmark):
             let metrics = Self.metrics(benchmark.percentiles)
             List {
-                Section {
-                    if let best = metrics.first {
-                        Text("\(best.strength), ahead of \(best.standing) in every 100 players.")
-                            .font(.title2.bold())
-                            .padding(.vertical, 4)
-                    }
-                    ForEach(metrics, id: \.title) { metric in
-                        VStack(alignment: .leading, spacing: 8) {
-                            LabeledContent(metric.title) {
-                                Text("Ahead of \(metric.standing)").monospacedDigit()
-                            }
-                            ProgressView(value: Double(metric.standing), total: 100).tint(Theme.turf)
+                Group {
+                    Section {
+                        if let best = metrics.first {
+                            Text("\(best.strength), ahead of \(best.standing) in every 100 players.")
+                                .font(.name(.title3))
+                                .padding(.vertical, 4)
                         }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(metric.title)
-                        .accessibilityValue("Ahead of \(metric.standing) in every 100 players")
+                        ForEach(metrics, id: \.title) { metric in
+                            VStack(alignment: .leading, spacing: 8) {
+                                LabeledContent(metric.title) {
+                                    Text("Ahead of \(metric.standing)").monospacedDigit()
+                                }
+                                ProgressView(value: Double(metric.standing), total: 100).tint(Theme.turf)
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(metric.title)
+                            .accessibilityValue("Ahead of \(metric.standing) in every 100 players")
+                        }
+                    } footer: {
+                        Text("Compared with \(benchmark.sampleSize.formatted()) players\(cohort == .everyone ? "" : " in \(benchmark.cohort)"), over recent months.")
                     }
-                } footer: {
-                    Text("Compared with \(benchmark.sampleSize.formatted()) players\(cohort == .everyone ? "" : " in \(benchmark.cohort)"), over recent months.")
                 }
+                .listRowBackground(Theme.surface)
             }
             .contentMargins(.top, 8, for: .scrollContent)
             .readableFormWidth()

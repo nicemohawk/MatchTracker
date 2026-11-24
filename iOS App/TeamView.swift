@@ -82,7 +82,7 @@ struct TeamView: View {
 
     private var noTeam: some View {
         ContentUnavailableView {
-            Label("Play with your team", systemImage: "person.3")
+            Label { Text("Play with your team") } icon: { ClothSwatch() }
         } description: {
             Text("See who played and who covered the most ground. Free for everyone, with no account and no coach needed.")
         } actions: {
@@ -98,20 +98,25 @@ struct TeamView: View {
             }
             .controlSize(.large)
         }
+        .canvasBackground()
     }
 
     // MARK: iPhone
 
     private var home: some View {
         List {
-            teamSections(showsSquadLink: true)
-            Section {
-                ForEach(Self.pages, id: \.destination) { page in
-                    NavigationLink(value: page.destination) { label(page) }
+            Group {
+                teamSections(showsSquadLink: true)
+                Section {
+                    ForEach(Self.pages, id: \.destination) { page in
+                        NavigationLink(value: page.destination) { label(page) }
+                    }
                 }
+                inviteSection
             }
-            inviteSection
+            .listRowBackground(Theme.surface)
         }
+        .canvasBackground()
         .navigationTitle(teamName)
         .toolbar { toolbar }
         .refreshable { await team.load(code: code) }
@@ -227,10 +232,13 @@ struct TeamView: View {
         switch destination {
         case .leaderboard:
             List {
-                teamSections(showsSquadLink: false)
+                Group {
+                    teamSections(showsSquadLink: false)
+                }
+                .listRowBackground(Theme.surface)
             }
             .readableFormWidth()
-            .background(Color(.systemGroupedBackground))
+            .canvasBackground()
             .navigationTitle("Leaderboard")
             .refreshable { await team.load(code: code) }
         case .squad:

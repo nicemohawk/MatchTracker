@@ -39,7 +39,7 @@ struct NextMatchCard: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(fixture.displayTitle)
-                .font(.title2.bold())
+                .font(.name(.title3))
             Text(fixture.start, format: .dateTime.weekday(.wide).month().day().hour().minute())
                 .font(.body)
             FixturePlace(fixture: fixture, field: fixture.field(among: fields.fields))
@@ -186,31 +186,34 @@ struct FixturesListView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .canvasBackground()
         .navigationTitle("Fixtures")
         .task { await store.refresh() }
     }
 
     private var list: some View {
         List {
-            Section {
-                ForEach(store.upcoming) { fixture in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(fixture.displayTitle).font(.headline)
-                        Text(fixture.start, format: .dateTime.weekday(.abbreviated).month().day().hour().minute())
-                        FixturePlace(fixture: fixture, field: fixture.field(among: fields.fields))
+            Group {
+                Section {
+                    ForEach(store.upcoming) { fixture in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(fixture.displayTitle).font(.headline)
+                            Text(fixture.start, format: .dateTime.weekday(.abbreviated).month().day().hour().minute())
+                            FixturePlace(fixture: fixture, field: fixture.field(among: fields.fields))
+                        }
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 2)
+                } footer: {
+                    Text("From \(calendarNames).")
                 }
-            } footer: {
-                Text("From \(calendarNames).")
+                Section {
+                    ChooseCalendarButton(store: store, title: "Change Calendars")
+                    Button("Stop Using Calendar") { Task { await store.choose([]) } }
+                } footer: {
+                    Text("Nothing is deleted from your calendar.")
+                }
             }
-            Section {
-                ChooseCalendarButton(store: store, title: "Change Calendars")
-                Button("Stop Using Calendar") { Task { await store.choose([]) } }
-            } footer: {
-                Text("Nothing is deleted from your calendar.")
-            }
+            .listRowBackground(Theme.surface)
         }
         .readableFormWidth()
         .refreshable { await store.refresh() }

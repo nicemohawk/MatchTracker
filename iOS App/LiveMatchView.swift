@@ -282,7 +282,7 @@ private struct LivePitch: View {
             SoccerPitch.draw(in: &context, rect: rect)
 
             let points = trail.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) }
-            let tint = isOn ? Color(red: 0.188, green: 0.820, blue: 0.345) : Color(white: 0.7)
+            let tint = isOn ? Color(cgColor: Knit.yarns[2]) : Color(white: 0.7)
             for index in points.indices.dropFirst() {
                 let recency = Double(index) / Double(points.count - 1)
                 var segment = Path()

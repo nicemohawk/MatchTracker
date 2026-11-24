@@ -6,6 +6,7 @@
 // "Legacy" predates DESIGN.md and survives only for the sideline camera.
 
 import SwiftUI
+import MatchTrackerKit
 
 enum Theme {
     /// The comfortable reading measure content is capped to at regular width (iPad, wide split
@@ -215,6 +216,34 @@ struct Cloth: View {
                          with: .color(isBest ? Theme.trimOnCloth : Theme.ivory.opacity(0.35)))
         }
         .clipShape(.rect(cornerRadius: cornerRadius))
+        .accessibilityHidden(true)
+    }
+}
+
+/// Where something will be: a piece of cloth just begun, with the last row unfinished.
+struct ClothSwatch: View {
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.cloth))
+            let columns = 14, width = size.width / CGFloat(columns), rise = width * Knit.rise
+            let rows = Int((size.height / rise).rounded(.up)), begun = rows - 11
+            let paths = Knit.yarns.map { _ in CGMutablePath() }, ground = CGMutablePath()
+            for row in 0..<rows {
+                for column in 0..<columns where row > begun || (row == begun && column < 9) {
+                    // Worked outward from the middle of the hem, as heat would be.
+                    let distance = hypot(Double(column) - 6.5, Double(rows - 1 - row) * 1.1)
+                    let path = distance < 3 ? paths[3] : distance < 5.5 ? paths[2] : distance < 8 ? paths[1] : paths[0]
+                    Knit.addStitch(to: path, column: column, row: row, width: width)
+                }
+                for column in 0..<columns where row < begun || (row == begun && column >= 9) {
+                    Knit.addStitch(to: ground, column: column, row: row, width: width)
+                }
+            }
+            context.fill(Path(ground), with: .color(Color(cgColor: Knit.ground)))
+            for (path, yarn) in zip(paths, Knit.yarns) { context.fill(Path(path), with: .color(Color(cgColor: yarn))) }
+        }
+        .frame(width: 96, height: 132)
+        .clipShape(.rect(cornerRadius: 12))
         .accessibilityHidden(true)
     }
 }

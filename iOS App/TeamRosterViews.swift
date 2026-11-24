@@ -180,12 +180,12 @@ struct TeamLeaderboardSections: View {
         VStack(alignment: .leading, spacing: 4) {
             ViewThatFits(in: .horizontal) {
                 HStack {
-                    Text(title).font(.title2.bold())
+                    Text(title).font(.name(.title3))
                     Spacer()
                     metricPicker
                 }
                 VStack(alignment: .leading) {
-                    Text(title).font(.title2.bold())
+                    Text(title).font(.name(.title3))
                     // A menu picker insets its label; line it up with the rest.
                     metricPicker.padding(.leading, -12)
                 }
@@ -225,6 +225,8 @@ struct LeaderboardRow: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var isLeader: Bool { standing.rank == 1 }
 
     var body: some View {
@@ -236,24 +238,44 @@ struct LeaderboardRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text("\(standing.rank)")
                         .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .opacity(0.7)
                         .frame(minWidth: 22, alignment: .leading)
                     TeamPlayerName(name: standing.name, isMe: isMe)
-                        .font(isLeader ? .title3.bold() : .body)
+                        .font(isLeader ? .name(.title3) : .body)
                 }
                 if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
-                Text(metric.text(standing.value))
-                    .font(.system(isLeader ? .title2 : .body, design: .rounded).weight(.semibold))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                if isLeader {
+                    leaderFigure.fixedSize()
+                } else {
+                    Text(metric.text(standing.value))
+                        .font(.figure(.title3))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
             }
-            ProgressView(value: best > 0 ? standing.value / best : 0)
-                .tint(isMe ? Theme.turf : Color(.systemGray2))
+            // The leader is the length everyone else is measured against.
+            if !isLeader {
+                ProgressView(value: best > 0 ? standing.value / best : 0)
+                    .tint(isMe ? Theme.turf : Color(.systemGray2))
+            }
         }
+        .foregroundStyle(isLeader ? Theme.ivory : .primary)
+        .padding(.bottom, isLeader ? 12 : 0)
+        .environment(\.colorScheme, isLeader ? .dark : colorScheme)
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(standing.rank). \(standing.name)\(isMe ? ", you" : "")")
         .accessibilityValue(metric.spoken(standing.value))
+        .listRowBackground(Group { if isLeader { Cloth(cornerRadius: 0) } else { Theme.surface } })
+    }
+
+    /// The unit stays small and whole beside the cut number.
+    private var leaderFigure: some View {
+        let parts = metric.text(standing.value).split(separator: " ", maxSplits: 1)
+        return HStack(alignment: .firstTextBaseline, spacing: 3) {
+            KitNumber(String(parts.first ?? ""), size: 50)
+            if parts.count > 1 { Text(parts[1]).font(.subheadline.weight(.semibold)).opacity(0.8) }
+        }
     }
 }
 
@@ -293,7 +315,7 @@ struct TeamLastMatchSection: View {
             let goals = match.goalsByPlayer
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Last match").font(.title2.bold())
+                    Text("Last match").font(.name(.title3))
                     Text("\(match.kickoff.formatted(.dateTime.weekday(.wide).month().day())), \(rows.count == 1 ? "1 player" : "\(rows.count) players")")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -331,29 +353,33 @@ struct TeamSquadView: View {
 
     var body: some View {
         List {
-            Section {
-                ForEach(players, id: \.name) { player in
-                    NavigationLink(value: TeamDestination.player(player.name)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            TeamPlayerName(name: player.name)
-                            Text(summary(player))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+            Group {
+                Section {
+                    ForEach(players, id: \.name) { player in
+                        NavigationLink(value: TeamDestination.player(player.name)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                TeamPlayerName(name: player.name)
+                                Text(summary(player))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
-                }
-                if let captain = settings.team(code)?.captainName, !players.contains(where: { settings.isCaptain($0.name, of: code) }) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        TeamPlayerName(name: captain)
-                        Text("Captain, no matches yet").font(.subheadline).foregroundStyle(.secondary)
+                    if let captain = settings.team(code)?.captainName, !players.contains(where: { settings.isCaptain($0.name, of: code) }) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            TeamPlayerName(name: captain)
+                            Text("Captain, no matches yet").font(.subheadline).foregroundStyle(.secondary)
+                        }
                     }
+                } header: {
+                    Text(TeamModel.seasonTitle)
+                } footer: {
+                    Text("Players appear after sharing a match this season. Teammates without a watch can see the team but aren't listed yet.")
                 }
-            } header: {
-                Text(TeamModel.seasonTitle)
-            } footer: {
-                Text("Players appear after sharing a match this season. Teammates without a watch can see the team but aren't listed yet.")
             }
+            .listRowBackground(Theme.surface)
         }
+        .canvasBackground()
         .navigationTitle("Squad")
     }
 
@@ -378,18 +404,21 @@ struct TeamPlayerView: View {
 
     var body: some View {
         List {
-            if settings.isCaptain(name, of: code) {
-                Section { Text("Captain") }
+            Group {
+                if settings.isCaptain(name, of: code) {
+                    Section { Text("Captain") }
+                }
+                if let player = team.week?.players.first(where: { $0.name == name }) {
+                    Section("This week") { rows(player) }
+                }
+                if let player = team.season?.players.first(where: { $0.name == name }) {
+                    Section(TeamModel.seasonTitle) { rows(player) }
+                }
             }
-            if let player = team.week?.players.first(where: { $0.name == name }) {
-                Section("This week") { rows(player) }
-            }
-            if let player = team.season?.players.first(where: { $0.name == name }) {
-                Section(TeamModel.seasonTitle) { rows(player) }
-            }
+            .listRowBackground(Theme.surface)
         }
         .readableFormWidth()
-        .background(Color(.systemGroupedBackground))
+        .canvasBackground()
         .navigationTitle(settings.isMe(name) ? "\(name) (You)" : name)
     }
 

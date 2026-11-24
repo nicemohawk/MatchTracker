@@ -2,6 +2,7 @@
 // MatchTracker
 
 import SwiftUI
+import MatchTrackerKit
 
 /// Draws standard soccer-pitch markings into a `Canvas` `GraphicsContext`, and provides an
 /// aspect-correct rectangle (length:width = 105:68) fitted inside an available size.
@@ -26,16 +27,18 @@ enum SoccerPitch {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
-    /// Fills a dark green-black turf gradient plus a soft vignette into `rect`.
+    /// Knitted cloth, as under the heat.
     static func fillTurf(_ context: inout GraphicsContext, rect: CGRect) {
-        context.fill(Path(rect), with: .linearGradient(
-            Gradient(colors: [Theme.pitchTurfTop, Theme.pitchTurfBottom]),
-            startPoint: CGPoint(x: rect.midX, y: rect.minY),
-            endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
-        context.fill(Path(rect), with: .radialGradient(
-            Gradient(colors: [.clear, .black.opacity(0.28)]),
-            center: CGPoint(x: rect.midX, y: rect.midY),
-            startRadius: rect.width * 0.18, endRadius: rect.width * 0.62))
+        context.fill(Path(rect), with: .color(Theme.cloth))
+        let columns = max(Int(rect.width / 9), 1), width = rect.width / CGFloat(columns)
+        let stitches = CGMutablePath()
+        for row in 0..<Int((rect.height / (width * Knit.rise)).rounded(.up)) {
+            for column in 0..<columns { Knit.addStitch(to: stitches, column: column, row: row, width: width, origin: rect.origin) }
+        }
+        context.drawLayer { layer in
+            layer.clip(to: Path(rect))
+            layer.fill(Path(stitches), with: .color(Color(cgColor: Knit.ground)))
+        }
     }
 
     static func draw(in context: inout GraphicsContext, rect: CGRect,

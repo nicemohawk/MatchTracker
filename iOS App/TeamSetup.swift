@@ -25,7 +25,7 @@ struct TeamJoinSheet: View {
             Form {
                 Section {
                     if let invite {
-                        Text(invite.name ?? "Team \(invite.code)").font(.title2.bold())
+                        Text(invite.name ?? "Team \(invite.code)").font(.name(.title3))
                         if let captain = invite.captain { LabeledContent("Captain", value: captain) }
                     } else {
                         TextField("Team code or invite message", text: $pasted, axis: .vertical)
@@ -130,14 +130,20 @@ struct TeamReadyView: View {
         ScrollView {
             VStack(spacing: 24) {
                 VStack(spacing: 8) {
-                    Text("\(invite.name ?? "Your team") is ready").font(.largeTitle.bold())
+                    Text("\(invite.name ?? "Your team") is ready").font(.name(.title))
                     Text("Send the invite to your team's group chat. Teammates tap the link, or paste the message in their Team tab.")
                         .foregroundStyle(.secondary)
                 }
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
+                    // Read out loud and typed in, so whole letters and no cut.
                     Text(invite.code)
-                        .font(.system(.largeTitle, design: .rounded).bold())
+                        .font(.system(.largeTitle, weight: .heavy).width(.expanded))
                         .monospaced()
+                        .foregroundStyle(Theme.ivory)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 24)
+                        .padding(.bottom, 34)
+                        .background { Cloth() }
                         .textSelection(.enabled)
                         .accessibilityLabel("Team code \(invite.code.map(String.init).joined(separator: " "))")
                     Text("Or read them the code").font(.subheadline).foregroundStyle(.secondary)
@@ -151,6 +157,7 @@ struct TeamReadyView: View {
             .padding(.top, 32)
             .readableWidth(560)
         }
+        .canvasBackground()
         .bottomActionBar {
             ShareLink(item: invite.message) { Text("Send Invite") }
                 .buttonStyle(.primaryAction)
@@ -184,29 +191,32 @@ private struct TeamSharingSection: View {
 struct TeamPrivacyView: View {
     var body: some View {
         List {
-            Section("Your team sees") {
-                Text("Your name, exactly as you typed it")
-                Text("Minutes, distance, sprints, goals and assists")
-                Text("Where you usually play on the pitch")
-                Text("Goals, cards, flags and notes you log")
-                Text("While you're playing: distance, and whether you're on the pitch")
+            Group {
+                Section("Your team sees") {
+                    Text("Your name, exactly as you typed it")
+                    Text("Minutes, distance, sprints, goals and assists")
+                    Text("Where you usually play on the pitch")
+                    Text("Goals, cards, flags and notes you log")
+                    Text("While you're playing: distance, and whether you're on the pitch")
+                }
+                Section {
+                    Text("Heart rate")
+                    Text("Your route and heat map")
+                    Text("Matches from before you joined, or after you leave")
+                } header: {
+                    Text("Your team doesn't see")
+                } footer: {
+                    Text("A shared match's route, average heart rate and effort also go to the MatchTracker server, which uses the route to map fields. They aren't shown to your team.")
+                }
+                Section {
+                    Text("Anyone with the team code can join and see all of this, so only send it to people you play with. For a child, initials or a nickname are enough.")
+                    Text("Leaving stops sharing. Delete My Server Data in Settings removes what you've already shared.")
+                }
             }
-            Section {
-                Text("Heart rate")
-                Text("Your route and heat map")
-                Text("Matches from before you joined, or after you leave")
-            } header: {
-                Text("Your team doesn't see")
-            } footer: {
-                Text("A shared match's route, average heart rate and effort also go to the MatchTracker server, which uses the route to map fields. They aren't shown to your team.")
-            }
-            Section {
-                Text("Anyone with the team code can join and see all of this, so only send it to people you play with. For a child, initials or a nickname are enough.")
-                Text("Leaving stops sharing. Delete My Server Data in Settings removes what you've already shared.")
-            }
+            .listRowBackground(Theme.surface)
         }
         .readableFormWidth()
-        .background(Color(.systemGroupedBackground))
+        .canvasBackground()
         .navigationTitle("Who Sees What")
         .navigationBarTitleDisplayMode(.inline)
     }

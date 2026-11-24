@@ -24,31 +24,34 @@ struct TeamWhosInView: View {
 
     var body: some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(plan.playing.isEmpty ? "Nobody picked yet" : "\(plan.picked(from: names).count) in")
-                        .font(.title2.bold())
-                        .contentTransition(.numericText())
-                    Text(matchLine ?? "For your next match").foregroundStyle(.secondary)
+            Group {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(plan.playing.isEmpty ? "Nobody picked yet" : "\(plan.picked(from: names).count) in")
+                            .font(.name(.title3))
+                            .contentTransition(.numericText())
+                        Text(matchLine ?? "For your next match").foregroundStyle(.secondary)
+                    }
+                    .listRowSeparator(.hidden, edges: .bottom)
+                    ForEach(names, id: \.self) { name in
+                        row(name)
+                    }
+                    TextField("Add a player by name", text: $newName)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit(addPlayer)
+                } footer: {
+                    Text("Kept on this device. Nobody sees it, or the names you add, until you share it.")
                 }
-                .listRowSeparator(.hidden, edges: .bottom)
-                ForEach(names, id: \.self) { name in
-                    row(name)
+                if let problem {
+                    Section {} footer: { Text("Couldn't refresh the squad. \(problem)") }
                 }
-                TextField("Add a player by name", text: $newName)
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
-                    .onSubmit(addPlayer)
-            } footer: {
-                Text("Kept on this device. Nobody sees it, or the names you add, until you share it.")
             }
-            if let problem {
-                Section {} footer: { Text("Couldn't refresh the squad. \(problem)") }
-            }
+            .listRowBackground(Theme.surface)
         }
         .readableFormWidth()
-        .background(Color(.systemGroupedBackground))
+        .canvasBackground()
         .navigationTitle("Who's In")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

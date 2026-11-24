@@ -295,7 +295,7 @@ struct NoMatchesView: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("Your First Match", systemImage: "applewatch.radiowaves.left.and.right")
+            Label { Text("Your First Match") } icon: { ClothSwatch() }
         } description: {
             Text("Start a match on your Apple Watch and it will be here when you walk off the pitch.")
         } actions: {

@@ -33,7 +33,7 @@ struct FormationView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemGroupedBackground))
+            .canvasBackground()
             .navigationTitle("Formation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
@@ -116,7 +116,7 @@ struct FormationView: View {
 
     private var shapeName: some View {
         Text(board.shapeName ?? "Your lineup")
-            .font(.system(.largeTitle, design: .rounded).bold())
+            .font(.system(.largeTitle, weight: .heavy).width(.compressed))
             .monospacedDigit()
             .contentTransition(.numericText())
             .fixedSize()
@@ -243,28 +243,31 @@ struct FormationView: View {
 
     private var list: some View {
         List {
-            ForEach(board.lines, id: \.title) { line in
-                Section(line.title) {
-                    ForEach(line.spots) { spot in
-                        ViewThatFits(in: .horizontal) {
-                            HStack {
-                                row(spot)
-                                Spacer()
-                                swapMenu(spot.name)
-                            }
-                            VStack(alignment: .leading) {
-                                row(spot)
-                                swapMenu(spot.name)
+            Group {
+                ForEach(board.lines, id: \.title) { line in
+                    Section(line.title) {
+                        ForEach(line.spots) { spot in
+                            ViewThatFits(in: .horizontal) {
+                                HStack {
+                                    row(spot)
+                                    Spacer()
+                                    swapMenu(spot.name)
+                                }
+                                VStack(alignment: .leading) {
+                                    row(spot)
+                                    swapMenu(spot.name)
+                                }
                             }
                         }
                     }
                 }
-            }
-            if !board.bench.isEmpty {
-                Section("Bench") {
-                    ForEach(board.bench, id: \.self) { TeamPlayerName(name: $0) }
+                if !board.bench.isEmpty {
+                    Section("Bench") {
+                        ForEach(board.bench, id: \.self) { TeamPlayerName(name: $0) }
+                    }
                 }
             }
+            .listRowBackground(Theme.surface)
         }
         .readableFormWidth()
     }
@@ -298,11 +301,11 @@ private struct FormationMarker: View {
         let isDragging = translation != .zero
         VStack(spacing: 3) {
             Text(RosterAvatar.initials(from: spot.name))
-                .font(.system(size: diameter * 0.4, weight: .bold, design: .rounded))
-                .foregroundStyle(.black)
+                .font(.system(size: diameter * 0.48, weight: .heavy).width(.compressed))
+                .foregroundStyle(Theme.cloth)
                 .frame(width: diameter, height: diameter)
-                .background(isMe ? Theme.turf : .white, in: Circle())
-                .overlay { Circle().strokeBorder(.white, lineWidth: isSelected || isDragging ? 4 : 0).padding(-6) }
+                .background(isMe ? Color(cgColor: Knit.yarns[2]) : Theme.ivory, in: Circle())
+                .overlay { Circle().strokeBorder(Theme.ivory, lineWidth: isSelected || isDragging ? 4 : 0).padding(-6) }
             Text(isMe ? "You" : RosterAvatar.shortName(spot.name))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
