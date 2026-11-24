@@ -13,6 +13,7 @@ struct MatchTrackerApp: App {
     init() {
         Self.registerBackgroundRefresh()
         LiveActivityController.shared.observeMirroredMatches()
+        MatchReminders.shared.start()
         // Not left to the first window: the watch wakes the app in the background, without one.
         let environment = AppEnvironment()
         environment.connectivity.start()
@@ -117,6 +118,7 @@ final class AppEnvironment: ObservableObject {
         }
         connectivity.onMatchRecordReceived = { [weak matches] record in
             LiveActivityController.shared.matchFinished(record)
+            MatchReminders.shared.matchArrived(record)
             Task { await matches?.refresh() }
         }
         connectivity.onFieldReceived = { [weak fields] in
@@ -178,7 +180,6 @@ struct RootTabView: View {
 
     var body: some View {
         tabs
-            .tint(Theme.turf)
             .systemLinks(showingLive: $showingLive,
                          openMatch: { id in
                              selectedTab = .summary
@@ -189,6 +190,7 @@ struct RootTabView: View {
                                                 set: { if $0 { hasOnboarded = false } })) {
                 OnboardingView()
             }
+            .tint(Theme.turf)
     }
 
     @ViewBuilder

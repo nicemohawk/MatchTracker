@@ -185,6 +185,11 @@ struct MatchRow: View {
                 .clipShape(.rect(cornerRadius: 8))
                 .zoomSource(id: item.id, in: transition)
                 .accessibilityHidden(true)
+        } else if let strip = item.digest?.strip {
+            EffortStripView(levels: strip)
+                .frame(width: 44, height: 66)
+                .clipShape(.rect(cornerRadius: 8))
+                .zoomSource(id: item.id, in: transition)
         } else {
             Image(systemName: item.symbolName)
                 .font(.title2)
@@ -327,7 +332,7 @@ struct MatchListSection: Identifiable {
         var numbers: String {
             var parts: [String] = []
             let meters = digest?.distanceMeters ?? summary.distanceMeters
-            if format != .indoor, meters > 100 { parts.append(UnitSystem.current.distance(meters).text) }
+            if meters > 100 { parts.append(UnitSystem.current.distance(meters).text) }
             parts.append("\(Int(((digest?.secondsOnPitch ?? summary.duration) / 60).rounded())) min")
             return parts.joined(separator: " · ")
         }

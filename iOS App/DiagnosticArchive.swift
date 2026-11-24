@@ -108,11 +108,19 @@ struct DiagnosticFields: Codable {
 }
 
 /// One workout MatchStore knows about, fully self-contained.
+struct DiagnosticDistanceSample: Codable {
+    var start: Date
+    var end: Date
+    var meters: Double
+}
+
 struct DiagnosticMatch: Codable {
     var kind = DiagnosticRecordKind.match
     var metadata: WorkoutMetadata
     var route: [RoutePoint]
     var heartRate: [DiagnosticHeartRateSample]
+    /// Distance as Health measured it, a few seconds at a time: the only movement there is indoors.
+    var distance: [DiagnosticDistanceSample]?
     /// The MatchRecord JSON when one exists (events, format, fieldID, reportedPositions, teamCode).
     /// Nil for a workout-only match with no received record.
     var record: MatchRecord?
@@ -321,7 +329,10 @@ enum DiagnosticArchive {
         if !route.isEmpty {
             record?.track = nil
         }
-        return DiagnosticMatch(metadata: metadata, route: route, heartRate: heartRate, record: record)
+        let covered = (try? await healthKit.fetchDistanceSeries(of: workout)) ?? []
+        return DiagnosticMatch(metadata: metadata, route: route, heartRate: heartRate,
+                               distance: covered.map { DiagnosticDistanceSample(start: $0.interval.start, end: $0.interval.end, meters: $0.meters) },
+                               record: record)
     }
 
     /// Raw route CLLocations for a workout (with altitude / accuracy / speed / course intact),

@@ -215,7 +215,7 @@ struct LastMatchCard: View {
                     .font(.headline)
                     .foregroundStyle(.white.opacity(0.75))
             }
-            if dynamicTypeSize.isAccessibilitySize || digest.heat == nil {
+            if dynamicTypeSize.isAccessibilitySize || (digest.heat == nil && digest.strip == nil) {
                 DigestNumbers(digest: digest)
             } else {
                 HStack(alignment: .center, spacing: 12) {
@@ -247,6 +247,11 @@ struct LastMatchCard: View {
                 .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
                 .frame(maxWidth: isWide ? 260 : 168)
                 .accessibilityHidden(true)
+        } else if let strip = digest.strip {
+            EffortStripView(levels: strip)
+                .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
+                .frame(maxWidth: isWide ? 260 : 168)
+                .clipShape(.rect(cornerRadius: 12))
         }
     }
 }
@@ -453,6 +458,8 @@ private struct SeasonTile: View {
             if let heat = digest.heat {
                 HeatPitch(heat: PitchHeat(digestHeat: heat), insets: EdgeInsets(),
                           directionIsKnown: digest.heatIsDirected ?? false)
+            } else if let strip = digest.strip {
+                EffortStripView(levels: strip)
             } else {
                 Rectangle().fill(Color(.tertiarySystemFill))
                 Image(systemName: digest.format == .indoor ? "house.fill" : "soccerball").foregroundStyle(.secondary)
@@ -519,6 +526,7 @@ extension PersonalBest {
         case .sprints: return "Most sprints"
         case .goals: return "Most goals"
         case .longestMatch: return "Most minutes"
+        case .recovery: return "Quickest recovery"
         }
     }
 
@@ -529,6 +537,7 @@ extension PersonalBest {
         case .sprints: return "bolt.fill"
         case .goals: return "soccerball"
         case .longestMatch: return "clock.fill"
+        case .recovery: return "heart.fill"
         }
     }
 
@@ -538,6 +547,7 @@ extension PersonalBest {
         case .distance: return UnitSystem.current.distance(value).text
         case .sprints, .goals: return "\(Int(value))"
         case .longestMatch: return "\(Int((value / 60).rounded())) min"
+        case .recovery: return "\(Int(value)) bpm"
         }
     }
 }

@@ -65,6 +65,8 @@ struct MomentsChapter: View {
     }
 
     private var bench: String? {
+        // Indoors that's most of the booking, and the stints already say so.
+        guard detail.analytics?.stints == nil else { return nil }
         let seconds = detail.playedInterval.duration - (detail.digest?.secondsOnPitch ?? detail.playedInterval.duration)
             - (detail.analytics?.halftime?.duration ?? 0)
         let minutes = Int((seconds / 60).rounded())
@@ -243,7 +245,8 @@ struct EffortChapter: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Effort").font(.title2.bold())
             EffortVerdict(workout: detail.workout, measured: Self.word(for: detail.digest?.effort))
-            if !detail.heartRateSeries.isEmpty {
+            // Without a pitch, the picture is already the heart rate.
+            if analytics.hasRoute, !detail.heartRateSeries.isEmpty {
                 HeartRateChart(series: detail.heartRateSeries, start: detail.matchStart, halftime: analytics.halftime)
                     .frame(height: 180)
             }
@@ -394,10 +397,20 @@ struct AllNumbersView: View {
                 }
             }
             Section("Time") {
-                row("On the pitch", MatchTrackerFormat.hoursMinutesSeconds(analytics.workrate.timeOnPitch))
+                row(analytics.hasRoute ? "On the pitch" : "Playing", MatchTrackerFormat.hoursMinutesSeconds(analytics.workrate.timeOnPitch))
                 row("Match", MatchTrackerFormat.hoursMinutesSeconds(analytics.interval.duration))
                 if let halftime = analytics.halftime {
                     row("Half-time", MatchTrackerFormat.hoursMinutesSeconds(halftime.duration))
+                }
+            }
+            if let stints = analytics.stints {
+                Section("Stints") {
+                    row("Stints", "\(stints.playing.count)")
+                    row("Longest", MatchTrackerFormat.hoursMinutesSeconds(stints.longest))
+                    row("Average", MatchTrackerFormat.hoursMinutesSeconds(stints.played / Double(max(stints.playing.count, 1))))
+                    if let recovery = stints.recovery {
+                        row("Recovery", "\(Int(recovery)) bpm", note: "How far your heart rate falls in the first minute off")
+                    }
                 }
             }
             if let thirds = analytics.thirds {

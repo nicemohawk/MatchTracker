@@ -152,6 +152,11 @@ struct MatchDetailView: View {
                        seasonHeat: store.season(SeasonSummary.Term(containing: detail.matchStart)).heat,
                        height: stageHeight)
                 .id(Self.stage)
+        } else if let analytics = detail.analytics, let stints = analytics.stints {
+            StintsHero(stints: stints, playing: analytics.playingIntervals, series: detail.heartRateSeries,
+                       interval: analytics.interval)
+                .frame(height: 260)
+                .padding(.horizontal)
         } else if !detail.heartRateSeries.isEmpty {
             HeartRateHero(series: detail.heartRateSeries, start: detail.matchStart)
                 .padding(.horizontal)
@@ -161,8 +166,15 @@ struct MatchDetailView: View {
     @ViewBuilder
     private func chapters(_ detail: MatchDetailModel, _ scroller: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 32) {
-            if let end = detail.suggestedTrimEnd {
+            if detail.record?.trimmedAutomatically == true {
+                JourneyNote(leftOutStart: detail.record?.trimmedStart != nil, leftOutEnd: detail.record?.trimmedEnd != nil) {
+                    store.trim(detail.matchIdentifier, start: nil, end: nil)
+                }
+            } else if let end = detail.suggestedTrimEnd {
                 TrimSuggestion(end: end) { store.trim(detail.matchIdentifier, start: nil, end: end) }
+            }
+            if let analytics = detail.analytics, let stints = analytics.stints {
+                StintsChapter(stints: stints, playing: analytics.playingIntervals)
             }
             MomentsChapter(detail: detail, onEdit: { sheet = .edit },
                            onShow: detail.analytics?.hasRoute == true ? { moment in show(on: scroller) { clock.show(moment) } } : nil)
@@ -279,6 +291,25 @@ private struct MatchScoreline: View {
         case .drawn: return .secondary
         case .lost: return .red
         }
+    }
+}
+
+/// Getting there and going home isn't the match. Said once, and easily undone.
+private struct JourneyNote: View {
+    let leftOutStart: Bool
+    let leftOutEnd: Bool
+    let onKeep: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(leftOutStart && leftOutEnd ? "Getting there and going home are left out."
+                 : leftOutEnd ? "Going home is left out." : "Getting there is left out.")
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Button("Keep It All", action: onKeep)
+        }
+        .font(.body)
+        .frame(minHeight: 44)
     }
 }
 

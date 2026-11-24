@@ -34,6 +34,7 @@ final class SettingsStore: ObservableObject {
         static let consentGuardianName = "consentGuardianName"
         static let consentAcknowledgedAt = "consentAcknowledgedAt"
         static let contributeDetectedFields = "contributeDetectedFields"
+        static let asksAfterMatches = "asksAfterMatches"
         static let units = "units"
     }
 
@@ -73,6 +74,12 @@ final class SettingsStore: ObservableObject {
     var baseURL: URL {
         if let url = URL(string: serverURLOverride), url.scheme != nil { return url }
         return APIClient.defaultBaseURL
+    }
+
+    /// Whether to ask how a match ended once it arrives. On until turned off.
+    var asksAfterMatches: Bool {
+        get { defaults.object(forKey: Key.asksAfterMatches) == nil || defaults.bool(forKey: Key.asksAfterMatches) }
+        set { defaults.set(newValue, forKey: Key.asksAfterMatches); bump() }
     }
 
     /// Whether nearby pitches detected on-device from satellite imagery are contributed to the

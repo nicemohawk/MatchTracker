@@ -11,7 +11,7 @@ final class DesignCapture: XCTestCase {
     override func setUp() {
         continueAfterFailure = true
         app = XCUIApplication()
-        app.launchArguments += ["-hasOnboarded", "YES"]
+        app.launchArguments += ["-hasOnboarded", "YES", "-asksAfterMatches", "NO"]
         app.launchArguments += ProcessInfo.processInfo.environment["APP_ARGUMENTS"]?.split(separator: " ").map(String.init) ?? []
     }
 
@@ -261,10 +261,27 @@ final class DesignCapture: XCTestCase {
         row.tap()
         sleep(6)
         screenshot("50-indoor")
+        app.buttons["Share"].tap()
+        sleep(4)
+        screenshot("53-indoor-share")
+        if app.buttons["Done"].exists { app.buttons["Done"].firstMatch.tap() } else { app.swipeDown(velocity: .fast) }
+        sleep(1)
         app.swipeUp()
         sleep(1)
         screenshot("51-indoor-2")
         app.swipeUp()
         if app.buttons["All numbers"].exists { app.buttons["All numbers"].tap(); sleep(1); screenshot("52-indoor-numbers") }
+    }
+
+    func testReview() {
+        app.launchArguments += ["-OpenLink", "matchtracker://match/at/\(ProcessInfo.processInfo.environment["START"] ?? "0")/review"]
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        XCTAssertTrue(app.navigationBars["How Did It End?"].waitForExistence(timeout: 25), "A tapped reminder asks about its match")
+        sleep(1)
+        screenshot("60-review")
+        app.swipeUp()
+        sleep(1)
+        screenshot("61-review-2")
     }
 }

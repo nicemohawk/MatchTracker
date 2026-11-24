@@ -28,6 +28,8 @@ private struct SystemLinks: ViewModifier {
     @Environment(LiveMatchStore.self) private var liveMatches
     @State private var router = LinkRouter.shared
     @State private var sheetMatch: MatchSummary?
+    @State private var reviewing: ReviewedMatch?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var startOnWatch = StartOnWatch()
 
     func body(content: Content) -> some View {
@@ -47,6 +49,7 @@ private struct SystemLinks: ViewModifier {
                         }
                 }
             }
+            .sheet(item: $reviewing) { ScoreSheet(detail: $0.detail, isAsking: true) }
             .startOnWatchAlert(startOnWatch)
             .onOpenURL { url in
                 router.pending = MatchTrackerLink(url)
@@ -59,6 +62,7 @@ private struct SystemLinks: ViewModifier {
             .onChange(of: router.pending, initial: true) { follow() }
             // A match just played may still be on its way from the watch.
             .onChange(of: matches.contentVersion) { follow() }
+            .task(id: ReviewMoment(isActive: scenePhase == .active, match: matches.awaitingReview?.id)) { await askIfJustPlayed() }
             #if DEBUG
             .fullScreenCover(isPresented: .constant(SurfaceGallery.page != nil)) { SurfaceGallery() }
             .task {
@@ -79,28 +83,59 @@ private struct SystemLinks: ViewModifier {
         case .season: openSeason()
         case .start: startOnWatch.start()
         case .latestMatch, .match, .matchStarting:
-            guard let summary = summary(for: link) else {
-                // Waits for the list, then for the watch; past a minute, going there would be a surprise.
-                Task {
-                    try? await Task.sleep(for: .seconds(60))
-                    if router.pending == link { router.pending = nil }
-                }
-                return
-            }
+            guard let summary = summary(for: link) else { return forget(link) }
             showingLive = false
             if let openMatch { openMatch(summary.id) } else { sheetMatch = summary }
+        case .review:
+            guard let summary = summary(for: link) else { return forget(link) }
+            showingLive = false
+            Task { await review(summary) }
         }
         router.pending = nil
+    }
+
+    /// Waits for the list, then for the watch; past a minute, going there would be a surprise.
+    private func forget(_ link: MatchTrackerLink) {
+        Task {
+            try? await Task.sleep(for: .seconds(60))
+            if router.pending == link { router.pending = nil }
+        }
+    }
+
+    /// The match somebody has just walked off from, asked about once, when nothing else is going on.
+    private func askIfJustPlayed() async {
+        guard scenePhase == .active, let summary = matches.awaitingReview else { return }
+        try? await Task.sleep(for: .seconds(1.5))
+        guard !Task.isCancelled, !liveMatches.isLive, !showingLive, reviewing == nil, router.pending == nil,
+              UserDefaults.standard.bool(forKey: "hasOnboarded"),
+              MatchReminders.shared.shouldAsk(about: summary.id) else { return }
+        await review(summary)
+    }
+
+    private func review(_ summary: MatchSummary) async {
+        let detail = matches.detailModel(for: summary)
+        await detail.load()
+        reviewing = ReviewedMatch(detail: detail)
     }
 
     private func summary(for link: MatchTrackerLink) -> MatchSummary? {
         switch link {
         case .latestMatch: return matches.matches.first
         case .match(let id): return matches.matches.first { $0.id == id }
-        case .matchStarting(let date):
+        case .matchStarting(let date), .review(startingAt: let date):
             func distance(_ summary: MatchSummary) -> TimeInterval { abs(summary.startDate.timeIntervalSince(date)) }
             return matches.matches.min { distance($0) < distance($1) }.flatMap { distance($0) < 15 * 60 ? $0 : nil }
         default: return nil
         }
     }
+}
+
+private struct ReviewedMatch: Identifiable {
+    let detail: MatchDetailModel
+    var id: UUID { detail.matchIdentifier }
+}
+
+private struct ReviewMoment: Equatable {
+    let isActive: Bool
+    let match: UUID?
 }

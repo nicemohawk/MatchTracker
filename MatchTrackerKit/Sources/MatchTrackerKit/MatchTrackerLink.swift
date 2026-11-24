@@ -12,6 +12,8 @@ public enum MatchTrackerLink: Hashable, Sendable {
     /// The match that kicked off around this moment. A Live Activity ends before the phone knows
     /// the finished match's identity, so kickoff is what it links by.
     case matchStarting(Date)
+    /// Saying how that match went.
+    case review(startingAt: Date)
 
     public static let scheme = "matchtracker"
 
@@ -24,6 +26,7 @@ public enum MatchTrackerLink: Hashable, Sendable {
         case .latestMatch: path = "match/latest"
         case .match(let id): path = "match/\(id.uuidString)"
         case .matchStarting(let date): path = "match/at/\(Int(date.timeIntervalSince1970))"
+        case .review(let date): path = "match/at/\(Int(date.timeIntervalSince1970))/review"
         }
         return URL(string: "\(Self.scheme)://\(path)")!
     }
@@ -42,6 +45,9 @@ public enum MatchTrackerLink: Hashable, Sendable {
         case ("match", 2) where path[0] == "at":
             guard let seconds = TimeInterval(path[1]) else { return nil }
             self = .matchStarting(Date(timeIntervalSince1970: seconds))
+        case ("match", 3) where path[0] == "at" && path[2] == "review":
+            guard let seconds = TimeInterval(path[1]) else { return nil }
+            self = .review(startingAt: Date(timeIntervalSince1970: seconds))
         default: return nil
         }
     }

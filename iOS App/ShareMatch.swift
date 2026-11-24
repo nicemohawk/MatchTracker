@@ -31,6 +31,8 @@ struct ShareMatch: Identifiable, Sendable {
     var date: Date
     var teamName: String?
     var opponent: String?
+    /// "Match", "Pickup", "Indoor".
+    var kind = "Match"
     var fieldName: String?
     /// Nil when no score was logged, which isn't nil–nil.
     var goalsUs: Int?
@@ -39,6 +41,8 @@ struct ShareMatch: Identifiable, Sendable {
     var numbers: [ShareNumber]
     /// Nil without a route.
     var pitch: SharePitch?
+    /// Playing and resting, for a match without a pitch to draw.
+    var strip: [Float]?
     var replay: ShareReplay?
 
     var hasScore: Bool { goalsUs != nil && goalsThem != nil }
@@ -46,7 +50,7 @@ struct ShareMatch: Identifiable, Sendable {
     /// "v Rovers", or how it went, or just what it was.
     var title: String {
         if let opponent { return "v \(opponent)" }
-        guard let goalsUs, let goalsThem else { return "Match" }
+        guard let goalsUs, let goalsThem else { return kind }
         return goalsUs > goalsThem ? "Won" : goalsUs < goalsThem ? "Lost" : "Drew"
     }
 
@@ -140,6 +144,8 @@ extension ShareMatch {
         goalsUs = digest.goalsUs
         goalsThem = digest.goalsThem
         numbers = Self.numbers(digest, units: units)
+        strip = digest.strip
+        kind = digest.format.title
         guard let analytics, analytics.hasRoute else { return }
 
         let moments = Self.moments(events: events, analytics: analytics)
@@ -178,6 +184,7 @@ extension ShareMatch {
         if let sprints = digest.sprintCount, sprints > 0 {
             numbers.append(ShareNumber(value: "\(sprints)", label: sprints == 1 ? "Sprint" : "Sprints"))
         }
+        if let stints = digest.stintCount, stints > 1 { numbers.append(ShareNumber(value: "\(stints)", label: "Stints")) }
         if digest.secondsOnPitch >= 60 {
             numbers.append(ShareNumber(value: "\(Int(digest.secondsOnPitch / 60))", unit: "min", label: "Played"))
         }

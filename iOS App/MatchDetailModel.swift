@@ -56,6 +56,8 @@ final class MatchDetailModel: ObservableObject {
     var onAnalyzed: ((MatchDetailModel) -> Void)?
     /// The sentence for a digest among every other match (set by `MatchStore`).
     var makeHeadline: ((MatchDigest) -> String?)?
+    /// Leave the way there and the way home out of the match (set by `MatchStore`).
+    var cropJourneys: ((UUID, [TrackPoint]) async -> Void)?
     /// Ask HealthKit for the match list again (set by `MatchStore`).
     var refreshMatches: (() async -> Void)?
 
@@ -161,6 +163,7 @@ final class MatchDetailModel: ObservableObject {
                 : Self.unreadable)
             return
         }
+        if let track = samples?.track, !track.isEmpty { await cropJourneys?(matchIdentifier, track) }
         await analyze()
         state = .loaded
         redetectEvents()

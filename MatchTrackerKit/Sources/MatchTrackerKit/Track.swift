@@ -142,6 +142,8 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     /// Automatic substitutions the wearer has said were wrong. Any at all, and the ones in `events`
     /// are taken as they are.
     public var rejectedSubOuts: Int?
+    /// When the wearer last said how it went.
+    public var reviewedAt: Date?
     /// The phone made this for a workout whose record hasn't come from the watch, if it ever will.
     public var startedOnPhone: Bool?
 

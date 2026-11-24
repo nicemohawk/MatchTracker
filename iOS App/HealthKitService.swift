@@ -157,6 +157,17 @@ final class HealthKitService {
 
     // MARK: - Heart rate
 
+    /// How far, a few seconds at a time, in order.
+    func fetchDistanceSeries(of workout: HKWorkout) async throws -> [(interval: DateInterval, meters: Double)] {
+        let query = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: HKQuantityType(.distanceWalkingRunning),
+                                         predicate: HKQuery.predicateForObjects(from: workout))],
+            sortDescriptors: [SortDescriptor(\.startDate)])
+        return try await query.result(for: healthStore).map {
+            (DateInterval(start: $0.startDate, end: max($0.endDate, $0.startDate)), $0.quantity.doubleValue(for: .meter()))
+        }
+    }
+
     /// Time-ordered heart-rate samples (date, bpm) over an interval, for charting.
     func fetchHeartRateSeries(from start: Date, to end: Date) async throws -> [(date: Date, bpm: Double)] {
         guard let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) else { return [] }

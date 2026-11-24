@@ -6,17 +6,21 @@ import SwiftUI
 public struct EffortStripView: View {
     let levels: [Float]
     let axis: Axis
+    let hasTurf: Bool
 
-    public init(levels: [Float], axis: Axis = .vertical) {
+    public init(levels: [Float], axis: Axis = .vertical, hasTurf: Bool = true) {
         self.levels = levels
         self.axis = axis
+        self.hasTurf = hasTurf
     }
 
     public var body: some View {
         Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
-                Gradient(colors: [Color(red: 0.055, green: 0.176, blue: 0.129), Color(red: 0.020, green: 0.086, blue: 0.071)]),
-                startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            if hasTurf {
+                context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
+                    Gradient(colors: [Color(red: 0.055, green: 0.176, blue: 0.129), Color(red: 0.020, green: 0.086, blue: 0.071)]),
+                    startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            }
             let along = axis == .vertical ? size.height : size.width
             let across = axis == .vertical ? size.width : size.height
             let margin = min(along, across) * 0.1

@@ -88,7 +88,7 @@ private struct LastMatchSmall: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        let showsPitch = snapshot.heat != nil && !dynamicTypeSize.isAccessibilitySize
+        let showsPitch = snapshot.hasPicture && !dynamicTypeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 MatchHero(match: match, units: snapshot.units,
@@ -104,7 +104,7 @@ private struct LastMatchSmall: View {
             MatchCaption(match: match, showsDate: !showsPitch && !dynamicTypeSize.isAccessibilitySize)
             Spacer(minLength: 4)
             if showsPitch {
-                PitchThumbnail(heat: snapshot.heat, monochrome: monochrome)
+                MatchPicture(snapshot: snapshot, monochrome: monochrome)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -127,8 +127,8 @@ private struct LastMatchMedium: View {
                     MatchCaption(match: match, showsDate: !dynamicTypeSize.isAccessibilitySize)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if snapshot.heat != nil, !dynamicTypeSize.isAccessibilitySize {
-                    PitchThumbnail(heat: snapshot.heat, monochrome: monochrome)
+                if snapshot.hasPicture, !dynamicTypeSize.isAccessibilitySize {
+                    MatchPicture(snapshot: snapshot, monochrome: monochrome)
                         .frame(maxWidth: 150, alignment: .trailing)
                 }
             }
@@ -152,8 +152,8 @@ private struct LastMatchLarge: View {
                 Spacer(minLength: 0)
                 MatchCaption(match: match, alignment: .trailing)
             }
-            if snapshot.heat != nil {
-                PitchThumbnail(heat: snapshot.heat, monochrome: monochrome)
+            if snapshot.hasPicture {
+                MatchPicture(snapshot: snapshot, monochrome: monochrome)
                     .frame(maxWidth: .infinity)
             }
             if let headline = snapshot.headline {
@@ -500,5 +500,33 @@ private struct WidgetEmptyView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+}
+
+private extension WidgetSnapshot {
+    var hasPicture: Bool { heat != nil || lastMatch?.strip != nil }
+}
+
+/// Where it was played, or without a pitch to draw, when.
+private struct MatchPicture: View {
+    let snapshot: WidgetSnapshot
+    let monochrome: Bool
+
+    var body: some View {
+        if snapshot.heat == nil, let strip = snapshot.lastMatch?.strip {
+            EffortStripView(levels: strip, axis: .horizontal)
+                .luminanceToAlpha(monochrome)
+                .aspectRatio(PitchThumbnail.aspectRatio, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        } else {
+            PitchThumbnail(heat: snapshot.heat, monochrome: monochrome)
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func luminanceToAlpha(_ applies: Bool) -> some View {
+        if applies { luminanceToAlpha() } else { self }
     }
 }

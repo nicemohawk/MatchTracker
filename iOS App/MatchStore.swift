@@ -578,6 +578,8 @@ final class MatchStore: ObservableObject {
             healthDistanceMeters: samples.distanceMeters,
             savedField: fields.store.resolve(recordFieldID: record?.fieldID, track: samples.track))
         let fields = fields.fields
+        // Changes the record, so what's computed below is thrown away and computed again.
+        if !samples.track.isEmpty { await cropJourneys(summary.id, track: samples.track) }
         return await Task.detached(priority: .utility) {
             let analytics = MatchAnalyzer.analyze(input)
             return DigestCache.Entry(
@@ -602,6 +604,7 @@ final class MatchStore: ObservableObject {
         // Let the model persist reconciled records (e.g. auto-detected subs) through the store.
         model.persist = { [weak self] record in self?.save(record: record) }
         model.onAnalyzed = { [weak self] model in self?.storeDigest(of: model) }
+        model.cropJourneys = { [weak self] id, track in await self?.cropJourneys(id, track: track) }
         model.refreshMatches = { [weak self] in await self?.refresh() }
         model.makeHeadline = { [weak self] digest in
             self.flatMap { MatchHeadline.make(for: digest, among: Array($0.digests.values)) }
@@ -649,11 +652,42 @@ final class MatchStore: ObservableObject {
         edit(matchID) { record, _ in
             record.trimmedStart = start
             record.trimmedEnd = end
+            record.trimmedAutomatically = nil
+            record.keepsWholeRecording = start == nil && end == nil ? true : nil
         }
     }
 
-    func setFinalScore(_ score: FinalScore?, for matchID: UUID) {
-        edit(matchID) { record, _ in record.finalScore = score }
+    /// Leave out the way there and the way home. They're only told apart once the route is here.
+    func cropJourneys(_ matchID: UUID, track: [TrackPoint]) async {
+        guard let summary = matches.first(where: { $0.id == matchID }), summary.record?.trimmedStart == nil,
+              summary.record?.trimmedEnd == nil, summary.record?.keepsWholeRecording != true else { return }
+        let recorded = summary.recordedInterval
+        let field = fields.store.resolve(recordFieldID: summary.record?.fieldID, track: track)?.rectangle
+        let hasJourney = await Task.detached(priority: .utility) {
+            TrimAdvisor.atThePitch(recorded: recorded, track: track, field: field) != nil
+        }.value
+        guard hasJourney else { return }
+        MatchLog.info("journey left out of match \(matchID)", category: "matchstore")
+        edit(matchID) { record, recorded in record.trimJourneys(recorded: recorded, track: track, field: field) }
+    }
+
+    /// Everything said after a match, in one edit: the result, and what the marked moments were.
+    func review(_ matchID: UUID, score: FinalScore, kinds: [UUID: MatchEventKind]) {
+        edit(matchID) { record, _ in
+            for (id, kind) in kinds { record.setEvent(id, kind: kind) }
+            record.finalScore = score
+            record.reviewedAt = Date()
+        }
+    }
+
+    /// The match just played, if nobody has said how it went. One recorded in error isn't asked about.
+    var awaitingReview: MatchSummary? {
+        matches.first.flatMap { summary in
+            guard let record = summary.record, record.reviewedAt == nil, record.startedOnPhone != true,
+                  summary.duration >= 10 * 60, let end = record.endDate, end > Date().addingTimeInterval(-18 * 3600)
+            else { return nil }
+            return summary
+        }
     }
 
     func setOpponent(_ opponent: String?, for matchID: UUID) {

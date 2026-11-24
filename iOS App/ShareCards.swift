@@ -187,10 +187,14 @@ struct ShareCard: View {
             }
             .frame(width: format == .story ? 290 : 230, height: format == .story ? 290 : 230)
             // Where a match with no map starts and ends: the center circle.
-            .background { Circle().stroke(.white.opacity(0.22), lineWidth: 1.5).padding(format == .story ? -18 : 0) }
-            .offset(y: format == .square ? -40 : -30)
+            .background { Circle().stroke(.white.opacity(0.22), lineWidth: 1.5).padding(format == .story ? -18 : match.strip == nil ? 0 : 24) }
+            .offset(y: match.strip != nil ? -70 : format == .square ? -40 : -30)
             VStack(spacing: 12) {
                 Spacer()
+                if let strip = match.strip {
+                    EffortStripView(levels: strip, axis: .horizontal, hasTurf: false)
+                        .frame(height: format == .story ? 84 : 52)
+                }
                 numberRow(valueSize: 28)
                 wordmark
             }

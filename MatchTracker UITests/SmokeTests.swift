@@ -13,7 +13,7 @@ final class SmokeTests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         // Nothing made up may reach the server.
-        app.launchArguments += ["-hasOnboarded", "YES", "-serverURLOverride", "http://127.0.0.1:9"]
+        app.launchArguments += ["-hasOnboarded", "YES", "-asksAfterMatches", "NO", "-serverURLOverride", "http://127.0.0.1:9"]
     }
 
     func testAMatchIsListedScoredAndDeleted() throws {

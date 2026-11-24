@@ -71,6 +71,7 @@ public extension MatchRecord {
         merged.format = existing.format ?? format
         merged.fieldID = existing.fieldID ?? fieldID
         merged.finalScore = existing.finalScore ?? finalScore
+        merged.reviewedAt = existing.reviewedAt ?? reviewedAt
         merged.track = track ?? existing.track
         merged.headings = headings ?? existing.headings
         merged.motion = motion ?? existing.motion

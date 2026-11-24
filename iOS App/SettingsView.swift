@@ -43,6 +43,7 @@ struct SettingsView: View {
             Form {
                 profileSection
                 unitsSection
+                afterMatchSection
                 fieldsSection
                 permissionsSection
                 dataSection
@@ -138,6 +139,19 @@ struct SettingsView: View {
         settings.teamCode = code
         teamCode = code
         environment.settingsChanged()
+    }
+
+    // MARK: After a match
+
+    private var afterMatchSection: some View {
+        Section {
+            Toggle("Ask how matches end", isOn: .init(get: { settings.asksAfterMatches }, set: { asks in
+                settings.asksAfterMatches = asks
+                if asks { Task { _ = await MatchReminders.shared.askToRemind() } }
+            }))
+        } footer: {
+            Text("A reminder to check the goals you logged, or add the score, once a match reaches this iPhone.")
+        }
     }
 
     // MARK: Units
