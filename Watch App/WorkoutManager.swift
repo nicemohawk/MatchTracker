@@ -47,6 +47,8 @@ final class WorkoutManager: NSObject {
 
     /// Format chosen on the start screen; drives location/indoor behavior and analytics scaling.
     var matchFormat: MatchFormat = .match
+    /// Whether goals are being counted, settled when the match starts.
+    private(set) var keepsScore = true
 
     // MARK: Live metrics (updated on the main queue)
 
@@ -158,12 +160,14 @@ final class WorkoutManager: NSObject {
     /// this match (no field → no boundary to reason about → detection disabled, everything else
     /// works as before).
     @ObservationIgnored private var autoSubDetector: AutoSubDetector?
+    /// The same without GPS, from the heart and the wrist.
+    @ObservationIgnored private var indoorSubDetector: IndoorSubDetector?
     @ObservationIgnored private let motionRecorder = MotionRecorder()
     /// Automatic substitutions the wearer has said were wrong. Any at all, and the phone is told not
     /// to look for them again.
     @ObservationIgnored private var rejectedSubOuts = 0
     /// When the last automatic substitution was noticed: minutes after it's dated.
-    @ObservationIgnored private var autoSubNoticed: Date?
+    private(set) var autoSubNoticed: Date?
 
     /// Sensor-fusion heading samples and live sideline streaming, both active only during a match.
     @ObservationIgnored private let liveStreamer = LiveStreamer()
@@ -207,8 +211,9 @@ final class WorkoutManager: NSObject {
 
     // MARK: - Derived values
 
-    /// Running score as (us, them). A goal the wearer scored also counts for us.
+    /// Running score as (us, them). A goal the wearer scored also counts for us. Nothing when nobody's counting.
     var score: (us: Int, them: Int) {
+        guard keepsScore else { return (0, 0) }
         var us = 0
         var them = 0
         for event in events {
@@ -236,7 +241,7 @@ final class WorkoutManager: NSObject {
     func elapsedTime(at date: Date) -> TimeInterval {
         if pausesKnownOnlyToBuilder, collectionBegan, let builder { return builder.elapsedTime(at: date) }
         guard isRecording else { return elapsedAtPause }
-        let paused = pausedTotal + (pauseStarted.map { date.timeIntervalSince($0) } ?? 0)
+        let paused = pausedTotal + (pauseStarted.map { max(0, date.timeIntervalSince($0)) } ?? 0)
         return max(0, date.timeIntervalSince(matchStartDate) - paused)
     }
 
@@ -285,6 +290,7 @@ final class WorkoutManager: NSObject {
         salvageInterruptedMatch()
         matchFormat = format
         detectedField = field
+        keepsScore = WatchSettings.refereeMode || WatchSettings.keepsScore(format)
         resetForNewMatch(field: field)
         let start = Date()
         WatchSettings.recordFormat(format, on: start)
@@ -305,6 +311,7 @@ final class WorkoutManager: NSObject {
         startWorkoutSession()
         log(.matchStart, haptic: false)
         startHeartbeat()
+        startIndoorSubDetection()
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
 
         Task { @MainActor [weak self] in
@@ -344,6 +351,7 @@ final class WorkoutManager: NSObject {
         Task { @MainActor [weak self] in
             while let self, self.matchID == id, self.isRecording {
                 self.persistQueue.async { AppGroupStorage.touchInProgress() }
+                self.considerEnding()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -615,6 +623,7 @@ final class WorkoutManager: NSObject {
         onPitch.toggle()
         let event = MatchEvent(kind: onPitch ? .subIn : .subOut, date: Date(), source: .manual)
         autoSubDetector?.recordManualEvent(event)
+        indoorSubDetector?.recordManualEvent(event)
         append(event, haptic: false)
         WKInterfaceDevice.current().play(.notification)
     }
@@ -642,8 +651,12 @@ final class WorkoutManager: NSObject {
     /// Take back the last goal, and the assist logged for it.
     func removeLastGoal() {
         guard let goal = lastGoal else { return }
-        for assist in events where assist.kind == .assist && assist.date >= goal.date { removeEvent(assist.id) }
+        if keepsScore { removeAssists(since: goal.date) }
         removeEvent(goal.id)
+    }
+
+    private func removeAssists(since date: Date) {
+        for assist in events where assist.kind == .assist && assist.date >= date { removeEvent(assist.id) }
     }
 
     /// Say more about an event already logged ("that goal was mine").
@@ -657,38 +670,79 @@ final class WorkoutManager: NSObject {
     // MARK: Forgotten matches
 
     /// Raised when the match looks over but was never ended.
-    var askingStillPlaying = false
-    /// Last time GPS saw real movement; where a forgotten match is trimmed back to.
-    @ObservationIgnored private(set) var lastMovingDate: Date?
-    @ObservationIgnored private var lastAskedStillPlaying: Date?
+    private(set) var endQuestion: StillPlaying.Question?
+    /// When and why the match was ended earlier than it was stopped, for the summary to say.
+    private(set) var earlyEnd: EarlyEnd?
+    @ObservationIgnored private var stillPlaying = StillPlaying(watchingSince: Date())
+    @ObservationIgnored private var lastConsidered = Date.distantPast
+    /// Last time GPS or the wrist saw running.
+    @ObservationIgnored private var lastMovingDate: Date?
     @ObservationIgnored private var heartRateDate: Date?
+    /// Every reading of the match: indoors, all there is to tell playing from resting.
+    @ObservationIgnored private(set) var heartRates: [HeartRateSample] = []
 
-    private let stillnessBeforeAsking: TimeInterval = 20 * 60
-    /// Long enough that even a match with breaks, or indoors without GPS, is worth asking about.
-    private let durationBeforeAsking: TimeInterval = 150 * 60
-
-    /// Where a match that was left running ends. Never so early that ending it would discard it.
-    var forgottenEnd: Date {
-        lastMovingDate.map { max($0, matchStartDate.addingTimeInterval(minimumMatchDuration * 2)) } ?? Date()
+    struct EarlyEnd: Equatable {
+        let date: Date
+        /// Left out because the wearer had already gone.
+        let hadLeft: Bool
     }
 
-    /// Called with every fix and heart-rate sample: both keep arriving in the background.
-    private func askIfStillPlaying(now: Date = Date()) {
-        guard phase == .active, !askingStillPlaying else { return }
+    /// Called with every fix and heart-rate sample, and every half minute: all carry on in the background.
+    private func considerEnding(now: Date = Date()) {
+        guard phase == .active, now.timeIntervalSince(lastConsidered) >= 30 else { return }
+        lastConsidered = now
         let runningLevel = autoSubDetector?.motion.runningLevel ?? WatchSettings.motionRunningLevel
+        let seesMotion = runningLevel != nil && motionRecorder.trace?.levels(inLast: 60, before: now).isEmpty == false
         if let runningLevel, motionRecorder.trace?.hasRun(before: now, runningLevel: runningLevel) == true {
             lastMovingDate = now
         }
-        let stillSince = lastMovingDate ?? matchStartDate
-        let canTell = usesGPS || runningLevel != nil
-        let looksOver = (canTell && now.timeIntervalSince(stillSince) > stillnessBeforeAsking)
-            || now.timeIntervalSince(matchStartDate) > durationBeforeAsking
-        let askedRecently = lastAskedStillPlaying.map { now.timeIntervalSince($0) < 30 * 60 } ?? false
-        guard looksOver, !askedRecently else { return }
-        lastAskedStillPlaying = now
-        askingStillPlaying = true
-        MatchLog.info("still playing? asked at \(Int(now.timeIntervalSince(matchStartDate) / 60)) min", category: "workout")
-        WKInterfaceDevice.current().play(.notification)
+        let seesPosition = usesGPS && track.last.map { now.timeIntervalSince($0.timestamp) < 120 } == true
+        let action = stillPlaying.consider(StillPlaying.Evidence(
+            now: now, start: matchStartDate, format: matchFormat, isBenched: saidBenched, track: track, field: resolvedField,
+            heartRate: heartRates, lastRun: lastMovingDate, canSeeRuns: seesMotion || seesPosition))
+        if endQuestion != stillPlaying.question { endQuestion = stillPlaying.question }
+
+        let minute = Int(now.timeIntervalSince(matchStartDate) / 60)
+        switch action {
+        case .none:
+            break
+        case .ask(let question):
+            MatchLog.info("still playing? asked at \(minute) min (\(question.reason.rawValue), would end at \(Int(question.end.timeIntervalSince(matchStartDate) / 60)))",
+                          category: "workout")
+            WKInterfaceDevice.current().play(.notification)
+        case .withdraw:
+            MatchLog.info("still playing? withdrawn at \(minute) min", category: "workout")
+        case .end(let question, let why):
+            MatchLog.info("still playing? ended at \(minute) min unanswered: \(why)", category: "workout")
+            WKInterfaceDevice.current().play(.notification)
+            Task { @MainActor in await endMatch(answering: question) }
+        }
+    }
+
+    /// Off because the wearer said so. An automatic sub-out may be the end of the match itself.
+    private var saidBenched: Bool {
+        !onPitch && events.last { $0.kind == .subOut }?.source == .manual
+    }
+
+    /// Where the match is being played, if a saved field holds it. A field found at kickoff can be
+    /// the one next door, and then somebody playing would look like somebody who'd left.
+    private var resolvedField: OrientedRectangle? {
+        guard usesGPS else { return nil }
+        return AppGroupStorage.fieldStore.resolve(recordFieldID: fieldID, track: track)?.rectangle
+    }
+
+    @MainActor
+    func answerStillPlaying() {
+        guard let endQuestion else { return }
+        MatchLog.info("user: still playing (\(endQuestion.reason.rawValue))", category: "workout")
+        stillPlaying.answerStillPlaying(at: Date())
+        self.endQuestion = nil
+    }
+
+    /// End the match when the question says play did.
+    @MainActor
+    func endMatch(answering question: StillPlaying.Question) async {
+        await endMatch(at: question.end, hadLeft: question.reason == .left)
     }
 
     /// When the wearer last went off, while they're off.
@@ -710,8 +764,10 @@ final class WorkoutManager: NSObject {
         onPitch = true
         if rejectedSubOuts < 2 {
             autoSubDetector?.recordManualEvent(MatchEvent(kind: .subIn, date: Date(), source: .manual))
+            indoorSubDetector?.reject(at: Date())
         } else {
             autoSubDetector = nil
+            indoorSubDetector = nil
         }
         removeEvent(subOut.id)
         WKInterfaceDevice.current().play(.notification)
@@ -763,6 +819,7 @@ final class WorkoutManager: NSObject {
         let sportID: String
         let teamCode: String?
         let rejectedSubOuts: Int?
+        let keepsScore: Bool
         let file = FinishedRecordFile()
 
         var track: [TrackPoint] { fixes.map(\.point) }
@@ -777,6 +834,7 @@ final class WorkoutManager: NSObject {
             // match even if the HealthKit route was never saved.
             record.track = fixes.isEmpty ? nil : track
             record.rejectedSubOuts = rejectedSubOuts
+            record.keepsScore = keepsScore ? nil : false
             return record
         }
     }
@@ -785,9 +843,19 @@ final class WorkoutManager: NSObject {
     /// Sessions shorter than `minimumMatchDuration` are discarded without saving or transferring.
     @MainActor
     @discardableResult
-    func endMatch(at requestedEnd: Date = Date()) async -> MatchOutcome {
-        let end = min(max(requestedEnd, matchStartDate), Date())
+    func endMatch(at requestedEnd: Date? = nil, hadLeft: Bool = false) async -> MatchOutcome {
         guard isRecording else { return .discardedTooShort }
+        let now = Date()
+        // Ended by hand at home, the journey there was never the match.
+        let beforeLeaving = requestedEnd == nil && usesGPS
+            ? stillPlaying.endBeforeLeaving(recorded: DateInterval(start: matchStartDate, end: now), track: track, field: resolvedField)
+            : nil
+        let end = min(max(requestedEnd ?? beforeLeaving ?? now, matchStartDate), now)
+        if now.timeIntervalSince(end) > 60 {
+            MatchLog.info("endMatch: ending \(Int(now.timeIntervalSince(end) / 60)) min ago, when play did (left \(hadLeft || beforeLeaving != nil))",
+                          category: "workout")
+            earlyEnd = EarlyEnd(date: end, hadLeft: hadLeft || beforeLeaving != nil)
+        }
         MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan), session \(session == nil ? "absent" : "live"))",
                       category: "workout")
 
@@ -801,13 +869,17 @@ final class WorkoutManager: NSObject {
             return .discardedTooShort
         }
 
-        askingStillPlaying = false
-        events.removeAll { $0.date > end }
+        endQuestion = nil
+        // Logged on the way home is still about the match; a substitution then isn't.
+        events.removeAll { $0.date > end && ($0.source == .automatic || [.subIn, .subOut].contains($0.kind)) }
+        for index in events.indices where events[index].date > end { events[index].date = end }
         append(MatchEvent(kind: .matchEnd, date: end, source: .manual), haptic: false)
         elapsedAtPause = elapsed
         // Built while the match is still live, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
         motionRecorder.stop()
+        if let indoorSubDetector { WatchSettings.indoorMotion = indoorSubDetector.motion }
+        indoorSubDetector = nil
         if let runningLevel = autoSubDetector?.motion.runningLevel { WatchSettings.motionRunningLevel = runningLevel }
         let match = FinishingMatch(
             id: matchID, start: matchStartDate, end: end, format: matchFormat, fieldID: fieldID,
@@ -816,7 +888,7 @@ final class WorkoutManager: NSObject {
             session: session, builder: builder, elapsed: elapsed,
             distanceMeters: distanceMeters, score: score,
             sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode,
-            rejectedSubOuts: rejectedSubOuts > 0 ? rejectedSubOuts : nil)
+            rejectedSubOuts: rejectedSubOuts > 0 ? rejectedSubOuts : nil, keepsScore: keepsScore)
         finishedRecordFile = match.file
         savingIDs.insert(match.id)
         session = nil
@@ -859,6 +931,9 @@ final class WorkoutManager: NSObject {
         }
         let workout = await Self.value(of: saving, within: 30).value
         healthSavesInFlight -= 1
+        // What was saved, which for a match ended in the past is less than was counted live.
+        let distance = workout?.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()?
+            .doubleValue(for: Self.distanceUnit) ?? match.distanceMeters
 
         // Automatic period detection: no-op when the wearer tagged periods manually. A formal
         // match expects two halves; pickup/indoor sessions have variable breaks (expectedPeriods 0).
@@ -903,11 +978,12 @@ final class WorkoutManager: NSObject {
         publish {
             events = record.events
             summaryRunCounts = runCounts
+            distanceMeters = distance
             finishedWorkout = workout
             // Last: SummaryView refreshes off the record, so the rest must already be in place.
             finishedRecord = record
         }
-        writeLastMatchSnapshot(match, record: record, sprintCount: runCounts.sprints)
+        writeLastMatchSnapshot(match, record: record, distanceMeters: distance, sprintCount: runCounts.sprints)
 
         // Field learning sweeps the whole track through the fitter, so nothing waits on it.
         if match.format != .indoor,
@@ -949,6 +1025,9 @@ final class WorkoutManager: NSObject {
             }
         } catch {
             MatchLog.error("Finishing workout failed: \(error.localizedDescription)", category: "workout")
+        }
+        if let workout {
+            MatchLog.info("endMatch: workout saved, \(Int(workout.endDate.timeIntervalSince(workout.startDate))) s", category: "workout")
         }
         if let workout, !match.fixes.isEmpty {
             await Self.saveRoute(match.fixes, to: workout, in: healthStore)
@@ -1013,7 +1092,7 @@ final class WorkoutManager: NSObject {
     }
 
     /// Feeds the widget's last-match Smart Stack card.
-    private func writeLastMatchSnapshot(_ match: FinishingMatch, record: MatchRecord, sprintCount: Int) {
+    private func writeLastMatchSnapshot(_ match: FinishingMatch, record: MatchRecord, distanceMeters: Double, sprintCount: Int) {
         let finalScore = match.file.finalScore
         let fieldName = record.fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id }?.name }
@@ -1025,7 +1104,7 @@ final class WorkoutManager: NSObject {
             timeOnPitchSeconds: SubstitutionTracker.timeOnPitch(events: record.events,
                                                                 matchStart: record.startDate,
                                                                 matchEnd: match.end),
-            distanceMeters: match.distanceMeters,
+            distanceMeters: distanceMeters,
             goalsUs: finalScore?.us ?? match.score.us,
             goalsThem: finalScore?.them ?? match.score.them,
             sprintCount: sprintCount
@@ -1071,6 +1150,8 @@ final class WorkoutManager: NSObject {
         track = []
         heartRate = 0
         heartRateDate = nil
+        heartRates = []
+        earlyEnd = nil
         activeCalories = 0
         distanceMeters = 0
         currentSpeed = 0
@@ -1079,6 +1160,7 @@ final class WorkoutManager: NSObject {
         pauseStarted = nil
         onPitch = true
         autoSubDetector = nil
+        indoorSubDetector = nil
         session = nil
         builder = nil
         collectionBegan = false
@@ -1097,11 +1179,15 @@ final class WorkoutManager: NSObject {
         sessionAttempts = 0
         healthCollectionStalled = false
         collectionBegan = false
-        askingStillPlaying = false
+        endQuestion = nil
+        earlyEnd = nil
+        stillPlaying = StillPlaying(watchingSince: Date())
+        lastConsidered = .distantPast
         lastMovingDate = nil
-        lastAskedStillPlaying = nil
+        heartRates = []
         rejectedSubOuts = 0
         autoSubNoticed = nil
+        indoorSubDetector = nil
         autoSubDetector = field.flatMap(makeAutoSubDetector)
         events = []
         track = []
@@ -1142,6 +1228,7 @@ final class WorkoutManager: NSObject {
         let loggedEvents = events
         let format = matchFormat
         let rejected = rejectedSubOuts > 0 ? rejectedSubOuts : nil
+        let keepsScore = keepsScore
         persistQueue.async {
             var record = MatchRecord(
                 id: id,
@@ -1153,6 +1240,7 @@ final class WorkoutManager: NSObject {
             )
             record.format = format
             record.rejectedSubOuts = rejected
+            record.keepsScore = keepsScore ? nil : false
             AppGroupStorage.persistInProgress(record)
         }
     }
@@ -1176,11 +1264,11 @@ final class WorkoutManager: NSObject {
         if recentLocations.count > 10 {
             recentLocations.removeFirst(recentLocations.count - 10)
         }
-        // Faster than a stroll: walking off to the car shouldn't count as playing.
-        if let moving = points.last(where: { $0.speedMetersPerSecond > 1.8 }) {
+        // Faster than a stroll, and not in a car: walking off and driving home aren't playing.
+        if let moving = points.last(where: { (1.8..<7).contains($0.speedMetersPerSecond) }) {
             lastMovingDate = moving.timestamp
         }
-        askIfStillPlaying()
+        considerEnding()
         recomputeCurrentSpeed()
         resolveFieldIfNeeded()
         runAutoSubDetection(on: points)
@@ -1364,6 +1452,7 @@ final class WorkoutManager: NSObject {
         fieldID = saved?.fieldID
         events = saved?.events ?? []
         rejectedSubOuts = saved?.rejectedSubOuts ?? 0
+        keepsScore = saved?.keepsScore ?? true
         // Restore on-pitch state from the last substitution event (a subIn or subOut), ignoring
         // any later non-sub events that would otherwise mask it.
         onPitch = events.last { $0.kind == .subIn || $0.kind == .subOut }?.kind != .subOut
@@ -1374,11 +1463,14 @@ final class WorkoutManager: NSObject {
             routeRecorder.arm()
             routeRecorder.beginRecording(matchID: matchID, start: matchStartDate, resuming: true)
             track = routeRecorder.fixes.map(\.point)
+            lastMovingDate = track.last { (1.8..<7).contains($0.speedMetersPerSecond) }?.timestamp
         }
+        restoreHeartRates()
         motionRecorder.start(at: matchStartDate)
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
         phase = .active
         startHeartbeat()
+        startIndoorSubDetection()
         if let recovered {
             attach(recovered)
         } else if recoveryOutstanding {
@@ -1389,6 +1481,24 @@ final class WorkoutManager: NSObject {
         }
         MatchLog.info("recovery: match restored (session \(recovered == nil ? "gone" : "recovered"), \(Int(Date().timeIntervalSince(matchStartDate))) s in, \(events.count) events, \(track.count) fixes)",
                       category: "workout")
+    }
+
+    /// The readings from before the relaunch, which only HealthKit still has.
+    @MainActor
+    private func restoreHeartRates() {
+        let id = matchID, start = matchStartDate, store = healthStore, unit = Self.heartRateUnit
+        Task {
+            let readings = try? await Task.detached(priority: .utility) {
+                try await HKSampleQueryDescriptor(
+                    predicates: [.quantitySample(type: HKQuantityType(.heartRate),
+                                                 predicate: HKQuery.predicateForSamples(withStart: start, end: nil))],
+                    sortDescriptors: [SortDescriptor(\.startDate)], limit: 5000).result(for: store)
+                    .map { HeartRateSample(date: $0.endDate, bpm: $0.quantity.doubleValue(for: unit)) }
+            }.value
+            guard let readings, matchID == id, isRecording else { return }
+            heartRates = readings.filter { reading in heartRates.first.map { reading.date < $0.date } ?? true } + heartRates
+            MatchLog.info("recovery: \(readings.count) heart rate readings restored", category: "workout")
+        }
     }
 
     /// Take over a session HealthKit still has running for this match.
@@ -1471,7 +1581,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
     func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder,
                         didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        var newHeartRate: Double?
+        var newHeartRate: HeartRateSample?
         var newCalories: Double?
         var newDistance: Double?
 
@@ -1482,7 +1592,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
             switch quantityType {
             case HKQuantityType(.heartRate):
                 if let value = statistics.mostRecentQuantity()?.doubleValue(for: Self.heartRateUnit), value > 1 {
-                    newHeartRate = value
+                    newHeartRate = HeartRateSample(date: statistics.mostRecentQuantityDateInterval()?.end ?? Date(), bpm: value)
                 }
             case HKQuantityType(.activeEnergyBurned):
                 newCalories = statistics.sumQuantity()?.doubleValue(for: Self.energyUnit)
@@ -1495,11 +1605,12 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
         DispatchQueue.main.async {
             guard workoutBuilder === self.builder else { return }
-            self.askIfStillPlaying()
             if let newHeartRate {
-                self.heartRate = newHeartRate
+                self.heartRate = newHeartRate.bpm
                 self.heartRateDate = Date()
+                if self.heartRates.last.map({ $0.date < newHeartRate.date }) ?? true { self.heartRates.append(newHeartRate) }
             }
+            self.considerEnding()
             if let newCalories { self.activeCalories = newCalories }
             if let newDistance { self.distanceMeters = newDistance }
         }
@@ -1521,10 +1632,44 @@ extension WorkoutManager {
             let elapsed = Int(point.timestamp.timeIntervalSince(matchStartDate))
             MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count), running level \(detector.motion.runningLevel.map { String(format: "%.2f", $0) } ?? "unknown"))",
                           category: "autosub")
-            append(event, haptic: false)
-            autoSubNoticed = Date()
-            onPitch = event.kind != .subOut
-            WKInterfaceDevice.current().play(.notification)
+            notice(event)
         }
+    }
+
+    private func notice(_ event: MatchEvent) {
+        append(event, haptic: false)
+        autoSubNoticed = Date()
+        onPitch = event.kind != .subOut
+        WKInterfaceDevice.current().play(onPitch ? .directionUp : .notification)
+    }
+
+    /// Indoors there are no fixes to run on, so it runs on the clock for the length of the match.
+    @MainActor
+    private func startIndoorSubDetection() {
+        guard isIndoor, !WatchSettings.refereeMode, rejectedSubOuts < 2 else { return }
+        let detector = IndoorSubDetector(initiallyOnPitch: onPitch, motion: WatchSettings.indoorMotion)
+        indoorSubDetector = detector
+        Task { @MainActor [weak self] in
+            while let self, self.indoorSubDetector === detector, self.isRecording {
+                self.runIndoorSubDetection()
+                try? await Task.sleep(for: .seconds(IndoorSubDetector.step))
+            }
+        }
+    }
+
+    private func runIndoorSubDetection(now: Date = Date()) {
+        guard let detector = indoorSubDetector, phase == .active, sessionState != .paused else { return }
+        let latestHeartRate = heartRateDate.map { now.timeIntervalSince($0) < 15 } == true ? heartRate : nil
+        // The interval under way isn't known yet, and the one before it may not be either.
+        let middle = now.addingTimeInterval(-MotionTrace.interval / 2)
+        let motion = motionRecorder.trace.flatMap {
+            $0.level(at: middle) ?? $0.level(at: middle.addingTimeInterval(-MotionTrace.interval))
+        }
+        guard let event = detector.process(at: now, heartRate: latestHeartRate, motion: motion) else { return }
+        let elapsed = Int(now.timeIntervalSince(matchStartDate))
+        MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (indoor, wrist can tell \(detector.motion.canTell))",
+                      category: "autosub")
+        WatchSettings.indoorMotion = detector.motion
+        notice(event)
     }
 }

@@ -23,6 +23,15 @@ struct SessionView: View {
     private let restingPageDelay: TimeInterval = 10
 
     var body: some View {
+        // In place of the pages rather than over them, so nothing they've put up can cover it.
+        if let question = workoutManager.endQuestion {
+            EndQuestionView(question: question)
+        } else {
+            pages
+        }
+    }
+
+    private var pages: some View {
         TabView(selection: $selection) {
             ControlsView()
                 .tag(Page.controls)
@@ -32,8 +41,8 @@ struct SessionView: View {
                 .tag(Page.events)
         }
         .tabViewStyle(.verticalPage)
-        .sheet(isPresented: Bindable(workoutManager).askingStillPlaying) {
-            StillPlayingSheet()
+        .onChange(of: workoutManager.autoSubNoticed) { _, noticed in
+            if noticed != nil { withAnimation(.snappy) { selection = .metrics } }
         }
         .onChange(of: scenePhase) { _, phase in
             phase == .active ? returnToRestingPage() : noteLeftActive()
@@ -65,32 +74,57 @@ struct SessionView: View {
 }
 
 /// Shown when the match looks over but was never ended. A forgotten match once ran for 32 hours;
-/// ending from here also trims it back to the last time the wearer was actually moving.
-private struct StillPlayingSheet: View {
+/// ending from here also takes it back to when play stopped.
+private struct EndQuestionView: View {
+    let question: StillPlaying.Question
+
     @Environment(WorkoutManager.self) private var workoutManager
-    @Environment(\.dismiss) private var dismiss
+    @State private var acceptsTaps = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Still playing?")
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
                     .font(.title3.weight(.bold))
-                if let lastMoving = workoutManager.lastMovingDate {
-                    Text("You stopped moving at \(lastMoving.formatted(date: .omitted, time: .shortened)).")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Button("End Match") {
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Button {
                     WatchHaptics.stop()
-                    dismiss()
-                    Task { await workoutManager.endMatch(at: workoutManager.forgottenEnd) }
+                    Task { await workoutManager.endMatch(answering: question) }
+                } label: {
+                    VStack(spacing: 0) {
+                        Text("End Match")
+                        if let endTime { Text("at \(endTime)").font(.footnote) }
+                    }
                 }
                 .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.loss, minHeight: 52))
-                Button("Still Playing") { dismiss() }
-                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 52))
+                Button("Still Playing") {
+                    WatchHaptics.click()
+                    workoutManager.answerStillPlaying()
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 48))
             }
             .font(.headline)
             .scenePadding(.horizontal)
         }
+        // It arrives by itself, perhaps under a finger already on its way down.
+        .allowsHitTesting(acceptsTaps)
+        .task {
+            try? await Task.sleep(for: .seconds(1))
+            acceptsTaps = true
+        }
+    }
+
+    private var title: String {
+        switch question.reason {
+        case .left: return "You've left the pitch"
+        case .noPlay: return "No play since \(question.end.formatted(date: .omitted, time: .shortened))"
+        case .longSession: return "Still playing?"
+        }
+    }
+
+    /// Nil when that's now.
+    private var endTime: String? {
+        Date().timeIntervalSince(question.end) > 60 ? question.end.formatted(date: .omitted, time: .shortened) : nil
     }
 }

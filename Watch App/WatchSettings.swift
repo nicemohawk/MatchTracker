@@ -35,6 +35,8 @@ enum WatchSettings {
         static let formatHistory = "formatHistory"
         static let units = "units"
         static let motionRunningLevel = "motionRunningLevel"
+        static let formatsWithoutScore = "formatsWithoutScore"
+        static let indoorMotion = "indoorMotion"
     }
 
     /// The mirrored values. Guarded by `lock` — read from the main thread, written from whichever
@@ -45,6 +47,8 @@ enum WatchSettings {
         var sportID = SportProfile.soccer.id
         var formatHistory = FormatHistory()
         var motionRunningLevel: Double?
+        var formatsWithoutScore: Set<String> = []
+        var indoorMotion = IndoorMotion()
     }
 
     private static let lock = NSLock()
@@ -72,6 +76,9 @@ enum WatchSettings {
         loaded.sportID = defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id
         loaded.formatHistory = defaults.data(forKey: Key.formatHistory)
             .flatMap { try? JSONDecoder().decode(FormatHistory.self, from: $0) } ?? FormatHistory()
+        loaded.indoorMotion = defaults.data(forKey: Key.indoorMotion)
+            .flatMap { try? JSONDecoder().decode(IndoorMotion.self, from: $0) } ?? IndoorMotion()
+        loaded.formatsWithoutScore = Set(defaults.stringArray(forKey: Key.formatsWithoutScore) ?? [])
         loaded.motionRunningLevel = defaults.object(forKey: Key.motionRunningLevel) as? Double
         UnitSystem.override = defaults.string(forKey: Key.units).flatMap(UnitSystem.init(rawValue:))
         lock.lock()
@@ -123,6 +130,25 @@ enum WatchSettings {
             write(\.motionRunningLevel, newValue)
             store(newValue, forKey: Key.motionRunningLevel)
         }
+    }
+
+    /// What playing and resting look like on this wrist, learned indoors.
+    static var indoorMotion: IndoorMotion {
+        get { read(\.indoorMotion) }
+        set {
+            write(\.indoorMotion, newValue)
+            if let data = try? JSONEncoder().encode(newValue) { store(data, forKey: Key.indoorMotion) }
+        }
+    }
+
+    /// Whether the wearer counts goals in this kind of match, as they've said on the phone.
+    static func keepsScore(_ format: MatchFormat) -> Bool {
+        !read(\.formatsWithoutScore).contains(format.rawValue)
+    }
+
+    static func setFormatsWithoutScore(_ formats: [String]) {
+        write(\.formatsWithoutScore, Set(formats))
+        store(formats, forKey: Key.formatsWithoutScore)
     }
 
     /// The phone's units setting; nil follows the region.
