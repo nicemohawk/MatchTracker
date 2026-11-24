@@ -9,32 +9,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MatchTrackerKit
 
-/// A match as files for other apps. Nothing is written until something is actually shared.
-struct ExportMenu: View {
-    @ObservedObject var detail: MatchDetailModel
-    let summary: MatchSummary
-
-    var body: some View {
-        Menu {
-            let export = ActivityExport(detail: detail, summary: summary)
-            Section("For Strava, share the FIT file, then upload it at strava.com") {
-                ForEach(ExportFile.Format.available(for: export)) { format in
-                    ExportLink(export: export, format: format)
-                }
-            }
-            if !export.isEmpty {
-                Link(destination: ExportDataView.stravaUploadPage) {
-                    Label("Open Strava Upload", systemImage: "arrow.up.forward.square")
-                }
-            }
-        } label: {
-            // A document-out glyph reads as "export"; the previous `square.and.arrow.down`
-            // (download/import) both contradicted the action and echoed the outer share icon.
-            Label("Export Data", systemImage: "arrow.up.doc")
-        }
-    }
-}
-
 /// Every format with what it's for, and how to get one onto Strava.
 struct ExportDataView: View {
     let export: ActivityExport

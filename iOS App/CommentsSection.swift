@@ -36,17 +36,6 @@ struct MatchCommentsButton: View {
     }
 }
 
-/// Stands in wherever match detail still embeds comments: the same button, on a line of its own.
-struct CommentsSection: View {
-    let matchUUID: UUID
-
-    var body: some View {
-        MatchCommentsButton(matchUUID: matchUUID)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .padding(.horizontal)
-    }
-}
-
 /// What the team said about one match.
 struct MatchCommentsSheet: View {
     let matchUUID: UUID
