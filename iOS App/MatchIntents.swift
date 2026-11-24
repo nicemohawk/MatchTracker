@@ -155,18 +155,12 @@ enum SystemSurfaces {
     private static let queue = DispatchQueue(label: "com.nicemohawk.MatchTracker.surfaces", qos: .utility)
 
     /// Call whenever the digests change (and on a units change). Cheap when nothing is different.
-    ///
-    /// - Parameter lastMatchHeat: the latest match's heatmap when it's been computed. Leaving it out
-    ///   keeps the one already published for that match.
-    static func publish(digests: [MatchDigest], lastMatchHeat: HeatmapGrid? = nil) {
+    static func publish(digests: [MatchDigest]) {
         let units = UnitSystem.current
         queue.async {
             let container = AppGroup.containerURL
             let previous = WidgetSnapshot.load(from: container)
-            var snapshot = WidgetSnapshot.make(from: digests, heat: lastMatchHeat, units: units)
-            if snapshot.heat == nil, let previous, previous.lastMatch?.id == snapshot.lastMatch?.id {
-                snapshot.heat = previous.heat
-            }
+            let snapshot = WidgetSnapshot.make(from: digests, units: units)
             do {
                 guard try snapshot.save(to: container) else { return }
             } catch {

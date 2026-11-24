@@ -55,6 +55,7 @@ struct SidelineCameraView: View {
         .sheet(item: $pendingClip) { clip in
             MatchPickerSheet(
                 matches: Array(matchStore.matches.prefix(5)),
+                liveMatchID: liveStore?.latest?.matchID,
                 onPick: { matchID in
                     save(clip, to: matchID)
                     pendingClip = nil
@@ -428,6 +429,8 @@ private struct CameraPreview: UIViewRepresentable {
 /// clip's exact creation date).
 private struct MatchPickerSheet: View {
     let matches: [MatchSummary]
+    /// The match being played, which has no summary yet.
+    let liveMatchID: UUID?
     let onPick: (UUID) -> Void
     let onDiscard: () -> Void
 
@@ -436,35 +439,29 @@ private struct MatchPickerSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if matches.isEmpty {
+                if matches.isEmpty, liveMatchID == nil {
                     ContentUnavailableView(
                         "No matches yet",
                         systemImage: "sportscourt",
                         description: Text("This footage needs a match to attach to. Once your watch logs a match, record again and pick it here.")
                     )
                 } else {
-                    List(matches) { match in
-                        Button {
-                            onPick(match.id)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "film")
-                                    .foregroundStyle(Theme.signal)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(match.startDate.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(MatchTrackerFormat.hoursMinutesSeconds(match.duration) + " match")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption).foregroundStyle(.secondary)
+                    List {
+                        if let liveMatchID {
+                            Button("The Match Being Played") { onPick(liveMatchID) }
+                                .font(.headline)
+                        }
+                        ForEach(matches) { match in
+                            Button { onPick(match.id) } label: {
+                                LabeledContent(match.startDate.formatted(date: .abbreviated, time: .shortened),
+                                               value: "\(Int(match.duration / 60)) min")
                             }
+                            .tint(.primary)
                         }
                     }
                 }
             }
-            .navigationTitle("Save to match")
+            .navigationTitle("Which Match?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -472,5 +469,7 @@ private struct MatchPickerSheet: View {
                 }
             }
         }
+        // Swiped away, the footage would belong to nothing.
+        .interactiveDismissDisabled()
     }
 }

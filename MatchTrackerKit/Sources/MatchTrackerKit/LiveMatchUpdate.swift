@@ -30,11 +30,14 @@ public struct LiveMatchUpdate: Codable, Sendable {
     /// the wearer records a goal.
     public var usGoals: Int?
     public var themGoals: Int?
+    /// Events sent before and undone since (watch -> phone only).
+    public var removedEventIDs: [UUID]?
 
     public init(matchID: UUID? = nil, sequence: Int, timestamp: Date, elapsed: TimeInterval, heartRate: Double? = nil,
                 distanceMeters: Double, currentSpeed: Double? = nil, onPitch: Bool,
                 latestPoints: [TrackPoint] = [], newEvents: [MatchEvent] = [],
-                usGoals: Int? = nil, themGoals: Int? = nil) {
+                usGoals: Int? = nil, themGoals: Int? = nil, removedEventIDs: [UUID]? = nil) {
+        self.removedEventIDs = removedEventIDs
         self.matchID = matchID
         self.sequence = sequence
         self.timestamp = timestamp
@@ -62,6 +65,7 @@ public struct LiveMatchUpdate: Codable, Sendable {
         case newEvents = "new_events"
         case usGoals = "us_goals"
         case themGoals = "them_goals"
+        case removedEventIDs = "removed_event_ids"
     }
 }
 

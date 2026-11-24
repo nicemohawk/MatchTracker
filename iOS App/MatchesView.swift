@@ -32,9 +32,9 @@ struct MatchesView: View {
                 NavigationSplitView {
                     list
                 } detail: {
-                    if let selection {
-                        detail(selection)
-                    } else {
+                    if let selection, matches.matches.contains(where: { $0.id == selection }) {
+                        detail(selection).id(selection)
+                    } else if !matches.matches.isEmpty {
                         ContentUnavailableView("Choose a Match", systemImage: "soccerball")
                     }
                 }
@@ -68,7 +68,7 @@ struct MatchesView: View {
             .navigationTitle(isSearchTab ? "Search" : "Matches")
             .modifier(Searching(isActive: isSearchTab, text: $query))
             // Built once per change rather than per render: hundreds of matches, all date-formatted.
-            .task(id: ListKey(revision: matches.contentVersion, digests: matches.digests.count, filter: filter, query: query)) {
+            .task(id: ListKey(revision: matches.contentVersion, digests: matches.digestRevision, filter: filter, query: query)) {
                 sections = MatchListSection.build(from: matches, filter: filter, query: query)
                 hasBuilt = true
             }

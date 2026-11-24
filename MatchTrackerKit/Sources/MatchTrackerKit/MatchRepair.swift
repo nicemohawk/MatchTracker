@@ -13,6 +13,14 @@ public extension MatchRecord {
     mutating func add(_ event: MatchEvent) {
         events.append(event)
         events.sort { $0.date < $1.date }
+        raiseFinalScore()
+    }
+
+    /// More goals than the result said means there's one the result missed.
+    private mutating func raiseFinalScore() {
+        guard let final = finalScore, let logged = loggedScore else { return }
+        finalScore = FinalScore(us: max(final.us, logged.us), them: max(final.them, logged.them),
+                                mine: max(final.mine, logged.mine))
     }
 
     /// Change an event's details; nil leaves one alone, and an empty note clears it. An edited
@@ -24,6 +32,7 @@ public extension MatchRecord {
         if let note { events[index].note = note.isEmpty ? nil : note }
         events[index].source = .manual
         events.sort { $0.date < $1.date }
+        raiseFinalScore()
     }
 
     /// The removed event, to hand back to `add` on undo.
@@ -43,10 +52,19 @@ public extension MatchRecord {
         merged.reportedPositions = existing.reportedPositions ?? reportedPositions
         merged.format = existing.format ?? format
         merged.fieldID = existing.fieldID ?? fieldID
-        // Only a record that has been opened on the phone has events worth keeping over the watch's.
-        if existing.detection != nil {
+        merged.finalScore = existing.finalScore ?? finalScore
+        merged.track = track ?? existing.track
+        merged.headings = headings ?? existing.headings
+        merged.endDate = endDate ?? existing.endDate
+        merged.startedOnPhone = existing.startedOnPhone == true ? startedOnPhone : nil
+        if existing.detection != nil, existing.startedOnPhone != true {
+            // Opened on the phone, so its events are the watch's with everything done to them since.
             merged.detection = existing.detection
             merged.events = existing.events
+        } else {
+            let edited = existing.events.filter { $0.source == .manual }
+            let editedIDs = Set(edited.map(\.id))
+            merged.events = (events.filter { !editedIDs.contains($0.id) } + edited).sorted { $0.date < $1.date }
         }
         return merged
     }

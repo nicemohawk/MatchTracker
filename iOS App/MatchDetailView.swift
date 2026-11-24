@@ -148,7 +148,6 @@ struct MatchDetailView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button("Share", systemImage: "square.and.arrow.up") { sheet = .share }
                 .disabled(model.detail?.analytics == nil)
-            MatchCommentsButton(matchUUID: summary.id)
             Menu {
                 Button("Edit Match", systemImage: "pencil") { sheet = .edit }
                 Button("Video", systemImage: "video") { sheet = .video }

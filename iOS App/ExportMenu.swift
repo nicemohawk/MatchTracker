@@ -129,7 +129,7 @@ struct ExportFile: Transferable, Sendable {
     let format: Format
 
     var fileName: String {
-        "Match \(export.startDate.formatted(.iso8601.year().month().day()))\(format.fileSuffix)"
+        "Match \(export.startDate.formatted(.iso8601(timeZone: .current).year().month().day()))\(format.fileSuffix)"
     }
 
     private var contents: Data {
@@ -171,7 +171,7 @@ extension ActivityExport {
             halftime: detail.analytics?.halftime,
             distanceMeters: detail.analytics?.distanceMeters,
             activeEnergyKilocalories: summary.workout?.statistics(for: HKQuantityType(.activeEnergyBurned))?
-                .sumQuantity()?.doubleValue(for: .kilocalorie())
+                .sumQuantity().map { $0.doubleValue(for: .kilocalorie()) * detail.playedShare }
         )
     }
 }

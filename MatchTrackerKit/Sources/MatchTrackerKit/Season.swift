@@ -117,8 +117,11 @@ public struct SeasonSummary: Equatable, Sendable {
         }
     }
 
-    /// Where these matches were played, together.
-    public var heat: [Float]? { PortraitHeat.average(matches.compactMap(\.heat)) }
+    /// Where these matches were played, together. Only the ones whose direction is known: averaged
+    /// in upside down, a match would cancel another out.
+    public var heat: [Float]? {
+        PortraitHeat.average(matches.filter { $0.heatIsDirected == true }.compactMap(\.heat))
+    }
 
     /// Mean effort over the `days` up to a date.
     public func averageEffort(days: Int, asOf date: Date, excluding id: UUID? = nil) -> Double? {

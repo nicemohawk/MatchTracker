@@ -50,8 +50,9 @@ public struct LiveMatchState: Codable, Hashable, Sendable {
 
     private mutating func read(_ update: LiveMatchUpdate) {
         onPitch = update.onPitch
-        goalsUs = update.usGoals ?? goalsUs
-        goalsThem = update.themGoals ?? goalsThem
+        // Always the current totals; nil again when the only goal was undone.
+        goalsUs = update.usGoals
+        goalsThem = update.themGoals
         heartRate = update.heartRate.map { Int($0.rounded()) }
         for event in update.newEvents {
             switch event.kind {

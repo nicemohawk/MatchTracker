@@ -212,4 +212,44 @@ final class MatchRepairTests: XCTestCase {
         XCTAssertEqual(counter.count, 2, "a one-second spike, a brief dip, a car and redelivery add nothing")
         XCTAssertEqual(counts, counts.sorted())
     }
+
+    // MARK: - Scores and late records
+
+    func testTheWearersScoreOutranksTheLoggedOne() {
+        var record = MatchRecord(id: UUID(), startDate: at(0), endDate: at(90), fieldID: nil,
+                                 events: [MatchEvent(kind: .goalForUs, date: at(20))], teamCode: nil)
+        XCTAssertEqual(record.score, FinalScore(us: 1, them: 0))
+        record.finalScore = FinalScore(us: 3, them: 1, mine: 2)
+        let digest = MatchDigest(id: record.id, interval: DateInterval(start: at(0), end: at(90)), format: .match,
+                                 record: record, analytics: nil)
+        XCTAssertEqual([digest.goalsUs, digest.goalsThem, digest.myGoals], [3, 1, 2])
+        for _ in 0..<2 { record.add(MatchEvent(kind: .goalAgainstUs, date: at(30))) }
+        XCTAssertEqual(record.score, FinalScore(us: 3, them: 2, mine: 2), "another goal logged is another goal")
+    }
+
+    func testGoallessIsAResult() {
+        var record = MatchRecord(id: UUID(), startDate: at(0), endDate: at(90), fieldID: nil, events: [], teamCode: nil)
+        XCTAssertNil(record.score)
+        record.finalScore = FinalScore(us: 0, them: 0)
+        XCTAssertEqual(MatchDigest(id: record.id, interval: DateInterval(start: at(0), end: at(90)), format: .match,
+                                   record: record, analytics: nil).result, .drawn)
+    }
+
+    func testWatchRecordArrivingAfterThePhoneStartedOne() {
+        let added = MatchEvent(kind: .assist, date: at(50))
+        var started = MatchRecord(id: UUID(), startDate: at(0), endDate: at(90), fieldID: nil, events: [added], teamCode: nil)
+        started.startedOnPhone = true
+        started.finalScore = FinalScore(us: 2, them: 2)
+        started.detection = MatchRecord.currentDetection
+        let flag = MatchEvent(kind: .flag, date: at(10))
+        let received = MatchRecord(id: started.id, startDate: at(0), endDate: at(91), fieldID: nil,
+                                   events: [flag], teamCode: "ABC", format: .indoor)
+        let merged = received.keepingEdits(from: started)
+        XCTAssertEqual(merged.events.map(\.id), [flag.id, added.id])
+        XCTAssertEqual(merged.finalScore, started.finalScore)
+        XCTAssertEqual(merged.format, .indoor)
+        XCTAssertEqual(merged.teamCode, "ABC")
+        XCTAssertNil(merged.startedOnPhone)
+        XCTAssertNil(merged.detection, "the watch's events haven't been looked at yet")
+    }
 }

@@ -233,16 +233,6 @@ final class UploadService: ObservableObject {
         return try await client.formation(code: code)
     }
 
-    func fetchComments(match: UUID) async throws -> [MatchComment] {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        return try await client.comments(match: match)
-    }
-
-    func postComment(_ comment: MatchComment, match: UUID) async throws {
-        guard let client else { throw TeamStatsError.noAPIKey }
-        try await client.postComment(comment, match: match)
-    }
-
     func fetchLiveTeam(code: String) async throws -> [LivePlayerStatus] {
         guard let client else { throw TeamStatsError.noAPIKey }
         return try await client.liveTeam(code: code)

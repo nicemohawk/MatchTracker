@@ -23,17 +23,26 @@ public enum EffortRating {
 
     /// The score the wearer gave this workout, here or in Fitness. Nil when unrated or unreadable.
     public static func score(of workout: HKWorkout, in store: HKHealthStore) async -> Int? {
+        try? await samples(of: workout, in: store).first.map { Int($0.quantity.doubleValue(for: .appleEffortScore()).rounded()) }
+    }
+
+    private static func samples(of workout: HKWorkout, in store: HKHealthStore) async throws -> [HKQuantitySample] {
         let related = HKQuery.predicateForWorkoutEffortSamplesRelated(workout: workout, activity: nil)
-        let query = HKSampleQueryDescriptor(predicates: [.quantitySample(type: type, predicate: related)],
-                                            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)], limit: 1)
-        return try? await query.result(for: store).first.map { Int($0.quantity.doubleValue(for: .appleEffortScore()).rounded()) }
+        return try await HKSampleQueryDescriptor(predicates: [.quantitySample(type: type, predicate: related)],
+                                                 sortDescriptors: [SortDescriptor(\.startDate)]).result(for: store)
     }
 
     /// Asks for permission the first time, which is the only time it has a reason to.
     public static func rate(_ workout: HKWorkout, _ score: Int, in store: HKHealthStore) async throws {
         try await store.requestAuthorization(toShare: [type], read: [type])
+        let earlier = (try? await samples(of: workout, in: store)) ?? []
         let sample = HKQuantitySample(type: type, quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: Double(score)),
                                       start: workout.startDate, end: workout.endDate)
         _ = try await store.relateWorkoutEffortSample(sample, with: workout, activity: nil)
+        // A second opinion replaces the first. One given in Fitness can only be unrelated.
+        for old in earlier {
+            _ = try? await store.unrelateWorkoutEffortSample(old, from: workout, activity: nil)
+            try? await store.delete(old)
+        }
     }
 }

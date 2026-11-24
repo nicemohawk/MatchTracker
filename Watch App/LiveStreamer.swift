@@ -46,12 +46,14 @@ final class LiveStreamer {
 
     /// Builds the delta ranges for the caller: points/events not yet streamed.
     @MainActor
-    func deltas(track: [TrackPoint], events: [MatchEvent]) -> (points: [TrackPoint], events: [MatchEvent]) {
+    func deltas(track: [TrackPoint], events: [MatchEvent]) -> (points: [TrackPoint], events: [MatchEvent], removed: [UUID]) {
         let newPoints = Array(track.suffix(from: min(sentTrackCount, track.count)).suffix(10))
         let newEvents = events.filter { sentEventKinds[$0.id] != $0.kind }
         sentTrackCount = track.count
         for event in newEvents { sentEventKinds[event.id] = event.kind }
-        return (newPoints, newEvents)
+        let removed = Set(sentEventKinds.keys).subtracting(events.map(\.id))
+        for id in removed { sentEventKinds[id] = nil }
+        return (newPoints, newEvents, Array(removed))
     }
 
     @MainActor

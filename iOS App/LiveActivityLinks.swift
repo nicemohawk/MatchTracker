@@ -79,7 +79,14 @@ private struct SystemLinks: ViewModifier {
         case .season: openSeason()
         case .start: startOnWatch.start()
         case .latestMatch, .match, .matchStarting:
-            guard let summary = summary(for: link) else { return }
+            guard let summary = summary(for: link) else {
+                // Waits for the list, then for the watch; past a minute, going there would be a surprise.
+                Task {
+                    try? await Task.sleep(for: .seconds(60))
+                    if router.pending == link { router.pending = nil }
+                }
+                return
+            }
             showingLive = false
             if let openMatch { openMatch(summary.id) } else { sheetMatch = summary }
         }

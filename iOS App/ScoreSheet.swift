@@ -14,6 +14,7 @@ struct ScoreSheet: View {
     @State private var us = 0
     @State private var them = 0
     @State private var opponent = ""
+    @State private var loadedOpponent = ""
     @State private var iScored = 0
     @State private var didLoad = false
 
@@ -63,8 +64,9 @@ struct ScoreSheet: View {
             didLoad = true
             us = detail.digest?.goalsUs ?? 0
             them = detail.digest?.goalsThem ?? 0
-            iScored = detail.events.filter { $0.kind == .goalMine }.count
+            iScored = detail.digest?.myGoals ?? 0
             opponent = detail.record?.opponent ?? ""
+            loadedOpponent = opponent
         }
     }
 
@@ -85,20 +87,10 @@ struct ScoreSheet: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// Keeps the goals already logged with their minutes; only the difference is added or removed.
+    /// A result, not a list of goals: nobody remembers every minute. The ones logged as they
+    /// happened keep theirs. 0–0 is a result too.
     private func save() {
-        func adjust(_ kinds: [MatchEventKind], adding kind: MatchEventKind, to target: Int) {
-            let existing = detail.events.filter { kinds.contains($0.kind) }.sorted { $0.date < $1.date }
-            for _ in existing.count..<max(target, existing.count) {
-                _ = store.addEvent(kind, at: detail.matchEnd, note: nil, to: id)
-            }
-            for event in existing.suffix(max(0, existing.count - target)) {
-                _ = store.deleteEvent(event.id, from: id)
-            }
-        }
-        adjust([.goalMine], adding: .goalMine, to: iScored)
-        adjust([.goalForUs], adding: .goalForUs, to: us - iScored)
-        adjust([.goalAgainstUs], adding: .goalAgainstUs, to: them)
-        store.setOpponent(opponent.trimmingCharacters(in: .whitespaces), for: id)
+        store.setFinalScore(FinalScore(us: us, them: them, mine: iScored), for: id)
+        if opponent != loadedOpponent { store.setOpponent(opponent, for: id) }
     }
 }

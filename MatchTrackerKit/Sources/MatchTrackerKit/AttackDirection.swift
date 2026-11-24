@@ -173,6 +173,18 @@ public enum PortraitHeat {
         return normalized(cells)
     }
 
+    /// A thumbnail laid on its side, attacking right, for spaces wider than they're tall.
+    public static func onItsSide(_ thumbnail: [Float]) -> HeatmapGrid? {
+        guard thumbnail.count == thumbnailColumns * thumbnailRows else { return nil }
+        var grid = HeatmapGrid(columns: thumbnailRows, rows: thumbnailColumns,
+                               cells: Array(repeating: 0, count: thumbnail.count))
+        for (index, value) in thumbnail.enumerated() {
+            let (row, column) = index.quotientAndRemainder(dividingBy: thumbnailColumns)
+            grid.cells[column * thumbnailRows + thumbnailRows - 1 - row] = Double(value)
+        }
+        return grid
+    }
+
     static func thumbnail(_ heat: [Float]) -> [Float]? {
         guard heat.count == columns * rows else { return nil }
         var cells = [Float](repeating: 0, count: thumbnailColumns * thumbnailRows)

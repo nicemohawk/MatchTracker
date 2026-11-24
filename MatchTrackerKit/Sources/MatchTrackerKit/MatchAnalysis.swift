@@ -332,10 +332,8 @@ public extension MatchDigest {
         self.init(id: id, startDate: interval.start, endDate: interval.end, format: format)
         opponent = record?.opponent
         let events = record?.events ?? []
-        let us = events.filter { $0.kind == .goalForUs || $0.kind == .goalMine }.count
-        let them = events.filter { $0.kind == .goalAgainstUs }.count
-        if us + them > 0 { (goalsUs, goalsThem) = (us, them) }
-        myGoals = events.filter { $0.kind == .goalMine }.count
+        if let score = record?.score { (goalsUs, goalsThem) = (score.us, score.them) }
+        myGoals = record?.score?.mine ?? 0
         myAssists = events.filter { $0.kind == .assist }.count
         guard let analytics else {
             fieldID = record?.fieldID

@@ -126,4 +126,42 @@ final class DesignCapture: XCTestCase {
             app.terminate()
         }
     }
+
+    /// The iPad's Health sheet is a centered form whose controls don't report as hittable.
+    func testPadGrantHealth() {
+        app.launchArguments += ["-ImportDiagnostics", "YES"]
+        app.launch()
+        for _ in 0..<2 {
+            sleep(6)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.557)).tap()
+            sleep(2)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.664)).tap()
+        }
+        sleep(3)
+        screenshot("00-granted")
+    }
+
+    func testPad() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(10)
+        screenshot("40-pad-summary")
+        app.buttons["Matches"].firstMatch.tap()
+        sleep(3)
+        screenshot("41-pad-matches")
+        app.collectionViews.cells.element(boundBy: 3).tap()
+        sleep(6)
+        screenshot("42-pad-match")
+        app.buttons["Team"].firstMatch.tap()
+        sleep(2)
+        screenshot("43-pad-team")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        app.buttons["Matches"].firstMatch.tap()
+        sleep(3)
+        screenshot("44-pad-landscape")
+        app.buttons["Summary"].firstMatch.tap()
+        sleep(2)
+        screenshot("45-pad-summary-landscape")
+        XCUIDevice.shared.orientation = .portrait
+    }
 }

@@ -24,7 +24,7 @@ struct HomeView: View {
             Group {
                 if let last = matches.latestDigest {
                     content(last: last)
-                } else if matches.didCompleteInitialLoad {
+                } else if matches.didCompleteInitialLoad, matches.matches.isEmpty {
                     NoMatchesView()
                 } else {
                     ProgressView()
@@ -74,6 +74,7 @@ struct HomeView: View {
     private func content(last: MatchDigest) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
+                LiveMatchCard()
                 LastMatchCard(digest: last, headline: matches.headline(for: last.id))
                     .zoomSource(id: last.id, in: transition)
                     .onTapGesture { path.append(last.id) }
@@ -298,6 +299,37 @@ struct DigestNumbers: View {
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(number.spoken)
+    }
+}
+
+/// The way to the live match where the tab bar can't carry one.
+private struct LiveMatchCard: View {
+    @Environment(LiveMatchStore.self) private var liveMatches
+    @State private var isShowing = false
+
+    private var isNeeded: Bool {
+        if #available(iOS 26.1, *) { return false }
+        return liveMatches.isLive
+    }
+
+    var body: some View {
+        if isNeeded, let state = liveMatches.state {
+            Button { isShowing = true } label: {
+                HStack {
+                    Label(state.status, systemImage: "dot.radiowaves.left.and.right").font(.headline)
+                    Spacer()
+                    if let score = state.score { Text(score).font(.title2.bold()).monospacedDigit() }
+                    Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+                .padding(20)
+                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens the live match")
+            .sheet(isPresented: $isShowing) {
+                NavigationStack { LiveMatchView(store: liveMatches, showsClose: true) }
+            }
+        }
     }
 }
 

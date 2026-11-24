@@ -212,16 +212,17 @@ struct RootTabView: View {
 }
 
 /// Mounts the live match above the tab bar, and only while there is one: an empty accessory would
-/// reserve an empty bar.
+/// reserve an empty bar. One branch per system, whatever is live, or the tabs would start over
+/// (sheets, drafts and all) each time a match began or went quiet.
 private struct LiveAccessoryPresenter: ViewModifier {
     let isLive: Bool
     @Binding var showingLive: Bool
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *), isLive {
+        if #available(iOS 26.1, *) {
             content
                 .tabBarMinimizeBehavior(.onScrollDown)
-                .tabViewBottomAccessory { LiveMatchAccessory(isPresented: $showingLive) }
+                .tabViewBottomAccessory(isEnabled: isLive) { LiveMatchAccessory(isPresented: $showingLive) }
         } else if #available(iOS 26.0, *) {
             content.tabBarMinimizeBehavior(.onScrollDown)
         } else {

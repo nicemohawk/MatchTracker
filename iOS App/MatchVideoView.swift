@@ -60,7 +60,7 @@ struct MatchVideoView: View {
             Text("Its clips go with it. A video you chose from Photos stays in Photos.")
         }
         .sheet(item: $clip) { MomentClipView(selection: $0) }
-        .sheet(item: $liningUp) { LineUpView(video: $0, moments: moments, matchStart: detail.matchStart) }
+        .sheet(item: $liningUp) { LineUpView(video: $0, moments: moments, detail: detail) }
         .fullScreenCover(isPresented: $isFilming) {
             SidelineCameraView(preassociatedMatchID: detail.matchIdentifier,
                                liveStore: liveMatches.isLive ? liveMatches : nil)
@@ -69,7 +69,7 @@ struct MatchVideoView: View {
 
     @ViewBuilder
     private func section(for video: SidelineVideo) -> some View {
-        let clips = SidelineAlignment.clips(for: video, events: moments, matchStart: detail.matchStart)
+        let clips = SidelineAlignment.clips(for: video, events: moments, matchStart: detail.recordedInterval.start)
         Section {
             ForEach(clips) { item in
                 Button {
@@ -148,7 +148,7 @@ struct ClipSelection: Identifiable {
     @MainActor
     static func of(_ event: MatchEvent, in detail: MatchDetailModel) -> ClipSelection? {
         for video in SidelineVideoStore.shared.videos(for: detail.matchIdentifier) {
-            if let clip = SidelineAlignment.clips(for: video, events: [event], matchStart: detail.matchStart).first {
+            if let clip = SidelineAlignment.clips(for: video, events: [event], matchStart: detail.recordedInterval.start).first {
                 return ClipSelection(video: video, clip: clip)
             }
         }
@@ -270,7 +270,7 @@ struct ClipFile: Transferable {
 private struct LineUpView: View {
     let video: SidelineVideo
     let moments: [MatchEvent]
-    let matchStart: Date
+    let detail: MatchDetailModel
 
     @State private var momentID: UUID?
     @State private var player = AVPlayer()
@@ -285,7 +285,7 @@ private struct LineUpView: View {
                     .aspectRatio(16 / 9, contentMode: .fit)
                 Picker("Moment", selection: $momentID) {
                     ForEach(moments) { event in
-                        Text("\(event.kind.momentTitle), \(max(1, Int(event.date.timeIntervalSince(matchStart) / 60) + 1))′")
+                        Text("\(event.kind.momentTitle), \(detail.minute(of: event))′")
                             .tag(UUID?.some(event.id))
                     }
                 }
@@ -322,7 +322,7 @@ private struct LineUpView: View {
     }
 
     private func time(of event: MatchEvent) -> TimeInterval {
-        SidelineAlignment.playbackTime(for: event.date, video: video, matchStart: matchStart)
+        SidelineAlignment.playbackTime(for: event.date, video: video, matchStart: detail.recordedInterval.start)
     }
 
     private func isInside(_ event: MatchEvent) -> Bool {

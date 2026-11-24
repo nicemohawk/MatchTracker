@@ -31,9 +31,8 @@ public struct WidgetSnapshot: Codable, Sendable {
     public var recent: [MatchDigest]
 
     public static let recentLimit = 100
-    static let heatColumns = 30, heatRows = 20
 
-    public static func make(from digests: [MatchDigest], heat: HeatmapGrid? = nil,
+    public static func make(from digests: [MatchDigest],
                             units: UnitSystem = .current, now: Date = Date(),
                             calendar: Calendar = .current) -> WidgetSnapshot {
         let newestFirst = digests.sorted { $0.startDate > $1.startDate }.map { digest in
@@ -46,7 +45,7 @@ public struct WidgetSnapshot: Codable, Sendable {
             units: units,
             lastMatch: newestFirst.first,
             headline: newestFirst.first.flatMap { MatchHeadline.make(for: $0, among: newestFirst, units: units) },
-            heat: newestFirst.isEmpty ? nil : heat?.reduced(columns: heatColumns, rows: heatRows),
+            heat: newestFirst.first?.heat.flatMap(PortraitHeat.onItsSide),
             season: season(from: newestFirst, now: now, calendar: calendar),
             recent: Array(newestFirst.prefix(recentLimit)))
     }

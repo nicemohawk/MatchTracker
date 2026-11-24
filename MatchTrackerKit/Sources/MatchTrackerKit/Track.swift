@@ -131,6 +131,10 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     /// The `MatchRecord.currentDetection` that last replaced this record's automatic events, so
     /// the phone re-detects once and never restores one the wearer deleted.
     public var detection: Int?
+    /// The result as the wearer gave it. Goals are often known without being logged as they happen.
+    public var finalScore: FinalScore?
+    /// The phone made this for a workout whose record hasn't come from the watch, if it ever will.
+    public var startedOnPhone: Bool?
 
     /// Bump when the sub or period detectors change enough to redo old matches.
     public static let currentDetection = 1
@@ -152,6 +156,32 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
         self.opponent = opponent
         self.notes = notes
     }
+}
+
+public struct FinalScore: Codable, Sendable, Equatable {
+    public var us: Int
+    public var them: Int
+    /// How many of `us` the wearer scored.
+    public var mine: Int
+
+    public init(us: Int, them: Int, mine: Int = 0) {
+        self.us = us
+        self.them = them
+        self.mine = min(mine, us)
+    }
+}
+
+public extension MatchRecord {
+    /// What was logged as it happened. Nil with no goals: that may be 0–0, or nobody counting.
+    var loggedScore: FinalScore? {
+        let mine = events.filter { $0.kind == .goalMine }.count
+        let us = mine + events.filter { $0.kind == .goalForUs }.count
+        let them = events.filter { $0.kind == .goalAgainstUs }.count
+        return us + them > 0 ? FinalScore(us: us, them: them, mine: mine) : nil
+    }
+
+    /// The wearer's word, or else what was logged.
+    var score: FinalScore? { finalScore ?? loggedScore }
 }
 
 public enum SubstitutionTracker {

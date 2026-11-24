@@ -553,7 +553,8 @@ final class WorkoutManager: NSObject {
             latestPoints: deltas.points,
             newEvents: deltas.events,
             usGoals: hasScore ? score.us : nil,
-            themGoals: hasScore ? score.them : nil
+            themGoals: hasScore ? score.them : nil,
+            removedEventIDs: deltas.removed.isEmpty ? nil : deltas.removed
         )
     }
 

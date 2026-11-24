@@ -18,7 +18,7 @@ import MatchTrackerKit
 /// itself lives alongside the index in `SidelineVideoStore.videosDirectory`, named by `id`.
 struct SidelineVideo: Codable, Identifiable, Hashable {
     let id: UUID
-    let matchID: UUID
+    var matchID: UUID
     /// File name (not full path) of the copied movie within `videosDirectory`.
     var fileName: String
     /// Wall-clock time of the first frame, read from the asset's creation metadata. Nil when the
@@ -179,6 +179,22 @@ final class SidelineVideoStore: ObservableObject {
         videosByMatch[video.matchID]?.removeAll { $0.id == video.id }
         if videosByMatch[video.matchID]?.isEmpty == true {
             videosByMatch[video.matchID] = nil
+        }
+        persist()
+    }
+
+    /// The match is gone, and nothing else could ever reach its footage.
+    func removeAll(for matchID: UUID) {
+        videos(for: matchID).forEach(remove)
+    }
+
+    /// A match took on another identity (its workout's, once that arrived).
+    func move(from oldID: UUID, to newID: UUID) {
+        guard oldID != newID, let moved = videosByMatch.removeValue(forKey: oldID) else { return }
+        videosByMatch[newID, default: []] += moved.map { video in
+            var video = video
+            video.matchID = newID
+            return video
         }
         persist()
     }

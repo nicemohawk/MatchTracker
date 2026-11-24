@@ -43,24 +43,6 @@ enum TeamService {
         }
     }
 
-    static func comments(match: UUID) async throws -> [MatchComment] {
-        #if DEBUG
-        if let stub = TeamStub.current { return try await stub.comments(match: match) }
-        #endif
-        do {
-            return try await client().comments(match: match)
-        } catch APIError.httpStatus(404) {
-            return []
-        }
-    }
-
-    static func post(_ comment: MatchComment) async throws {
-        #if DEBUG
-        if let stub = TeamStub.current { return try await stub.post(comment) }
-        #endif
-        try await client().postComment(comment, match: comment.matchUUID)
-    }
-
     static func livePlayers(code: String) async throws -> [LivePlayerStatus] {
         #if DEBUG
         if let stub = TeamStub.current { return try await stub.livePlayers() }

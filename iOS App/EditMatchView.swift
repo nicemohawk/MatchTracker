@@ -13,6 +13,9 @@ struct EditMatchView: View {
 
     @State private var opponent = ""
     @State private var notes = ""
+    /// What the fields started as. Only what was changed is saved: a record that loads late must
+    /// not be overwritten with the blanks shown before it did.
+    @State private var loaded: (opponent: String, notes: String)?
     @State private var editing: MatchEvent?
     @State private var addingEvent = false
     @State private var adjusting: MatchDetailModel.AdjustableField?
@@ -29,7 +32,7 @@ struct EditMatchView: View {
             Form {
                 Section {
                     TextField("Opponent", text: $opponent)
-                        .onSubmit { store.setOpponent(opponent, for: id) }
+                        .onSubmit(commit)
                 }
                 Section("Moments") {
                     ForEach(moments) { event in
@@ -95,16 +98,26 @@ struct EditMatchView: View {
             }
         }
         .onAppear {
+            guard loaded == nil else { return }
             opponent = detail.record?.opponent ?? ""
             notes = detail.record?.notes ?? ""
+            loaded = (opponent, notes)
+        }
+        .onChange(of: detail.record == nil) { _, isMissing in
+            guard !isMissing, let record = detail.record else { return }
+            if opponent.isEmpty { opponent = record.opponent ?? "" }
+            if notes.isEmpty { notes = record.notes ?? "" }
+            loaded = (record.opponent ?? "", record.notes ?? "")
         }
         // A swipe down keeps what was typed, like every other Apple form that saves as you go.
         .onDisappear(perform: commit)
     }
 
     private func commit() {
-        if opponent != detail.record?.opponent ?? "" { store.setOpponent(opponent, for: id) }
-        if notes != detail.record?.notes ?? "" { store.setNotes(notes, for: id) }
+        guard let loaded else { return }
+        if opponent != loaded.opponent { store.setOpponent(opponent, for: id) }
+        if notes != loaded.notes { store.setNotes(notes, for: id) }
+        self.loaded = (opponent, notes)
     }
 
     private func delete(_ event: MatchEvent) {
@@ -135,6 +148,7 @@ private struct MomentEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var kind: MatchEventKind = .goalForUs
     @State private var minute = 1
+    @State private var loadedMinute = 1
     @State private var note = ""
 
     private let kinds: [MatchEventKind] = [.goalForUs, .goalMine, .assist, .goalAgainstUs, .subOut, .subIn,
@@ -170,6 +184,7 @@ private struct MomentEditor: View {
         .onAppear {
             kind = event?.kind ?? .goalForUs
             minute = event.map { max(1, Int($0.date.timeIntervalSince(detail.matchStart) / 60) + 1) } ?? lastMinute / 2
+            loadedMinute = minute
             note = event?.note ?? ""
         }
     }
@@ -177,8 +192,8 @@ private struct MomentEditor: View {
     private func save() {
         let date = detail.matchStart.addingTimeInterval(Double(minute - 1) * 60 + 30)
         if let event {
-            let sameMinute = Int(event.date.timeIntervalSince(detail.matchStart) / 60) + 1 == minute
-            store.setEvent(event.id, in: detail.matchIdentifier, kind: kind, date: sameMinute ? nil : date, note: note)
+            store.setEvent(event.id, in: detail.matchIdentifier, kind: kind,
+                           date: minute == loadedMinute ? nil : date, note: note)
         } else {
             _ = store.addEvent(kind, at: date, note: note.isEmpty ? nil : note, to: detail.matchIdentifier)
         }
