@@ -165,8 +165,8 @@ public enum MatchAnalyzer {
             isPlaying[$0] || (projector.isOnField(track[$0].coordinate, marginMeters: overrunMarginMeters)
                 && isWithin(track[$0].timestamp, intervals: playingIntervals))
         }
-        // GPS a few meters out on a small pitch is still a run on it; mostly beyond that isn't one.
-        let isNearPitch = track.map { projector.isOnField($0.coordinate, marginMeters: onFieldMarginMeters) }
+        // A run chasing a ball over the line is still a run; one mostly far beyond it isn't.
+        let isNearPitch = track.map { projector.isOnField($0.coordinate, marginMeters: overrunMarginMeters) }
         let runs = RunDetector.detectRuns(in: track, isOnPitch: isRunning)
             .filter { isPlaying[$0.pointRange].contains(true) && KeyRunSelector.isOnPitch($0, isInside: isNearPitch) }
 
