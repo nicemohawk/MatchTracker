@@ -6,6 +6,7 @@
 import Foundation
 import Observation
 import WatchConnectivity
+import WidgetKit
 import MatchTrackerKit
 
 /// Bridges the watch to the phone over `WCSession`.
@@ -20,6 +21,8 @@ final class ConnectivityManager: NSObject {
 
     /// Bumped whenever the mirrored field list changes so views can refresh field detection.
     var fieldsRevision = 0
+    /// The team color last heard from the phone.
+    var kitID = KitColors.current.id
     var teamCode: String? = AppGroupStorage.teamCode
     var playerName: String? = AppGroupStorage.playerName
 
@@ -161,7 +164,11 @@ final class ConnectivityManager: NSObject {
         let formatsWithoutScore = context[ContextKey.formatsWithoutScore] as? [String]
         DispatchQueue.main.async {
             // "automatic" (or anything unknown) means the region's own convention.
-            if let kit, kit != .current { KitColors.wear(kit) }
+            if let kit, kit != .current {
+                KitColors.wear(kit)
+                self.kitID = kit.id
+                WidgetCenter.shared.reloadAllTimelines()
+            }
             if let units { WatchSettings.unitOverride = UnitSystem(rawValue: units) }
             if let formatsWithoutScore { WatchSettings.setFormatsWithoutScore(formatsWithoutScore) }
             if let decodedFields {

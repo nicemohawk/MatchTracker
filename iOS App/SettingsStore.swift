@@ -40,6 +40,7 @@ final class SettingsStore: ObservableObject {
         static let asksAfterMatches = "asksAfterMatches"
         static let playHabits = "playHabits"
         static let units = "units"
+        static let teamChosenAt = "teamChosenAt"
     }
 
     init(defaults: UserDefaults? = nil) {
@@ -53,6 +54,8 @@ final class SettingsStore: ObservableObject {
     @Published var kitID = KitColors.current.id
     @Published private(set) var dressedKitID = KitColors.current.id
 
+    var kitAnnouncement: Task<Void, Never>?
+
     func dressEverything() { dressedKitID = kitID }
 
     var playerName: String {
@@ -63,7 +66,16 @@ final class SettingsStore: ObservableObject {
     /// The team new matches are shared with; empty when they're shared with nobody.
     var teamCode: String {
         get { defaults.string(forKey: Key.teamCode) ?? "" }
-        set { defaults.set(newValue, forKey: Key.teamCode); bump() }
+        set { share(with: newValue); bump() }
+    }
+
+    /// When sharing last moved to another team, or to nobody.
+    var teamChosenAt: Date? { defaults.object(forKey: Key.teamChosenAt) as? Date }
+
+    private func share(with code: String) {
+        guard code != teamCode else { return }
+        defaults.set(code, forKey: Key.teamCode)
+        defaults.set(Date(), forKey: Key.teamChosenAt)
     }
 
     var serverURLOverride: String {
@@ -130,10 +142,10 @@ final class SettingsStore: ObservableObject {
             }
             // Keep the legacy default-team code in sync for the watch + uploads.
             if let first = newValue.first, !teamCode.isEmpty, !newValue.contains(where: { $0.code == teamCode }) {
-                defaults.set(first.code, forKey: Key.teamCode)
+                share(with: first.code)
             }
             if newValue.isEmpty {
-                defaults.set("", forKey: Key.teamCode)
+                share(with: "")
             }
             bump()
         }

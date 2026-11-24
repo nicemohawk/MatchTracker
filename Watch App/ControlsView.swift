@@ -12,6 +12,8 @@ import MatchTrackerKit
 struct ControlsView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @State private var confirmingEnd = false
+    /// When they left, if they've already gone.
+    @State private var leftAt: Date?
 
     private var isPaused: Bool { workoutManager.sessionState == .paused }
 
@@ -24,6 +26,7 @@ struct ControlsView: View {
                         tile("End", systemImage: "xmark", tint: WatchTheme.loss, height: tileHeight) {
                             logTap("End")
                             WatchHaptics.click()
+                            leftAt = workoutManager.leftThePitchAt
                             confirmingEnd = true
                         }
                         tile(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill",
@@ -54,12 +57,19 @@ struct ControlsView: View {
         .scenePadding(.horizontal)
         // An accidental End costs the rest of the match, and End is one sleeve-brush away.
         .confirmationDialog("End this match?", isPresented: $confirmingEnd, titleVisibility: .visible) {
-            Button("End Match", role: .destructive) {
-                WatchHaptics.stop()
-                Task { await workoutManager.endMatch() }
+            if let leftAt {
+                Button("End at \(leftAt.formatted(date: .omitted, time: .shortened))") { end(at: leftAt) }
             }
+            Button(leftAt == nil ? "End Match" : "End Now", role: .destructive) { end(at: nil) }
             Button("Keep Playing", role: .cancel) {}
+        } message: {
+            if leftAt != nil { Text("You've left the pitch. Ending when you left keeps the way home out of it.") }
         }
+    }
+
+    private func end(at date: Date?) {
+        WatchHaptics.stop()
+        Task { await workoutManager.endMatch(at: date, hadLeft: date != nil) }
     }
 
     @ViewBuilder

@@ -449,7 +449,7 @@ public struct APIClient: Sendable {
     private struct CommentPost: Encodable { var id: UUID; var body: String; var author: String }
 
     /// `LiveMatchUpdate` reduced to the backend contract: the raw track delta (`latestPoints`) is
-    /// dropped, and so is heart rate: it's nobody else's to see. `newEvents` are forwarded as `new_events` so the server can append them to the
+    /// dropped, and so are heart rate and speed: they're nobody else's to see. `newEvents` are forwarded as `new_events` so the server can append them to the
     /// team-scoped live event log (V2 §1/§11). Routing keys `matchUUID` / `teamCode` are added.
     private struct LiveWire: Encodable {
         var matchUUID: UUID
@@ -458,7 +458,6 @@ public struct APIClient: Sendable {
         var timestamp: Date
         var elapsedSeconds: TimeInterval
         var distanceMeters: Double
-        var currentSpeed: Double?
         var onPitch: Bool
         var usGoals: Int?
         var themGoals: Int?
@@ -472,7 +471,6 @@ public struct APIClient: Sendable {
             self.timestamp = update.timestamp
             self.elapsedSeconds = update.elapsed
             self.distanceMeters = update.distanceMeters
-            self.currentSpeed = update.currentSpeed
             self.onPitch = update.onPitch
             self.usGoals = update.usGoals
             self.themGoals = update.themGoals
@@ -486,7 +484,6 @@ public struct APIClient: Sendable {
             case timestamp
             case elapsedSeconds = "elapsed_s"
             case distanceMeters = "distance_m"
-            case currentSpeed = "current_speed"
             case onPitch = "on_pitch"
             case usGoals = "us_goals"
             case themGoals = "them_goals"

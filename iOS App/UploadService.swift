@@ -121,7 +121,7 @@ final class UploadService: ObservableObject {
         // Only a team can see matches, so without one they stay on the phone.
         let pending = summaries.filter { !uploadedIDs.contains($0.id) && teamCode(for: $0) != nil }
         guard !pending.isEmpty else { return }
-        Task { await upload(summaries: pending, markUploaded: true) }
+        Task { await upload(summaries: pending, markUploaded: true, onlyToTeams: true) }
     }
 
     /// Manual re-upload of a single match (ignores the uploaded set).
@@ -135,7 +135,7 @@ final class UploadService: ObservableObject {
         await uploadFields()
     }
 
-    private func upload(summaries: [MatchSummary], markUploaded: Bool) async {
+    private func upload(summaries: [MatchSummary], markUploaded: Bool, onlyToTeams: Bool = false) async {
         guard let client else {
             status = "No API key yet"
             return
@@ -155,6 +155,14 @@ final class UploadService: ObservableObject {
             sentIDs.append(summary.id)
         }
 
+        // Loading takes a while, and the player may have left the team meanwhile.
+        for (index, summary) in summaries.filter({ sentIDs.contains($0.id) }).enumerated().reversed() {
+            payloads[index].teamCode = teamCode(for: summary)
+            if onlyToTeams, payloads[index].teamCode == nil {
+                payloads.remove(at: index)
+                sentIDs.remove(at: index)
+            }
+        }
         guard !payloads.isEmpty else { status = "Nothing to upload"; return }
 
         // Route through the persistent queue: an immediate flush sends them now when the network
@@ -191,7 +199,8 @@ final class UploadService: ObservableObject {
     /// The team a match goes to, or nil for nobody. The watch may not have heard yet that its player
     /// left a team, and a match can reach the phone long after it was played.
     private func teamCode(for summary: MatchSummary) -> String? {
-        let code = [summary.record?.teamCode, settings.teamCode].compactMap { $0 }.first { !$0.isEmpty }
+        let code = TeamSharing.code(recorded: summary.record?.teamCode, chosen: settings.teamCode,
+                                    chosenAt: settings.teamChosenAt, start: summary.startDate)
         guard let team = settings.teamMemberships.first(where: { $0.code == code }),
               summary.startDate >= team.joinedAt ?? .distantPast else { return nil }
         return team.code
@@ -202,6 +211,13 @@ final class UploadService: ObservableObject {
         makeQueueIfNeeded()
         queue?.discardMatches(teamCode: teamCode)
         pendingUploadCount = queue?.pending.count ?? 0
+    }
+
+    /// Nothing waiting is sent.
+    func discardAllUploads() {
+        makeQueueIfNeeded()
+        queue?.discardAll()
+        pendingUploadCount = 0
     }
 
     private func buildPayload(summary: MatchSummary, detail: MatchDetailModel) -> MatchPayload {

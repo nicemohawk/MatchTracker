@@ -29,7 +29,9 @@ public enum MatchTrackerLink: Hashable, Sendable {
         case .match(let id): path = "match/\(id.uuidString)"
         case .matchStarting(let date): path = "match/at/\(Int(date.timeIntervalSince1970))"
         case .review(let date): path = "match/at/\(Int(date.timeIntervalSince1970))/review"
-        case .join(let invite): return invite.link
+        case .join(let invite):
+            if let link = invite.link { return link }
+            path = "season"
         }
         return URL(string: "\(Self.scheme)://\(path)")!
     }

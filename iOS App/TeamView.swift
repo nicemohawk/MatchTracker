@@ -319,6 +319,8 @@ final class TeamModel {
         } catch {
             guard newCode == code else { return }
             if TeamService.isTurnedAway(error) {
+                // Perhaps it never heard; say so again next time.
+                SettingsStore.shared.confirmedTeams.removeAll { $0 == newCode }
                 TeamCache.remove(newCode)
                 season = nil
                 week = nil

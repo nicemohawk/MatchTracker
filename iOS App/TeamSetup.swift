@@ -27,6 +27,7 @@ struct TeamJoinSheet: View {
                 Section {
                     if let invite {
                         Text(invite.name ?? "Team \(invite.code)").font(.name(.title3))
+                        LabeledContent("Team code", value: invite.code)
                         if let captain = invite.captain { LabeledContent("Captain", value: captain) }
                     } else {
                         TextField("Team code or invite message", text: $pasted, axis: .vertical)
@@ -42,7 +43,9 @@ struct TeamJoinSheet: View {
                         Text("You're joining \(name).")
                     } else if !pasted.isEmpty && joining == nil {
                         Text("That doesn't look like a team code. Codes are letters and numbers, with no spaces.")
-                    } else if invite == nil {
+                    } else if invite != nil {
+                        Text("Names are as the invite has them. Join only if the code is one a teammate gave you.")
+                    } else {
                         Text("Ask a teammate to send you an invite from their Team tab.")
                     }
                 }
@@ -221,7 +224,7 @@ struct TeamPrivacyView: View {
                     Text("Minutes, distance, sprints, goals and assists")
                     Text("Where you usually play on the pitch")
                     Text("Goals, cards, flags and notes you log")
-                    Text("While you're playing: distance, and whether you're on the pitch")
+                    Text("While you're playing: the clock, the score, your distance, and whether you're on the pitch")
                 }
                 Section {
                     Text("Heart rate")
@@ -276,6 +279,9 @@ struct TeamManageSheet: View {
     @State private var teamName = ""
     @State private var playerName = ""
     @State private var captainName = ""
+    /// As they were when the fields were filled. Joining from here can change them underneath.
+    @State private var filledPlayerName = ""
+    @State private var filledCaptainName = ""
     @State private var leaving: TeamMembership?
     @State private var page: Page?
 
@@ -436,6 +442,8 @@ struct TeamManageSheet: View {
         teamName = settings.teamName(code, sharedName: sharedName) ?? ""
         playerName = settings.playerName
         captainName = settings.team(code)?.captainName ?? ""
+        filledPlayerName = playerName.trimmingCharacters(in: .whitespaces)
+        filledCaptainName = captainName.trimmingCharacters(in: .whitespaces)
     }
 
     /// Saved once, on the way out, so half-typed names never reach the watch.
@@ -444,14 +452,14 @@ struct TeamManageSheet: View {
         let newTeamName = teamName.trimmingCharacters(in: .whitespaces)
         let newPlayerName = playerName.trimmingCharacters(in: .whitespaces)
         let newCaptain = captainName.trimmingCharacters(in: .whitespaces)
-        if newCaptain != settings.team(code)?.captainName ?? "" {
+        if newCaptain != filledCaptainName, newCaptain != settings.team(code)?.captainName ?? "" {
             settings.updateTeam(code) { $0.captainName = newCaptain.isEmpty ? nil : newCaptain }
         }
         if !newTeamName.isEmpty && newTeamName != settings.teamName(code, sharedName: sharedName) {
             settings.updateTeam(code) { $0.name = newTeamName }
         }
         // A team knows a player by their name, so there's always one.
-        if !newPlayerName.isEmpty && newPlayerName != settings.playerName {
+        if !newPlayerName.isEmpty, newPlayerName != filledPlayerName, newPlayerName != settings.playerName {
             settings.rename(player: newPlayerName)
             environment.settingsChanged()
         }

@@ -64,8 +64,9 @@ final class EntitlementStore {
                transaction.productID == Self.teamMonthlyProductID,
                transaction.revocationDate == nil {
                 active = true
-                // The server takes notes only from subscribers it has seen proof of.
-                await TeamService.sendReceipt(entitlement.jwsRepresentation)
+                // The server takes notes only from subscribers it has seen proof of. Nobody waits for it.
+                let receipt = entitlement.jwsRepresentation
+                Task { await TeamService.sendReceipt(receipt) }
             }
         }
         entitledToTeam = active

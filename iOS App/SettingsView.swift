@@ -248,7 +248,7 @@ struct SettingsView: View {
                                     isPresented: $showingDeletionConfirmation, titleVisibility: .visible) {
                     Button("Delete Server Data", role: .destructive) { Task { await requestDeletion() } }
                 } message: {
-                    Text("Your matches, fields and live updates are removed from the MatchTracker server. What’s on this iPhone stays.")
+                    Text("Your matches, fields and live updates are removed from the MatchTracker server. You leave your teams. What’s on this iPhone stays.")
                 }
             if let privacyMessage {
                 Text(privacyMessage).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
@@ -275,7 +275,10 @@ struct SettingsView: View {
         do {
             try await uploads.requestServerDeletion()
             SystemSurfaces.erase()
-            privacyMessage = "Deletion requested."
+            uploads.discardAllUploads()
+            settings.leftTeams = []
+            for membership in settings.teamMemberships { environment.leaveTeam(membership.code) }
+            privacyMessage = "Deletion requested. You’re no longer on any team."
         } catch {
             privacyMessage = "Couldn’t reach the server, so nothing was deleted. Check your connection and try again."
         }

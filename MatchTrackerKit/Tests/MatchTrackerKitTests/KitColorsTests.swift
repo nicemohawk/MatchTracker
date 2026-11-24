@@ -17,7 +17,9 @@ final class KitColorsTests: XCTestCase {
             XCTAssertGreaterThan(KitColors.ivory.contrast(with: kit.cloth), 5.5, "ivory on \(kit.id)'s cloth")
             XCTAssertGreaterThan(kit.tintOnDark.contrast(with: kit.canvasDark), 7, "tint on \(kit.id)'s canvas")
             XCTAssertGreaterThan(kit.tintOnDark.contrast(with: kit.surfaceDark), 6, "tint on \(kit.id)'s surface")
-            XCTAssertGreaterThan(kit.tintOnDark.contrast(with: kit.cloth), 3.2, "tint on \(kit.id)'s cloth")
+            for color in [kit.tintOnDark, kit.themOnDark, kit.trimOnDark] {
+                XCTAssertGreaterThanOrEqual(color.contrast(with: kit.cloth), 4.5, "on \(kit.id)'s cloth")
+            }
             XCTAssertGreaterThan(kit.tintOnLight.contrast(with: cream), 4.5, "tint of \(kit.id) on cream")
             XCTAssertGreaterThan(kit.themOnDark.contrast(with: kit.canvasDark), 6, "opponent on \(kit.id)'s canvas")
         }

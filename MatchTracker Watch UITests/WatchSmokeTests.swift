@@ -437,7 +437,11 @@ final class WatchSmokeTests: XCTestCase {
         move(for: 110, speed: 12)
         XCTAssertFalse(question.exists, "Asked once already, minutes ago")
         app.swipeDown()
-        endMatch(app)
+        let end = app.buttons.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        if end.waitForExistence(timeout: 12) { end.tap() }
+        let whenLeft = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'End at'")).firstMatch
+        XCTAssertTrue(whenLeft.waitForExistence(timeout: 10), "Ending away from the pitch offers when play did")
+        whenLeft.tap()
         sleep(40)
         screenshot("72-left-by-hand")
         try assertSavedMatch(endsWithin: 75, of: left, after: kickoff, farthestMeters: 10_000)

@@ -155,6 +155,11 @@ public final class UploadQueue {
         try persist(PendingUpload(id: UUID(), kind: .fields, payloadJSON: data))
     }
 
+    /// Drops everything waiting, for somebody who wants nothing more sent.
+    public func discardAll() {
+        for item in pending { remove(id: item.id) }
+    }
+
     /// Drops matches waiting to go to a team, for somebody who has left it.
     public func discardMatches(teamCode: String) {
         for item in pending where item.kind == .match {
@@ -178,6 +183,8 @@ public final class UploadQueue {
         for item in dueItems(asOf: Date()) {
             // A transport failure mid-flush trips the breaker; stop hammering the rest immediately.
             guard breaker.allowsRequest() else { break }
+            // Dropped since the flush began: its player left the team.
+            guard isQueued(item.id) else { continue }
             do {
                 switch item.kind {
                 case .match:
@@ -205,6 +212,12 @@ public final class UploadQueue {
         return storage
             .filter { $0.nextAttempt <= now }
             .sorted { $0.nextAttempt < $1.nextAttempt }
+    }
+
+    private func isQueued(_ id: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage.contains { $0.id == id }
     }
 
     private func count() -> Int {

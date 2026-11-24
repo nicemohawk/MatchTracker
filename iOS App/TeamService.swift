@@ -80,9 +80,23 @@ enum TeamService {
         #if DEBUG
         if TeamStub.current != nil { return }
         #endif
+        // One at a time: a leave and a join of the same team must arrive in order.
+        let earlier = telling
+        let task = Task {
+            await earlier?.value
+            await tell()
+        }
+        telling = task
+        await task.value
+    }
+
+    private static var telling: Task<Void, Never>?
+
+    private static func tell() async {
         let settings = SettingsStore.shared
         guard let client = try? client() else { return }
         for code in settings.leftTeams {
+            guard settings.leftTeams.contains(code) else { continue }
             do {
                 try await client.leaveTeam(code: code)
             } catch APIError.httpStatus(404) {

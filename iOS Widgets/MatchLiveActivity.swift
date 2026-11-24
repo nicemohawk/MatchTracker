@@ -10,6 +10,7 @@ struct MatchLiveActivity: Widget {
 
     private var configuration: ActivityConfiguration<MatchActivityAttributes> {
         ActivityConfiguration(for: MatchActivityAttributes.self) { context in
+            let _ = KitColors.refresh()
             LiveActivityContent(state: context.state, units: context.attributes.units, isStale: context.isStale)
                 .widgetURL(context.link)
         } dynamicIsland: { context in

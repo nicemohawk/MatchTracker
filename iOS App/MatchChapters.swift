@@ -382,69 +382,73 @@ struct AllNumbersView: View {
 
     var body: some View {
         List {
-            Section("Running") {
-                if let meters = analytics.distanceMeters { row("Distance", UnitSystem.current.distance(meters)) }
-                if let speed = analytics.topSpeedMetersPerSecond {
-                    row("Top speed", UnitSystem.current.speed(speed), note: "Held for at least a second")
+            Group {
+                Section("Running") {
+                    if let meters = analytics.distanceMeters { row("Distance", UnitSystem.current.distance(meters)) }
+                    if let speed = analytics.topSpeedMetersPerSecond {
+                        row("Top speed", UnitSystem.current.speed(speed), note: "Held for at least a second")
+                    }
+                    if analytics.hasRoute {
+                        row("Runs", "\(analytics.runs.runCount)", note: "Faster than \(UnitSystem.current.speed(SpeedThresholds.running).text) for two seconds")
+                        row("Sprints", "\(analytics.runs.sprintCount)", note: "Faster than \(UnitSystem.current.speed(SpeedThresholds.sprinting).text)")
+                    }
+                    if let load = analytics.loadMetrics {
+                        row("Distance sprinting", UnitSystem.current.shortDistance(load.sprintDistanceMeters))
+                        row("Distance per minute", UnitSystem.current.shortDistance(load.distancePerMinuteMeters))
+                    }
                 }
-                if analytics.hasRoute {
-                    row("Runs", "\(analytics.runs.runCount)", note: "Faster than \(UnitSystem.current.speed(SpeedThresholds.running).text) for two seconds")
-                    row("Sprints", "\(analytics.runs.sprintCount)", note: "Faster than \(UnitSystem.current.speed(SpeedThresholds.sprinting).text)")
+                Section("Time") {
+                    row(analytics.hasRoute ? "On the pitch" : "Playing", MatchTrackerFormat.hoursMinutesSeconds(analytics.workrate.timeOnPitch))
+                    row("Match", MatchTrackerFormat.hoursMinutesSeconds(analytics.interval.duration))
+                    if let halftime = analytics.halftime {
+                        row("Half-time", MatchTrackerFormat.hoursMinutesSeconds(halftime.duration))
+                    }
                 }
-                if let load = analytics.loadMetrics {
-                    row("Distance sprinting", UnitSystem.current.shortDistance(load.sprintDistanceMeters))
-                    row("Distance per minute", UnitSystem.current.shortDistance(load.distancePerMinuteMeters))
+                if let stints = analytics.stints {
+                    Section("Stints") {
+                        row("Stints", "\(stints.playing.count)")
+                        row("Longest", MatchTrackerFormat.hoursMinutesSeconds(stints.longest))
+                        row("Average", MatchTrackerFormat.hoursMinutesSeconds(stints.played / Double(max(stints.playing.count, 1))))
+                        if let recovery = stints.recovery {
+                            row("Recovery", "\(Int(recovery)) bpm", note: "How far your heart rate falls in the first minute off")
+                        }
+                    }
                 }
-            }
-            Section("Time") {
-                row(analytics.hasRoute ? "On the pitch" : "Playing", MatchTrackerFormat.hoursMinutesSeconds(analytics.workrate.timeOnPitch))
-                row("Match", MatchTrackerFormat.hoursMinutesSeconds(analytics.interval.duration))
-                if let halftime = analytics.halftime {
-                    row("Half-time", MatchTrackerFormat.hoursMinutesSeconds(halftime.duration))
+                if let thirds = analytics.thirds {
+                    Section("Where you played") {
+                        if analytics.isDirectionConfident {
+                            row("Attacking third", percent(thirds.attacking))
+                            row("Middle third", percent(thirds.middle))
+                            row("Defensive third", percent(thirds.defensive))
+                        } else {
+                            row("Middle third", percent(thirds.middle))
+                            row("Either end", percent(thirds.attacking + thirds.defensive),
+                                note: "Say which way you attacked in Edit Match to split this")
+                        }
+                    }
                 }
-            }
-            if let stints = analytics.stints {
-                Section("Stints") {
-                    row("Stints", "\(stints.playing.count)")
-                    row("Longest", MatchTrackerFormat.hoursMinutesSeconds(stints.longest))
-                    row("Average", MatchTrackerFormat.hoursMinutesSeconds(stints.played / Double(max(stints.playing.count, 1))))
-                    if let recovery = stints.recovery {
-                        row("Recovery", "\(Int(recovery)) bpm", note: "How far your heart rate falls in the first minute off")
+                if let average = analytics.averageHeartRate {
+                    Section("Heart rate") {
+                        row("Average", "\(Int(average)) bpm")
+                        if let maximum = analytics.maximumHeartRate { row("Highest", "\(Int(maximum)) bpm") }
+                    }
+                }
+                if !analytics.metersPerMinute.isEmpty {
+                    Section("Ground covered each minute") {
+                        Chart(Array(analytics.metersPerMinute.enumerated()), id: \.offset) { minute, meters in
+                            BarMark(x: .value("Minute", minute + 1),
+                                    y: .value("Distance", UnitSystem.current == .imperial ? meters * 1.0936 : meters))
+                                .foregroundStyle(Theme.turf)
+                        }
+                        .chartYAxisLabel(UnitSystem.current.shortDistance(0).unit)
+                        .frame(height: 180)
+                        .padding(.vertical, 8)
                     }
                 }
             }
-            if let thirds = analytics.thirds {
-                Section("Where you played") {
-                    if analytics.isDirectionConfident {
-                        row("Attacking third", percent(thirds.attacking))
-                        row("Middle third", percent(thirds.middle))
-                        row("Defensive third", percent(thirds.defensive))
-                    } else {
-                        row("Middle third", percent(thirds.middle))
-                        row("Either end", percent(thirds.attacking + thirds.defensive),
-                            note: "Say which way you attacked in Edit Match to split this")
-                    }
-                }
-            }
-            if let average = analytics.averageHeartRate {
-                Section("Heart rate") {
-                    row("Average", "\(Int(average)) bpm")
-                    if let maximum = analytics.maximumHeartRate { row("Highest", "\(Int(maximum)) bpm") }
-                }
-            }
-            if !analytics.metersPerMinute.isEmpty {
-                Section("Ground covered each minute") {
-                    Chart(Array(analytics.metersPerMinute.enumerated()), id: \.offset) { minute, meters in
-                        BarMark(x: .value("Minute", minute + 1),
-                                y: .value("Distance", UnitSystem.current == .imperial ? meters * 1.0936 : meters))
-                            .foregroundStyle(Theme.turf)
-                    }
-                    .chartYAxisLabel(UnitSystem.current.shortDistance(0).unit)
-                    .frame(height: 180)
-                    .padding(.vertical, 8)
-                }
-            }
+            .listRowBackground(Theme.surface)
         }
+        .canvasBackground()
         .navigationTitle("All Numbers")
         .navigationBarTitleDisplayMode(.inline)
     }

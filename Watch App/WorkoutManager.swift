@@ -60,7 +60,7 @@ final class WorkoutManager: NSObject {
 
     /// Wall-clock pause accounting. The builder's elapsed time honors pauses by itself, but it
     /// only exists while HealthKit is collecting — this keeps Pause meaningful when it isn't.
-    @ObservationIgnored private var pausedTotal: TimeInterval = 0
+    @ObservationIgnored private var pauses: [DateInterval] = []
     @ObservationIgnored private var pauseStarted: Date?
 
     // MARK: Match content
@@ -241,7 +241,9 @@ final class WorkoutManager: NSObject {
     func elapsedTime(at date: Date) -> TimeInterval {
         if pausesKnownOnlyToBuilder, collectionBegan, let builder { return builder.elapsedTime(at: date) }
         guard isRecording else { return elapsedAtPause }
-        let paused = pausedTotal + (pauseStarted.map { max(0, date.timeIntervalSince($0)) } ?? 0)
+        // A match can be ended in the past, before some of its pauses.
+        let paused = pauses.reduce(0) { $0 + max(0, min($1.end, date).timeIntervalSince($1.start)) }
+            + (pauseStarted.map { max(0, date.timeIntervalSince($0)) } ?? 0)
         return max(0, date.timeIntervalSince(matchStartDate) - paused)
     }
 
@@ -610,7 +612,7 @@ final class WorkoutManager: NSObject {
         case .paused where pauseStarted == nil:
             pauseStarted = Date()
         case .running:
-            if let pauseStarted { pausedTotal += Date().timeIntervalSince(pauseStarted) }
+            if let pauseStarted { pauses.append(DateInterval(start: pauseStarted, end: max(Date(), pauseStarted))) }
             pauseStarted = nil
         default:
             break
@@ -739,6 +741,15 @@ final class WorkoutManager: NSObject {
         self.endQuestion = nil
     }
 
+    /// When the wearer left the pitch, if they've gone. Offered on ending by hand, never assumed: what's
+    /// cut from a workout can't be put back.
+    @MainActor
+    var leftThePitchAt: Date? {
+        guard usesGPS else { return nil }
+        return stillPlaying.endBeforeLeaving(recorded: DateInterval(start: matchStartDate, end: Date()), track: track, field: resolvedField)
+            .flatMap { $0.timeIntervalSince(matchStartDate) > 60 ? $0 : nil }
+    }
+
     /// End the match when the question says play did.
     @MainActor
     func endMatch(answering question: StillPlaying.Question) async {
@@ -846,15 +857,11 @@ final class WorkoutManager: NSObject {
     func endMatch(at requestedEnd: Date? = nil, hadLeft: Bool = false) async -> MatchOutcome {
         guard isRecording else { return .discardedTooShort }
         let now = Date()
-        // Ended by hand at home, the journey there was never the match.
-        let beforeLeaving = requestedEnd == nil && usesGPS
-            ? stillPlaying.endBeforeLeaving(recorded: DateInterval(start: matchStartDate, end: now), track: track, field: resolvedField)
-            : nil
-        let end = min(max(requestedEnd ?? beforeLeaving ?? now, matchStartDate), now)
+        let end = min(max(requestedEnd ?? now, matchStartDate), now)
         if now.timeIntervalSince(end) > 60 {
-            MatchLog.info("endMatch: ending \(Int(now.timeIntervalSince(end) / 60)) min ago, when play did (left \(hadLeft || beforeLeaving != nil))",
+            MatchLog.info("endMatch: ending \(Int(now.timeIntervalSince(end) / 60)) min ago, when play did (left \(hadLeft))",
                           category: "workout")
-            earlyEnd = EarlyEnd(date: end, hadLeft: hadLeft || beforeLeaving != nil)
+            earlyEnd = EarlyEnd(date: end, hadLeft: hadLeft)
         }
         MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan), session \(session == nil ? "absent" : "live"))",
                       category: "workout")
@@ -934,6 +941,7 @@ final class WorkoutManager: NSObject {
         // What was saved, which for a match ended in the past is less than was counted live.
         let distance = workout?.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()?
             .doubleValue(for: Self.distanceUnit) ?? match.distanceMeters
+        let energy = workout?.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie())
 
         // Automatic period detection: no-op when the wearer tagged periods manually. A formal
         // match expects two halves; pickup/indoor sessions have variable breaks (expectedPeriods 0).
@@ -979,6 +987,7 @@ final class WorkoutManager: NSObject {
             events = record.events
             summaryRunCounts = runCounts
             distanceMeters = distance
+            if let energy { activeCalories = energy }
             finishedWorkout = workout
             // Last: SummaryView refreshes off the record, so the rest must already be in place.
             finishedRecord = record
@@ -1156,7 +1165,7 @@ final class WorkoutManager: NSObject {
         distanceMeters = 0
         currentSpeed = 0
         elapsedAtPause = 0
-        pausedTotal = 0
+        pauses = []
         pauseStarted = nil
         onPitch = true
         autoSubDetector = nil
@@ -1197,7 +1206,7 @@ final class WorkoutManager: NSObject {
         distanceMeters = 0
         currentSpeed = 0
         elapsedAtPause = 0
-        pausedTotal = 0
+        pauses = []
         pauseStarted = nil
         onPitch = true
         finishedWorkout = nil

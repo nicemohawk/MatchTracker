@@ -45,10 +45,12 @@ struct StartMatchProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (StartMatchEntry) -> Void) {
+        KitColors.refresh()
         completion(StartMatchEntry(date: Date(), format: WidgetStorage.likelyFormat(on: Date())))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<StartMatchEntry>) -> Void) {
+        KitColors.refresh()
         // The guess is per weekday, so it changes at midnight and no sooner.
         let today = Date()
         let days = (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: Calendar.current.startOfDay(for: today)) }

@@ -152,7 +152,9 @@ public struct TeamInvite: Hashable, Identifiable, Sendable {
         self.kit = kit
     }
 
-    public var link: URL {
+    /// Nil for a code typed by hand, long ago, that no link can carry.
+    public var link: URL? {
+        guard Self.isCode(code) else { return nil }
         var components = URLComponents()
         components.scheme = Self.scheme
         components.host = code
@@ -160,12 +162,14 @@ public struct TeamInvite: Hashable, Identifiable, Sendable {
             value.map { URLQueryItem(name: key, value: $0) }
         }
         if !items.isEmpty { components.queryItems = items }
-        return components.url!
+        return components.url
     }
 
     public var message: String {
-        """
-        Join \(name ?? "my team") on MatchTracker.\(captain.map { " \($0) is the captain." } ?? "")
+        let opening = "Join \(name ?? "my team") on MatchTracker.\(captain.map { " \($0) is the captain." } ?? "")"
+        guard let link else { return "\(opening)\nChoose Join a Team in the Team tab and enter this team code: \(code)" }
+        return """
+        \(opening)
         \(link.absoluteString)
         If the link doesn't open, choose Join a Team in the Team tab and paste this whole message.
         Team code: \(code)

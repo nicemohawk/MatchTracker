@@ -70,8 +70,8 @@ final class TeamMinutesTests: XCTestCase {
         XCTAssertEqual(TeamInvite(pasted: unnamed.message), unnamed)
         let full = TeamInvite(code: "K7QM2P", name: "Ben & Co: FC", captain: "Ben L.")
         XCTAssertEqual(TeamInvite(pasted: full.message), full)
-        XCTAssertEqual(TeamInvite(pasted: full.link.absoluteString), full)
-        XCTAssertEqual(MatchTrackerLink(full.link), .join(full))
+        XCTAssertEqual(TeamInvite(pasted: full.link!.absoluteString), full)
+        XCTAssertEqual(MatchTrackerLink(full.link!), .join(full))
         XCTAssertEqual(TeamInvite(pasted: "Join Red Dragons on MatchTracker. In the Team tab, choose Join a Team and paste this message.\nTeam code: K7QM2P"),
                        TeamInvite(code: "K7QM2P", name: "Red Dragons"), "Invites sent by earlier versions")
         XCTAssertNil(TeamInvite(link: URL(string: "matchtracker-join://x?team=Too%20Short")!))

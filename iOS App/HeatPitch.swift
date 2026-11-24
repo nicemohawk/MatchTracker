@@ -70,11 +70,7 @@ struct HeatPitch: View {
             let isShown = image != nil && !heat.isEmpty
             let insets = insets
             ZStack {
-                Canvas { context, canvasSize in
-                    context.withCGContext { cg in
-                        if surface == .turf { artist(canvasSize, insets).drawTurf(in: cg) }
-                    }
-                }
+                if surface == .turf { Turf(size: size, insets: insets).equatable() }
                 Canvas { context, canvasSize in
                     context.withCGContext { cg in
                         if let image { artist(canvasSize, insets).drawHeat(image, in: cg) }
@@ -105,8 +101,21 @@ struct HeatPitch: View {
     }
 
     private func artist(_ canvas: CGSize, _ insets: EdgeInsets?) -> PitchArtist {
-        PitchArtist(size: size, bounds: CGRect(origin: .zero, size: canvas),
-                    insets: insets.map { UIEdgeInsets(top: $0.top, left: $0.leading, bottom: $0.bottom, right: $0.trailing) })
+        PitchArtist(size: size, canvas: canvas, insets: insets)
+    }
+
+    /// Thousands of stitches that never change, kept apart from what moves over them.
+    private struct Turf: View, Equatable {
+        let size: PitchSize
+        let insets: EdgeInsets?
+        var kit = KitColors.current
+
+        var body: some View {
+            let size = size, insets = insets
+            Canvas { context, canvas in
+                context.withCGContext { PitchArtist(size: size, canvas: canvas, insets: insets).drawTurf(in: $0) }
+            }
+        }
     }
 
     private func drawOverlays(_ artist: PitchArtist, in cg: CGContext) {
@@ -252,7 +261,7 @@ enum HeatImage {
 
     static func make(_ key: Key) -> CGImage? {
         if let image = cached(key) { return image }
-        guard let image = render(key.heat, size: key.size, pixelWidth: key.pixelWidth, reference: key.reference) else { return nil }
+        guard let image = render(key.heat, size: key.size, pixelWidth: key.pixelWidth, reference: key.reference, kit: key.kit) else { return nil }
         // A frame of something playing won't be asked for again.
         guard key.reference == nil else { return image }
         cache.setObject(Box(image), forKey: BoxedKey(key), cost: image.bytesPerRow * image.height)
@@ -269,7 +278,8 @@ enum HeatImage {
     }
 
     /// - Parameter reference: The fully-hot level, or nil to use this heat's own.
-    static func render(_ heat: PitchHeat, size: PitchSize, pixelWidth: Int, reference: Float?) -> CGImage? {
+    static func render(_ heat: PitchHeat, size: PitchSize, pixelWidth: Int, reference: Float?,
+                       kit: KitColors = .current) -> CGImage? {
         let reference = reference ?? self.reference(for: heat, size: size)
         let width = max(8, pixelWidth)
         let height = max(8, Int((Double(width) / size.aspectRatio).rounded()))
@@ -292,8 +302,8 @@ enum HeatImage {
                 Knit.addStitch(to: paths[yarn], column: column, row: row, width: stitch)
             }
         }
-        for (path, yarn) in zip(paths, Knit.yarns) {
-            cg.setFillColor(yarn)
+        for (path, yarn) in zip(paths, kit.yarns) {
+            cg.setFillColor(yarn.cgColor)
             cg.addPath(path)
             cg.fillPath()
         }
@@ -400,6 +410,11 @@ struct PitchArtist: Sendable {
         pitch = CGRect(x: available.midX - width / 2, y: available.midY - width / aspect / 2,
                        width: width, height: width / aspect)
         pointsPerMeter = width / CGFloat(max(size.widthMeters, 1))
+    }
+
+    init(size: PitchSize, canvas: CGSize, insets: EdgeInsets?) {
+        self.init(size: size, bounds: CGRect(origin: .zero, size: canvas),
+                  insets: insets.map { UIEdgeInsets(top: $0.top, left: $0.leading, bottom: $0.bottom, right: $0.trailing) })
     }
 
     static func naturalAspectRatio(for size: PitchSize) -> CGFloat {

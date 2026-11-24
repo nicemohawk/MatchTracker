@@ -59,10 +59,12 @@ public struct KitColors: Hashable, Sendable {
         public let id: String
         public let title: String
         let cloth, yarn: OKLCH
+        /// The second-brightest yarn's hue, where leaning away from the rest tells them apart better.
+        var leaning: Double?
     }
 
     public static let presets: [Preset] = [
-        Preset(id: "green", title: "Bottle Green", cloth: OKLCH(0.318, 0.054, 166), yarn: OKLCH(0.79, 0.13, 155)),
+        Preset(id: "green", title: "Bottle Green", cloth: OKLCH(0.318, 0.054, 166), yarn: OKLCH(0.79, 0.13, 155), leaning: 132),
         Preset(id: "royal", title: "Royal Blue", cloth: OKLCH(0.36, 0.145, 264), yarn: OKLCH(0.79, 0.11, 255)),
         Preset(id: "navy", title: "Navy", cloth: OKLCH(0.27, 0.075, 262), yarn: OKLCH(0.79, 0.09, 235)),
         Preset(id: "sky", title: "Sky Blue", cloth: OKLCH(0.43, 0.085, 235), yarn: OKLCH(0.83, 0.10, 228)),
@@ -79,7 +81,7 @@ public struct KitColors: Hashable, Sendable {
     /// - Parameter id: A preset's name, or a color as "#RRGGBB". Nil for anything else.
     public init?(id: String) {
         if let preset = Self.presets.first(where: { $0.id == id }) {
-            self.init(id: id, cloth: preset.cloth, yarn: preset.yarn)
+            self.init(id: id, cloth: preset.cloth, yarn: preset.yarn, leaning: preset.leaning)
         } else if let chosen = RGB(hex: id) {
             let color = OKLCH(chosen)
             // Yellows and whites make mud or glare as a shirt, so they're worn as the trim on black.
@@ -92,15 +94,15 @@ public struct KitColors: Hashable, Sendable {
         }
     }
 
-    private init(id: String, cloth: OKLCH, yarn: OKLCH) {
+    private init(id: String, cloth: OKLCH, yarn: OKLCH, leaning: Double? = nil) {
         self.id = id
         self.cloth = cloth.rgb
         ground = cloth.moved(to: cloth.lightness + 0.04).rgb
         yarns = [OKLCH(cloth.lightness + 0.10, cloth.chroma * 1.15, cloth.hue).rgb,
                  OKLCH(max(cloth.lightness + 0.2, 0.535), max(yarn.chroma * 0.8, cloth.chroma * 0.8), yarn.hue).rgb,
-                 OKLCH(0.755, yarn.chroma * 0.95, yarn.hue).rgb,
+                 OKLCH(0.755, yarn.chroma * 0.95, leaning ?? yarn.hue).rgb,
                  Self.ivory]
-        tintOnDark = yarn.moved(to: max(yarn.lightness, 0.78)).rgb
+        tintOnDark = yarn.moved(to: max(yarn.lightness, 0.78)).readable(on: cloth.rgb)
         tintOnLight = OKLCH(0.43, max(yarn.chroma, cloth.chroma), yarn.chroma < 0.02 ? cloth.hue : yarn.hue).rgb
         let wash = min(cloth.chroma, 0.06)
         canvasDark = OKLCH(0.172, wash * 0.28, cloth.hue).rgb
@@ -108,11 +110,11 @@ public struct KitColors: Hashable, Sendable {
         elevatedDark = OKLCH(0.276, wash * 0.42, cloth.hue).rgb
         // Red is the opponent's, unless it's yours.
         let isRed = yarn.chroma > 0.06 && OKLCH.distance(yarn.hue, 27) < 42
-        themOnDark = isRed ? RGB(0.620, 0.757, 0.922) : RGB(1.0, 0.478, 0.400)
+        themOnDark = OKLCH(isRed ? RGB(0.620, 0.757, 0.922) : RGB(1.0, 0.478, 0.400)).readable(on: cloth.rgb)
         themOnLight = isRed ? RGB(0.137, 0.337, 0.561) : RGB(0.690, 0.165, 0.110)
         // And copper is a best, unless the kit already is.
         let isCopper = yarn.chroma > 0.06 && OKLCH.distance(yarn.hue, 62) < 34
-        trimOnDark = isCopper ? RGB(0.620, 0.847, 0.929) : RGB(0.914, 0.627, 0.400)
+        trimOnDark = OKLCH(isCopper ? RGB(0.620, 0.847, 0.929) : RGB(0.914, 0.627, 0.400)).readable(on: cloth.rgb)
         trimOnLight = isCopper ? RGB(0.086, 0.365, 0.451) : RGB(0.561, 0.278, 0.094)
     }
 
@@ -172,6 +174,13 @@ struct OKLCH: Hashable, Sendable {
         let bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
         let degrees = atan2(bb, a) * 180 / .pi
         self.init(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, hypot(a, bb), degrees < 0 ? degrees + 360 : degrees)
+    }
+
+    /// As it is, or as much lighter as it takes to be read there.
+    func readable(on ground: KitColors.RGB) -> KitColors.RGB {
+        var color = self
+        while color.lightness < 0.97, color.rgb.contrast(with: ground) < 4.5 { color = color.moved(to: color.lightness + 0.01) }
+        return color.rgb
     }
 
     /// The nearest color a screen can show, giving up strength before lightness or hue.

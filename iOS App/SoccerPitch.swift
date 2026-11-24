@@ -29,6 +29,7 @@ enum SoccerPitch {
 
     /// Knitted cloth, as under the heat.
     static func fillTurf(_ context: inout GraphicsContext, rect: CGRect) {
+        guard rect.width > 0, rect.height > 0 else { return }
         context.fill(Path(rect), with: .color(Theme.cloth))
         let columns = max(Int(rect.width / 9), 1), width = rect.width / CGFloat(columns)
         let stitches = CGMutablePath()

@@ -97,6 +97,7 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
 /// Switches between the start screen, countdown, live session and summary.
 struct RootView: View {
     @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(ConnectivityManager.self) private var connectivity
 
     var body: some View {
         // Journaled on every evaluation: the phase changing without this line following it means
@@ -106,7 +107,7 @@ struct RootView: View {
         return Group {
             switch phase {
             case .idle:
-                StartView()
+                StartView().id(connectivity.kitID)
             case .countdown:
                 CountdownView()
             case .active:

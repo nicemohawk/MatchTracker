@@ -54,7 +54,6 @@ private struct KitPreview: View {
 /// Every kit on its own shirt, and any other color there is.
 struct KitRack: View {
     @EnvironmentObject private var settings: SettingsStore
-    @State private var custom = Color.gray
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var isCustom: Bool { !KitColors.presets.contains { $0.id == settings.kitID } }
@@ -71,7 +70,7 @@ struct KitRack: View {
                 }
             }
             VStack(spacing: 6) {
-                ColorPicker("Another color", selection: $custom, supportsOpacity: false)
+                ColorPicker("Another color", selection: custom, supportsOpacity: false)
                     .labelsHidden()
                     .scaleEffect(1.5)
                     .frame(height: 76)
@@ -81,12 +80,18 @@ struct KitRack: View {
             .accessibilityAddTraits(isCustom ? .isSelected : [])
         }
         .sensoryFeedback(.selection, trigger: settings.kitID)
-        .onAppear { if isCustom, let chosen = KitColors.RGB(hex: settings.kitID) { custom = Color(cgColor: chosen.cgColor) } }
-        .onChange(of: custom) { _, color in
-            let resolved = UIColor(color).cgColor.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)
-            guard let parts = resolved?.components, parts.count >= 3 else { return }
-            let channel = { (value: CGFloat) in Double(min(max(value, 0), 1)) }
-            let hex = KitColors.RGB(channel(parts[0]), channel(parts[1]), channel(parts[2])).hex
+    }
+
+    /// What's worn, so choosing the same color again after trying a kit still counts.
+    private var custom: Binding<Color> {
+        Binding {
+            Color(cgColor: (KitColors.RGB(hex: settings.kitID) ?? KitColors.current.cloth).cgColor)
+        } set: { color in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let parts = UIColor(color).cgColor.converted(to: space, intent: .defaultIntent, options: nil)?.components,
+                  parts.count >= 3 else { return }
+            let channels = parts.prefix(3).map { Double(min(max($0, 0), 1)) }
+            let hex = KitColors.RGB(channels[0], channels[1], channels[2]).hex
             if hex != settings.kitID, let kit = KitColors(id: hex) { settings.wear(kit) }
         }
     }
@@ -190,11 +195,17 @@ extension KitColors {
 }
 
 extension SettingsStore {
+    /// On screen at once. The widgets and the watch hear once the finger has settled.
     @MainActor
     func wear(_ kit: KitColors) {
         KitColors.wear(kit)
         kitID = kit.id
-        WidgetCenter.shared.reloadAllTimelines()
-        AppEnvironment.current?.settingsChanged()
+        kitAnnouncement?.cancel()
+        kitAnnouncement = Task {
+            try? await Task.sleep(for: .seconds(0.5))
+            guard !Task.isCancelled else { return }
+            WidgetCenter.shared.reloadAllTimelines()
+            AppEnvironment.current?.settingsChanged()
+        }
     }
 }
