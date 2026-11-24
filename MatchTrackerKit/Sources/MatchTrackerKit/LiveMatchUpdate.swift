@@ -81,12 +81,14 @@ public extension LiveMatchUpdate {
     }
 }
 
-/// Counts sprints as points arrive: sprint speed held across two samples, then well below it
-/// before another counts.
+/// Counts sprints as points arrive, by the same rule as `RunDetector`: an effort of two seconds
+/// that holds sprint speed for about one. An effort counts once.
 public struct LiveSprintCounter: Sendable {
     public private(set) var count = 0
     private var last: TrackPoint?
-    private var isSprinting = false
+    private var effortStart: Date?
+    private var hasHeldSprint = false
+    private var isCounted = false
 
     public init() {}
 
@@ -94,14 +96,19 @@ public struct LiveSprintCounter: Sendable {
         // Redelivered points were counted the first time.
         guard last.map({ point.timestamp > $0.timestamp }) ?? true else { return }
         defer { last = point }
-        func isSprintSpeed(_ point: TrackPoint) -> Bool {
-            (SpeedThresholds.sprinting...SpeedThresholds.plausibleMaximum).contains(point.speedMetersPerSecond)
+        let speed = point.speedMetersPerSecond
+        let follows = last.map { point.timestamp.timeIntervalSince($0.timestamp) <= 2.5 } ?? false
+        guard (SpeedThresholds.running * 0.8...SpeedThresholds.plausibleMaximum).contains(speed), follows || last == nil else {
+            (effortStart, hasHeldSprint, isCounted) = (nil, false, false)
+            return
         }
-        if isSprinting {
-            isSprinting = point.speedMetersPerSecond >= SpeedThresholds.sprinting * 0.8
-        } else if let last, isSprintSpeed(last), isSprintSpeed(point),
-                  point.timestamp.timeIntervalSince(last.timestamp) <= 2.5 {
-            isSprinting = true
+        let start = effortStart ?? point.timestamp
+        if effortStart != nil, let last, min(speed, last.speedMetersPerSecond) >= SpeedThresholds.sprinting {
+            hasHeldSprint = true
+        }
+        effortStart = start
+        if hasHeldSprint, !isCounted, point.timestamp.timeIntervalSince(start) >= 2 {
+            isCounted = true
             count += 1
         }
     }

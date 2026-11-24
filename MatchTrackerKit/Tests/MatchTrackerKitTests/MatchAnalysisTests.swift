@@ -156,6 +156,135 @@ final class MatchAnalysisTests: XCTestCase {
         XCTAssertNil(MatchAnalyzer.analyze(MatchAnalysisInput(interval: analytics.interval, format: .match)))
     }
 
+    // MARK: - Speed invariants
+
+    /// A speed-only oddity: a spike, a car, lost fixes, a run over the touchline, a hole in the fixes.
+    private func awkwardTrack(seed: UInt64) -> [TrackPoint] {
+        var generator = MatchTrackerKitTests.SeededGenerator(seed: seed)
+        var second = 0.0, speed = 1.0, long = 0.5
+        return (0..<2400).map { _ in
+            second += Int.random(in: 0..<200, using: &generator) == 0 ? 12 : 1
+            speed = min(max(speed + Double.random(in: -1.6...1.6, using: &generator), 0), 7)
+            long = min(max(long + Double.random(in: -0.02...0.02, using: &generator), 0.02), 0.98)
+            var point = point(second, long: long, speed: speed)
+            switch Int.random(in: 0..<60, using: &generator) {
+            case 0: point.speedMetersPerSecond = Double.random(in: 6...9, using: &generator)
+            case 1: point.speedMetersPerSecond = 14
+            case 2: point.speedMetersPerSecond = -1
+            case 3: point.coordinate = place(long: long, short: 1.3)
+            default: break
+            }
+            return point
+        }
+    }
+
+    private func assertOneSpeedStory(_ analytics: MatchAnalytics, file: StaticString = #filePath, line: UInt = #line) throws {
+        let load = try XCTUnwrap(analytics.loadMetrics, file: file, line: line)
+        let fastest = analytics.runs.map(\.peakSpeed).max()
+        let top = analytics.topSpeedMetersPerSecond ?? 0
+        if top >= SpeedThresholds.running || fastest != nil {
+            XCTAssertEqual(top, fastest, "top speed is the fastest run's", file: file, line: line)
+        }
+        XCTAssertEqual(load.topSpeedMetersPerSecond, top, file: file, line: line)
+        XCTAssertEqual(load.sprintDistanceMeters, analytics.runs.sprintDistanceMeters, accuracy: 1e-6, file: file, line: line)
+        XCTAssertEqual(load.sprintDistanceMeters > 0, analytics.runs.sprintCount > 0, file: file, line: line)
+        XCTAssertEqual(analytics.workrate.sprintCount, analytics.runs.sprintCount, file: file, line: line)
+        for run in analytics.runs {
+            XCTAssertGreaterThanOrEqual(run.peakSpeed, SpeedThresholds.running, file: file, line: line)
+            XCTAssertEqual(run.intensity == .sprint, run.peakSpeed >= SpeedThresholds.sprinting, file: file, line: line)
+            XCTAssertLessThanOrEqual(run.sprintDistanceMeters, run.distanceMeters + 1e-6, file: file, line: line)
+        }
+        if let key = analytics.keyRuns.first(where: { $0.categories.contains(.fastest) }) {
+            XCTAssertEqual(key.peakSpeed, top, file: file, line: line)
+        }
+        let digest = MatchDigest(id: UUID(), interval: analytics.interval, format: .match, record: nil, analytics: analytics)
+        XCTAssertEqual(digest.topSpeedMetersPerSecond, analytics.topSpeedMetersPerSecond, file: file, line: line)
+        XCTAssertEqual(digest.sprintCount, analytics.runs.sprintCount, file: file, line: line)
+    }
+
+    func testEveryMatchTellsOneSpeedStory() throws {
+        for seed in 1...25 {
+            try assertOneSpeedStory(try analyze(awkwardTrack(seed: UInt64(seed)), minutes: 60))
+        }
+        try assertOneSpeedStory(try analyze(twoHalves()))
+    }
+
+    func testASpikeTooBriefToBeARunIsNotTheTopSpeed() throws {
+        var track = twoHalves()
+        for index in 100..<102 { track[index].speedMetersPerSecond = 6.7 }   // 1.5, 6.7, 6.7, 1.5: nobody does that
+        for (offset, speed) in [3.4, 4.6, 5.3, 5.3, 4.2, 3.3].enumerated() { track[500 + offset].speedMetersPerSecond = speed }
+        let analytics = try analyze(track)
+        XCTAssertEqual(analytics.topSpeedMetersPerSecond, 5.3)
+        XCTAssertEqual(analytics.runs.count, 1)
+        XCTAssertEqual(analytics.runs.sprintCount, 0)
+        XCTAssertEqual(analytics.loadMetrics?.sprintDistanceMeters, 0)
+        try assertOneSpeedStory(analytics)
+    }
+
+    func testASprintWhileItIsBuildingIsOneRun() throws {
+        var track = twoHalves()
+        for (offset, speed) in [3.4, 5, 6.6, 6.7, 5, 3.4].enumerated() { track[500 + offset].speedMetersPerSecond = speed }
+        let analytics = try analyze(track)
+        XCTAssertEqual(analytics.runs.count, 1)
+        XCTAssertEqual(analytics.topSpeedMetersPerSecond, 6.6)
+        XCTAssertEqual(try XCTUnwrap(analytics.loadMetrics).sprintDistanceMeters, 6.6 + 6.7, accuracy: 0.01)
+    }
+
+    func testARunOverTheTouchlineIsStillOneRun() throws {
+        var track = twoHalves()
+        for (offset, speed) in [3.4, 6, 6.6, 6.7, 6.2, 3.4].enumerated() {
+            track[500 + offset].speedMetersPerSecond = speed
+            if offset >= 2 { track[500 + offset].coordinate = place(long: 0.5, short: -0.17) }   // ten meters out
+        }
+        // The same beside the pitch, never on it.
+        for index in 800..<806 {
+            track[index].speedMetersPerSecond = 7.5
+            track[index].coordinate = place(long: 0.5, short: -0.17)
+        }
+        let analytics = try analyze(track)
+        XCTAssertEqual(analytics.topSpeedMetersPerSecond, 6.6)
+        XCTAssertEqual(analytics.runs.sprintCount, 1)
+        try assertOneSpeedStory(analytics)
+    }
+
+    func testARunnerUpIsNotCalledTheFastest() throws {
+        var track = twoHalves()
+        for index in 100..<103 { track[index].speedMetersPerSecond = 5.4 }   // the fastest, but a few yards
+        for index in 500..<510 { track[index].speedMetersPerSecond = 4.5 }
+        let analytics = try analyze(track)
+        XCTAssertEqual(analytics.keyRuns.map(\.categories), [[.longest]])
+        try assertOneSpeedStory(analytics)
+    }
+
+    // MARK: - Waiting
+
+    func testStandingAboutLeavesNoHeat() throws {
+        var track = twoHalves()
+        // Ten minutes by the corner flag, fixes wandering a few meters, speeds reported as noise.
+        for index in 600..<1200 {
+            track[index].coordinate = place(long: 0.05 + 0.02 * sin(Double(index)), short: 0.05 + 0.03 * cos(Double(index) * 1.7))
+            track[index].speedMetersPerSecond = index.isMultiple(of: 3) ? 0.6 : 0.2
+        }
+        let analytics = try analyze(track, flips: false)
+        let corner = analytics.heat.enumerated().filter { index, _ in
+            index / analytics.heatColumns >= analytics.heatRows - 6 && index % analytics.heatColumns < 6
+        }.map(\.element)
+        XCTAssertLessThan(try XCTUnwrap(corner.max()), 0.05)
+        XCTAssertFalse(try XCTUnwrap(analytics.pitchPath.first { $0.t > 900 }).onPitch)
+        XCTAssertEqual(analytics.workrate.timeOnPitch / 60, 80, accuracy: 1, "still on the pitch, though")
+    }
+
+    func testWaitingNeedsToBeLongAndStill() {
+        let still = (0..<40).map { point(Double($0), long: 0.5, speed: 0.1) }
+        XCTAssertFalse(WaitingDetector.isWaiting(still).contains(true), "40 s is a throw-in")
+        let walking = (0..<120).map { point(Double($0), long: 0.2 + Double($0) * 0.01, speed: 1) }
+        XCTAssertFalse(WaitingDetector.isWaiting(walking).contains(true))
+        let duel = (0..<120).map { point(Double($0), long: 0.5 + 0.02 * sin(Double($0)), speed: 1.6) }
+        XCTAssertFalse(WaitingDetector.isWaiting(duel).contains(true), "quick feet in a small space is play")
+        XCTAssertTrue(WaitingDetector.isWaiting((0..<90).map { point(Double($0), long: 0.5, speed: 0.3) }).allSatisfy { $0 })
+        XCTAssertTrue(WaitingDetector.isWaiting([]).isEmpty)
+    }
+
     // MARK: - Digest
 
     func testDigestMatchesTheAnalysis() throws {
