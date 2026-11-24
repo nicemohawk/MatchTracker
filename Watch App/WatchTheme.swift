@@ -27,20 +27,22 @@ enum WatchTheme {
     /// Hairline stroke around cards.
     static let surfaceStroke = Color.white.opacity(0.10)
 
-    /// Emerald (#30D158) — primary tint / turf energy / goals-for.
-    static let turf = Color(red: 0.188, green: 0.820, blue: 0.345)
+    /// Primary tint, you and your team.
+    static let turf = Color(red: 0.435, green: 0.827, blue: 0.604)
+    /// What the numbers are written in.
+    static let ivory = Cloth.ivory
     /// Quiet teal-mint (#66D4CF) signal.
     static let signal = Color(red: 0.400, green: 0.831, blue: 0.812)
-    /// Rose (#FF375F) — heart rate.
-    static let heart = Color(red: 1.0, green: 0.216, blue: 0.373)
+    /// Rose — heart rate.
+    static let heart = Color(red: 1.0, green: 0.416, blue: 0.573)
     /// Blue (#409CFF) — distance / pace.
     static let pace = Color(red: 0.251, green: 0.612, blue: 1.0)
     /// Amber-orange (#FF9F0A) — sprints.
     static let sprint = Color(red: 1.0, green: 0.624, blue: 0.039)
-    /// Neutral gray (#98989D) — bench / off-pitch reads neutral.
-    static let bench = Color(red: 0.596, green: 0.596, blue: 0.616)
-    /// Red (#FF453A) — a loss / goals-against, distinct from heart's rose.
-    static let loss = Color(red: 1.0, green: 0.271, blue: 0.227)
+    /// Undyed — bench / off-pitch reads neutral.
+    static let bench = Color(red: 0.784, green: 0.745, blue: 0.647)
+    /// A loss / goals-against, distinct from heart's rose.
+    static let loss = Color(red: 1.0, green: 0.478, blue: 0.400)
     /// Card yellow (#FFD60A) — cautions / yellow cards.
     static let cardYellow = Color(red: 1.0, green: 0.839, blue: 0.039)
     /// Goals / positive — aliased to turf for API stability.
@@ -50,13 +52,14 @@ enum WatchTheme {
 
     /// Tint-on-translucent fill: the hue at a low alpha. The house style for every tinted surface.
     static func chipFill(_ color: Color) -> Color { color.opacity(0.22) }
+}
 
-    // MARK: - Signature gradients
-
-    /// Turf → signal flow, used for the hero Start button.
-    static var turfFlow: LinearGradient {
-        LinearGradient(colors: [turf, signal], startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
+extension Font {
+    /// Numbers, as on a shirt: heavy and narrow.
+    static func kit(_ size: CGFloat) -> Font { KitNumber.font(size: size) }
+    /// The same a step wider, for what's read at a run.
+    static func glance(_ size: CGFloat) -> Font { KitNumber.font(size: size, width: .condensed) }
+    static func kit(_ style: Font.TextStyle) -> Font { .system(style, weight: .heavy).width(.compressed) }
 }
 
 // MARK: - Haptics
@@ -89,13 +92,13 @@ struct WatchTileButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(prominent ? Color.black : tint)
+            .foregroundStyle(prominent ? Color(red: 0.039, green: 0.071, blue: 0.055) : tint)
             .padding(.horizontal, 4)
             .frame(maxWidth: .infinity, minHeight: minHeight)
             .background {
                 let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
                 if prominent {
-                    shape.fill(tint.gradient)
+                    shape.fill(tint)
                 } else {
                     shape.fill(WatchTheme.chipFill(tint))
                 }

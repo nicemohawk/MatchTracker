@@ -71,7 +71,7 @@ struct FieldTrainingView: View {
             }
             HStack(spacing: 8) {
                 Text(walked.text)
-                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .font(.kit(.title3))
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .frame(maxWidth: .infinity)
@@ -97,7 +97,7 @@ struct FieldTrainingView: View {
                     let length = UnitSystem.current.shortDistance(rectangle.lengthMeters)
                     let width = UnitSystem.current.shortDistance(rectangle.widthMeters)
                     Text("\(length.value) × \(width.text)")
-                        .font(.system(.title2, design: .rounded, weight: .semibold))
+                        .font(.kit(.title2))
                         .accessibilityLabel("\(length.spoken) by \(width.spoken)")
                 }
                 // A starved walk fits a guess, not a field — say so before the save.

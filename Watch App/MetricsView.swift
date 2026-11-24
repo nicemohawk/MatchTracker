@@ -31,19 +31,34 @@ private struct PitchGlance: View {
 
     var body: some View {
         GeometryReader { proxy in
-            // Sized to the watch, not to a text style: rounded digits carry a lot of built-in leading,
+            // Sized to the watch, not to a text style: digits carry a lot of built-in leading,
             // so each line is given less height than its font asks for.
             let height = proxy.size.height
             VStack(alignment: .leading, spacing: 0) {
-                ElapsedTimeText(size: height * 0.36).frame(height: height * 0.32)
-                heartRate(size: height * 0.29).frame(height: height * 0.25)
-                distance(size: height * 0.29).frame(height: height * 0.25)
-                LiveStatusLine(height: height * 0.18).frame(height: height * 0.18)
+                Group {
+                    ElapsedTimeText(size: height * 0.42).frame(height: height * 0.32)
+                    heartRate(size: height * 0.33).frame(height: height * 0.25)
+                    distance(size: height * 0.33).frame(height: height * 0.25)
+                }
+                .scenePadding(.horizontal)
+                LiveStatusLine(height: height * 0.18)
+                    .frame(height: height * 0.18)
+                    .scenePadding(.horizontal)
+                    .background { hem }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scenePadding(.horizontal)
         .ignoresSafeArea(edges: .bottom)
+    }
+
+    /// The bottom of the shirt, with the score on it.
+    private var hem: some View {
+        VStack(spacing: 2) {
+            WatchTheme.ivory.frame(height: 2)
+            Cloth.green
+        }
+        .opacity(isLuminanceReduced ? 0.4 : 1)
+        .accessibilityHidden(true)
     }
 
     private func heartRate(size: CGFloat) -> some View {
@@ -61,7 +76,7 @@ private struct PitchGlance: View {
     private func distance(size: CGFloat) -> some View {
         let measure = UnitSystem.current.distance(workoutManager.distanceMeters)
         return GlanceMetric(value: measure.value, unit: measure.unit.uppercased(), size: size,
-                            tint: .white.opacity(isLuminanceReduced ? 0.65 : 1)) { EmptyView() }
+                            tint: WatchTheme.ivory.opacity(isLuminanceReduced ? 0.65 : 1)) { EmptyView() }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Distance")
             .accessibilityValue(measure.spoken)
@@ -79,12 +94,12 @@ private struct GlanceMetric<Accessory: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(value)
-                .font(.system(size: size, weight: .semibold, design: .rounded))
+                .font(.glance(size))
                 .monospacedDigit()
                 .foregroundStyle(tint)
                 .contentTransition(.numericText())
             Text(unit)
-                .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
+                .font(.glance(size * 0.4))
                 .foregroundStyle(tint.opacity(0.8))
             accessory()
                 .font(.system(size: size * 0.45))
@@ -105,11 +120,11 @@ private struct ElapsedTimeText: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { context in
             Text(elapsedString(at: context.date))
-                .font(.system(size: size, weight: .bold, design: .rounded))
+                .font(.glance(size))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-                .foregroundStyle(WatchTheme.cardYellow.opacity(isLuminanceReduced ? 0.65 : 1))
+                .foregroundStyle(WatchTheme.ivory.opacity(isLuminanceReduced ? 0.65 : 1))
                 .contentTransition(.numericText())
         }
         .accessibilityLabel("Elapsed time")
@@ -183,7 +198,7 @@ private struct LiveStatusLine: View {
 
     private var score: some View {
         Text("\(workoutManager.score.us)–\(workoutManager.score.them)")
-            .font(.system(size: height * 0.82, weight: .semibold, design: .rounded))
+            .font(.glance(height * 0.95))
             .monospacedDigit()
             .accessibilityLabel("Score, us \(workoutManager.score.us), them \(workoutManager.score.them)")
     }
@@ -255,11 +270,11 @@ private struct BenchView: View {
                     .minimumScaleFactor(0.7)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(benchTime(at: context.date))
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .font(.kit(76))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.4)
-                        .foregroundStyle(.white.opacity(isLuminanceReduced ? 0.65 : 1))
+                        .foregroundStyle(WatchTheme.ivory.opacity(isLuminanceReduced ? 0.65 : 1))
                     Spacer(minLength: 0)
                     if workoutManager.heartRate > 0 { heartRate }
                 }
@@ -279,7 +294,7 @@ private struct BenchView: View {
     private var heartRate: some View {
         HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text("\(Int(workoutManager.heartRate))")
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
+                .font(.kit(32))
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Image(systemName: "heart.fill").font(.system(size: 15))

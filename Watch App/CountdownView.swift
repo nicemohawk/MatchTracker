@@ -4,6 +4,7 @@
 //
 
 import Combine
+import MatchTrackerKit
 import SwiftUI
 import WatchKit
 
@@ -25,11 +26,8 @@ struct CountdownView: View {
                     .trim(from: 0, to: max(0, min(1, left / 3)))
                     .stroke(WatchTheme.turf, style: StrokeStyle(lineWidth: 12, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                Text("\(remaining)")
-                    .font(.system(size: 84, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(.snappy, value: remaining)
+                KitNumber("\(remaining)", size: 120)
+                    .foregroundStyle(WatchTheme.ivory)
             }
             .padding(10)
         }

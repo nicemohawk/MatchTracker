@@ -74,11 +74,24 @@ struct SummaryView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(resultText ?? fieldName ?? format.startTitle)
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .lineLimit(resultText == nil ? 2 : 1)
-                .minimumScaleFactor(0.6)
-                .accessibilityAddTraits(.isHeader)
+            Group {
+                if let resultText {
+                    KitNumber(resultText, size: 64)
+                } else {
+                    Text(fieldName ?? format.startTitle)
+                        .font(.system(.title2, weight: .heavy).width(.expanded))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
+                }
+            }
+            .foregroundStyle(WatchTheme.ivory)
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 18)
+            .background { Cloth(cornerRadius: 14) }
+            .padding(.bottom, 6)
             saveState
         }
     }
@@ -102,7 +115,7 @@ struct SummaryView: View {
         if isIndoor, indoor == nil ? workoutManager.heartRates.count >= 60 : indoor?.stints != nil {
             EffortStripView(levels: indoor?.stints?.strip ?? [], axis: .horizontal)
                 .frame(height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .accessibilityElement()
                 .accessibilityAddTraits(.isImage)
                 .accessibilityLabel(stripSentence)
@@ -169,7 +182,7 @@ struct SummaryView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(.title2, design: .rounded, weight: .semibold))
+                .font(.kit(.title2))
                 .monospacedDigit()
                 .foregroundStyle(tint)
         }
@@ -287,7 +300,7 @@ private struct FinalScoreQuestion: View {
             } label: {
                 VStack(spacing: 0) {
                     Text("\(value.wrappedValue)")
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .font(.kit(52))
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     Text(name)
@@ -368,7 +381,7 @@ private struct EffortSheet: View {
     var body: some View {
         VStack(spacing: 4) {
             Text("\(score)")
-                .font(.system(size: 72, weight: .bold, design: .rounded))
+                .font(.kit(72))
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Text(EffortRating.word(for: score)).font(.title3.weight(.semibold)).foregroundStyle(WatchTheme.sprint)

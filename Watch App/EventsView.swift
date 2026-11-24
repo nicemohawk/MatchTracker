@@ -156,11 +156,7 @@ private struct ConfirmationOverlay: ViewModifier {
         if let confirmation {
             VStack(spacing: 10) {
                 if confirmation.isScore {
-                    Text(confirmation.text)
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
+                    KitNumber(confirmation.text, size: 104)
                         .foregroundStyle(confirmation.tint)
                         .accessibilityLabel("Score, us \(workoutManager.score.us), them \(workoutManager.score.them)")
                 } else {
@@ -259,7 +255,7 @@ struct ScoreTiles: View {
         } label: {
             VStack(spacing: 0) {
                 Text("\(value)")
-                    .font(.system(size: height * 0.55, weight: .bold, design: .rounded))
+                    .font(.kit(height * 0.56))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -303,9 +299,8 @@ private struct GoalSheet: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 6) {
-                Text(score)
-                    .font(.system(.title, design: .rounded, weight: .bold))
-                    .monospacedDigit()
+                KitNumber(score, size: 68)
+                    .foregroundStyle(WatchTheme.ivory)
                     .accessibilityAddTraits(.isHeader)
                 choice("I scored", systemImage: "soccerball", tint: WatchTheme.turf, .me)
                 choice("My assist", systemImage: "hand.thumbsup.fill", tint: WatchTheme.turf, .myAssist)
