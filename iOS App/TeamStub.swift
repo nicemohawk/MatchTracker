@@ -1,0 +1,123 @@
+// TeamStub.swift
+// MatchTracker
+
+#if DEBUG
+import Foundation
+import MatchTrackerKit
+
+/// Made-up team data for screenshots and UI tests: `-TeamStub full|new|quiet|error|live`.
+@MainActor
+final class TeamStub {
+    static let current: TeamStub? = UserDefaults.standard.string(forKey: "TeamStub").flatMap { TeamStub(rawValue: $0) }
+
+    private enum Scenario: String { case full, new, quiet, error, live }
+    private let scenario: Scenario
+    private var posted: [MatchComment] = []
+
+    private init?(rawValue: String) {
+        guard let scenario = Scenario(rawValue: rawValue) else { return nil }
+        self.scenario = scenario
+    }
+
+    private let names = ["Maya Ortiz", "Ben Lachman", "Sam Whitfield", "Ana Kowalczyk", "Jordan Okafor", "Priya Raman", "Lou Bergström",
+                         "Theo Nakamura", "Chris Adeyemi", "Dana Fitzgerald-Moore", "Eli Sandoval", "Noor Haddad", "Gus Pereira"]
+
+    private func respond() async throws {
+        try? await Task.sleep(for: .milliseconds(150))
+        if scenario == .error { throw URLError(.notConnectedToInternet) }
+    }
+
+    func stats(code: String, since: Date?) async throws -> TeamStats {
+        try await respond()
+        guard scenario != .new else { return TeamStats(teamCode: code, players: []) }
+        let isWeek = since.map { $0 > Date().addingTimeInterval(-8 * 86_400) } ?? false
+        if isWeek && scenario == .quiet { return TeamStats(teamCode: code, players: []) }
+        let matches = isWeek ? 2.0 : 9.0
+        let players = names.enumerated().compactMap { index, name -> TeamStats.Player? in
+            if isWeek && index > 8 { return nil }
+            let share = 1 - Double(index) * 0.06
+            return TeamStats.Player(
+                name: name, matchesPlayed: max(1, Int(matches * share)),
+                totalDistanceMeters: matches * 8_900 * share + Double(index * 137 % 400),
+                averageWorkrateScore: 60 * share, goals: [3, 1, 2, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0][index] * (isWeek ? 1 : 3),
+                assists: [0, 2, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0][index], minutesPlayed: matches * 88 * share,
+                sprints: index == 7 ? nil : Int(matches * 19 * share))
+        }
+        return TeamStats(teamCode: code, teamName: "Red Dragons", players: players)
+    }
+
+    func formation() async throws -> TeamFormation? {
+        try await respond()
+        guard scenario == .full || scenario == .live else { return nil }
+        return TeamFormation(name: "4-3-3", confidence: 0.72, slots: zip(names, FormationShape.startingPoints).map { name, point in
+            TeamFormation.Slot(playerName: name, x: point.x + 0.02, y: point.y, role: FormationShape.role(x: point.x, y: point.y))
+        })
+    }
+
+    func benchmark(cohort: BenchmarkCohort) async throws -> CohortBenchmark? {
+        try await respond()
+        guard scenario == .full, cohort != .position else { return nil }
+        return CohortBenchmark(cohort: cohort == .everyone ? "Everyone" : "30–39", sampleSize: 1240, percentiles: .init(
+            workrate: 78, distancePerMatchMeters: 64, sprintDistanceMeters: 52, highSpeedRunningMeters: 71, topSpeedMetersPerSecond: 45))
+    }
+
+    func comments(match: UUID) async throws -> [MatchComment] {
+        try await respond()
+        guard scenario == .full || scenario == .live else { return posted }
+        let ago = { (hours: Double) in Date().addingTimeInterval(-hours * 3600) }
+        return [
+            MatchComment(id: Self.id(1), matchUUID: match, author: "Maya Ortiz", body: "What a finish in the 84th! Anyone get it on video?", postedAt: ago(5)),
+            MatchComment(id: Self.id(2), matchUUID: match, author: "Coach Dana", body: "Best we've pressed all season. Back four held their line for the whole second half.", postedAt: ago(3.5)),
+            MatchComment(id: Self.id(3), matchUUID: match, author: "Ben Lachman", body: "Legs are gone. Worth it.", postedAt: ago(3)),
+            MatchComment(id: Self.id(4), matchUUID: match, author: "Sam Whitfield", body: "I've got the clip, sending tonight", postedAt: ago(0.4))
+        ] + posted
+    }
+
+    func post(_ comment: MatchComment) async throws {
+        try await respond()
+        if scenario == .quiet { throw APIError.httpStatus(402) }
+        posted.append(comment)
+    }
+
+    func livePlayers() async throws -> [LivePlayerStatus] {
+        try await respond()
+        guard scenario == .live else { return [] }
+        return zip(names, FormationShape.startingPoints).enumerated().map { index, player in
+            LivePlayerStatus(playerName: player.0, updatedAt: Date().addingTimeInterval(index == 9 ? -140 : -3),
+                             x: index >= 10 ? nil : min(0.95, player.1.x + 0.1), y: index >= 10 ? nil : player.1.y,
+                             heartRate: index == 5 ? nil : Double(142 + index * 4), distanceMeters: 3_100 + Double(index * 260),
+                             onPitch: index < 10, stale: index == 9)
+        }
+    }
+
+    func events() async throws -> [TeamEvent] {
+        try await respond()
+        guard scenario != .new else { return [] }
+        var events: [TeamEvent] = []
+        for match in 0..<6 {
+            let kickoff = Date().addingTimeInterval(Double(match) * -7 * 86_400 - (scenario == .live ? 1.2 : 26) * 3600)
+            for (index, name) in names.enumerated() where (index + match) % 6 != 5 && index != 12 {
+                let recording = Self.id(1000 + match * 100 + index)
+                func add(_ kind: MatchEventKind, _ minute: Double, note: String? = nil) {
+                    events.append(TeamEvent(id: Self.id(100_000 + match * 1000 + index * 30 + events.count), playerName: name, matchUUID: recording,
+                                            kindRawValue: kind.rawValue, date: kickoff.addingTimeInterval(minute * 60), note: note,
+                                            coachLabel: kind == .flag && index == 3 ? "Good line" : nil))
+                }
+                add(.matchStart, 0)
+                if index > 8 { add(.subIn, 60 + Double(index)) }
+                if index == 0 { add(.goalMine, 11); add(.goalMine, 84, note: "Top corner") }
+                if index == 1 { add(.assist, 84) }
+                if index == 3 { add(.flag, 38) }
+                if index == 4 { add(.yellowCard, 71) }
+                if index > 5 && index <= 8 { add(.subOut, 55 + Double(index)) }
+                add(.matchEnd, 92)
+            }
+        }
+        return events
+    }
+
+    private static func id(_ number: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", number))!
+    }
+}
+#endif

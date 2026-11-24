@@ -11,6 +11,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>MatchTracker reads the calendar you choose to find your next match and suggest the opponent afterwards. It never changes your calendar, and nothing in it leaves your device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Record sideline video of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
 	<key>NSMicrophoneUsageDescription</key>

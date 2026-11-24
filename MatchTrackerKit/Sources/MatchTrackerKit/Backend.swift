@@ -258,15 +258,18 @@ public struct TeamStats: Codable, Sendable {
     }
 
     public var teamCode: String
+    public var teamName: String?
     public var players: [Player]
 
-    public init(teamCode: String, players: [Player]) {
+    public init(teamCode: String, teamName: String? = nil, players: [Player]) {
         self.teamCode = teamCode
+        self.teamName = teamName
         self.players = players
     }
 
     private enum CodingKeys: String, CodingKey {
         case teamCode = "team_code"
+        case teamName = "team_name"
         case players
     }
 }
@@ -307,13 +310,10 @@ public struct APIClient: Sendable {
         try await send(path: "/devices/\(deviceID.uuidString)/sessions", body: SessionsEnvelope(sessions: matches))
     }
 
-    public func teamStats(code: String) async throws -> TeamStats {
-        let url = baseURL.appendingPathComponent("/teams/\(code)/stats")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        applyHeaders(to: &request)
-        let (data, response) = try await session.data(for: request)
-        try Self.validate(response)
+    /// Per-player totals (`GET /teams/{code}/stats?since=`); everything ever recorded when `since` is nil.
+    public func teamStats(code: String, since: Date? = nil) async throws -> TeamStats {
+        let query = since.map { "?since=\(Self.wholeSecondsFormatter.string(from: $0))" } ?? ""
+        let data = try await get(path: "/teams/\(code)/stats\(query)")
         return try Self.jsonDecoder().decode(TeamStats.self, from: data)
     }
 

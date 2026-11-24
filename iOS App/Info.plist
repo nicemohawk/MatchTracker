@@ -10,6 +10,8 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>MatchTracker reads the calendar you choose to find your next match and suggest the opponent afterwards. It never changes your calendar, and nothing in it leaves your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Import sideline footage of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
