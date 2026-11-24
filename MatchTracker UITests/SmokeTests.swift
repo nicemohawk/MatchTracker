@@ -34,7 +34,7 @@ final class SmokeTests: XCTestCase {
 
         relaunch()
         XCTAssertTrue(selectTab("Matches", expectingNavBar: "Matches", in: app))
-        let scored = app.collectionViews.cells.containing(NSPredicate(format: "label CONTAINS 'Won 7 0'")).firstMatch
+        let scored = app.collectionViews.cells.containing(NSPredicate(format: "label CONTAINS 'Won 7 to 0'")).firstMatch
         XCTAssertTrue(scored.waitForExistence(timeout: 20), "The result outlives the app")
 
         scored.tap()

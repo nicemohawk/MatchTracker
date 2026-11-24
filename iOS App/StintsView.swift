@@ -68,6 +68,8 @@ struct StintsHero: View {
 struct StintsChapter: View {
     let stints: Stints
     let playing: [DateInterval]
+    /// As the wearer settled them.
+    let games: [GameResult]?
 
     private var longest: TimeInterval { playing.map(\.duration).max() ?? stints.longest }
 
@@ -78,17 +80,32 @@ struct StintsChapter: View {
                 HStack(alignment: .firstTextBaseline, spacing: 16) { numbers(stretching: true) }
                 VStack(alignment: .leading, spacing: 12) { numbers(stretching: false) }
             }
-            if stints.games.count > 1 {
+            if !rows.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(Array(stints.games.enumerated()), id: \.offset) { index, game in
-                        LabeledContent("Game \(index + 1)") {
-                            Text("\(minutes(game.reduce(0) { $0 + $1.duration })) min in \(game.count) \(game.count == 1 ? "stint" : "stints")")
-                                .monospacedDigit()
+                    ForEach(rows, id: \.start) { row in
+                        LabeledContent(row.start.formatted(date: .omitted, time: .shortened)) {
+                            Text(row.text).monospacedDigit()
                         }
                         .frame(minHeight: 44)
                     }
                 }
             }
+        }
+    }
+
+    /// Each game once somebody has said there were several. Until then just when the playing was:
+    /// two blocks may be two games or two halves.
+    private var rows: [(start: Date, text: String)] {
+        if let games {
+            return games.map { game in
+                let length = "\(minutes(game.end.timeIntervalSince(game.start))) min"
+                guard let outcome = game.outcome ?? game.score?.outcome else { return (game.start, length) }
+                return (game.start, "\(length), \(outcome == .won ? "won" : outcome == .lost ? "lost" : "drew")")
+            }
+        }
+        guard stints.games.count > 1 else { return [] }
+        return stints.games.compactMap { block in
+            block.first.map { ($0.start, "\(minutes(block.reduce(0) { $0 + $1.duration })) min") }
         }
     }
 

@@ -10,6 +10,7 @@ struct HomeView: View {
     @Binding var openedMatch: UUID?
 
     @EnvironmentObject private var matches: MatchStore
+    @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var fields: FieldsModel
     @State private var path = NavigationPath()
     @State private var showingSettings = false
@@ -77,7 +78,7 @@ struct HomeView: View {
                     .zoomSource(id: last.id, in: transition)
                     .onTapGesture { path.append(last.id) }
                     .accessibilityAddTraits(.isButton)
-                if last.result == nil, let detail = scorable(last) {
+                if last.result == nil, keepsScore(last), let detail = scorable(last) {
                     Button {
                         scoring = ScoringMatch(detail: detail)
                     } label: {
@@ -102,6 +103,11 @@ struct HomeView: View {
             .padding(.bottom, 24)
             .readableWidth()
         }
+    }
+
+    private func keepsScore(_ digest: MatchDigest) -> Bool {
+        let said = matches.matches.first { $0.id == digest.id }?.record?.keepsScore
+        return said ?? settings.playHabits[digest.format].keepsScore ?? true
     }
 
     @ViewBuilder
@@ -403,7 +409,7 @@ private struct SeasonHeader: View {
         func counted(_ count: Int, _ noun: String) -> String? { count > 0 ? "\(count) \(noun)\(count == 1 ? "" : "s")" : nil }
         var parts: [String?] = []
         if recordLeads {
-            if results < summary.matches.count { parts.append("\(summary.matches.count) matches") }
+            if results != summary.matches.count { parts.append("\(summary.matches.count) matches") }
         } else if results > 0 {
             let record = [summary.won > 0 ? "won \(summary.won)" : nil, summary.drawn > 0 ? "drew \(summary.drawn)" : nil,
                           summary.lost > 0 ? "lost \(summary.lost)" : nil].compactMap { $0 }.joined(separator: ", ")
@@ -565,6 +571,7 @@ extension MatchTrackerKit.MatchFormat {
 extension MatchDigest {
     /// "Won 3–1", or nil when no score was logged.
     var scoreline: String? {
+        if let games { return games.title }
         guard let result, let goalsUs, let goalsThem else { return nil }
         let word: String
         switch result {

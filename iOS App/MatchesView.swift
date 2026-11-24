@@ -169,8 +169,12 @@ struct MatchRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            if let digest = item.digest, let result = digest.result, let us = digest.goalsUs, let them = digest.goalsThem {
-                ScoreMark(result: result, us: us, them: them)
+            if let digest = item.digest, let result = digest.result {
+                if let games = digest.games {
+                    ScoreMark(result: result, text: "\(games.won) of \(games.count)", spoken: games.title)
+                } else if let us = digest.goalsUs, let them = digest.goalsThem {
+                    ScoreMark(result: result, text: "\(us)–\(them)", spoken: "\(result == .won ? "Won" : result == .lost ? "Lost" : "Drew") \(us) to \(them)")
+                }
             }
         }
         .padding(.vertical, 6)
@@ -204,23 +208,15 @@ struct MatchRow: View {
 /// The score, in the color of the result.
 private struct ScoreMark: View {
     let result: MatchDigest.Result
-    let us: Int
-    let them: Int
+    let text: String
+    let spoken: String
 
     var body: some View {
-        Text("\(us)–\(them)")
+        Text(text)
             .font(.system(.title3, design: .rounded, weight: .bold))
             .monospacedDigit()
             .foregroundStyle(color)
-            .accessibilityLabel("\(word) \(us) \(them)")
-    }
-
-    private var word: String {
-        switch result {
-        case .won: return "Won"
-        case .drawn: return "Drew"
-        case .lost: return "Lost"
-        }
+            .accessibilityLabel(spoken)
     }
 
     private var color: Color {

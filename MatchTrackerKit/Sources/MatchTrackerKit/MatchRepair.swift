@@ -30,6 +30,8 @@ public extension MatchRecord {
 
     /// More goals than the result said means there's one the result missed.
     private mutating func raiseFinalScore() {
+        if let said = myGoals { myGoals = max(said, events.filter { $0.kind == .goalMine }.count) }
+        if let said = myAssists { myAssists = max(said, events.filter { $0.kind == .assist }.count) }
         guard let final = finalScore, let logged = loggedScore else { return }
         finalScore = FinalScore(us: max(final.us, logged.us), them: max(final.them, logged.them),
                                 mine: max(final.mine, logged.mine))

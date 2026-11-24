@@ -277,11 +277,24 @@ final class DesignCapture: XCTestCase {
         app.launchArguments += ["-OpenLink", "matchtracker://match/at/\(ProcessInfo.processInfo.environment["START"] ?? "0")/review"]
         app.launch()
         handleHealthKitPrompt(app: app, timeout: 4)
-        XCTAssertTrue(app.navigationBars["How Did It End?"].waitForExistence(timeout: 25), "A tapped reminder asks about its match")
+        XCTAssertTrue(app.navigationBars["How Did It End?"].waitForExistence(timeout: 25) || app.navigationBars["How Did It Go?"].exists, "A tapped reminder asks about its match")
         sleep(1)
         screenshot("60-review")
         app.swipeUp()
         sleep(1)
         screenshot("61-review-2")
+        if app.buttons["It was, One match"].exists || app.staticTexts["It was"].exists {
+            app.swipeDown()
+            app.buttons.matching(NSPredicate(format: "label CONTAINS 'One match'")).firstMatch.tap()
+            app.buttons["Several games"].firstMatch.tap()
+            sleep(1)
+            screenshot("62-review-several")
+            let toggle = app.switches["We keep score"]
+            for _ in 0..<4 where !toggle.isHittable { app.swipeUp() }
+            toggle.switches.firstMatch.tap()
+            sleep(1)
+            for _ in 0..<3 { app.swipeDown() }
+            screenshot("63-review-uncounted")
+        }
     }
 }

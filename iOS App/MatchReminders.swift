@@ -62,9 +62,9 @@ final class MatchReminders: NSObject {
         (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
-    /// Opening the app is also a moment to ask, once for each match.
-    func shouldAsk(about match: UUID) -> Bool {
-        guard SettingsStore.shared.asksAfterMatches else { return false }
+    /// Opening the app is also a moment to ask, once for each match with something to ask.
+    func shouldAsk(about match: UUID, _ record: MatchRecord?) -> Bool {
+        guard SettingsStore.shared.asksAfterMatches, let record, Question(record) != nil else { return false }
         var asked = AppGroup.defaults.stringArray(forKey: Self.promptedKey) ?? []
         guard !asked.contains(match.uuidString) else { return false }
         asked.append(match.uuidString)
@@ -82,6 +82,13 @@ final class MatchReminders: NSObject {
         init?(_ record: MatchRecord) {
             guard record.reviewedAt == nil, let end = record.endDate, end.timeIntervalSince(record.startDate) >= 600 else { return nil }
             let marked = record.events.filter { $0.kind == .flag }.count
+            let habit = SettingsStore.shared.playHabits[record.format ?? .match]
+            if record.keepsScore == false || habit.keepsScore == false {
+                // Nobody's counting. Moments still mean nothing until they're named.
+                guard marked > 0 else { return nil }
+                self.init(title: marked == 1 ? "You marked a moment" : "You marked \(marked) moments", body: "Say what happened while it’s fresh.")
+                return
+            }
             if record.finalScore == nil, let logged = record.loggedScore {
                 let title = MatchResultText.title(goalsUs: logged.us, goalsThem: logged.them) ?? ""
                 self.init(title: "\(title)?", body: marked > 0 ? "Check the goals you logged and say what you marked."

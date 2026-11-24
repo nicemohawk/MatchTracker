@@ -140,7 +140,8 @@ struct MatchDetailView: View {
     }
 
     private func scoreline(_ detail: MatchDetailModel) -> some View {
-        MatchScoreline(digest: detail.digest, fallbackTitle: detail.matchFormat.title, startDate: detail.matchStart) {
+        MatchScoreline(digest: detail.digest, fallbackTitle: detail.matchFormat.title, startDate: detail.matchStart,
+                       keepsScore: detail.record?.keepsScore ?? SettingsStore.shared.playHabits[detail.matchFormat].keepsScore ?? true) {
             sheet = .score
         }
     }
@@ -174,7 +175,7 @@ struct MatchDetailView: View {
                 TrimSuggestion(end: end) { store.trim(detail.matchIdentifier, start: nil, end: end) }
             }
             if let analytics = detail.analytics, let stints = analytics.stints {
-                StintsChapter(stints: stints, playing: analytics.playingIntervals)
+                StintsChapter(stints: stints, playing: analytics.playingIntervals, games: detail.record?.games)
             }
             MomentsChapter(detail: detail, onEdit: { sheet = .edit },
                            onShow: detail.analytics?.hasRoute == true ? { moment in show(on: scroller) { clock.show(moment) } } : nil)
@@ -206,6 +207,7 @@ struct MatchDetailView: View {
             Button("Share", systemImage: "square.and.arrow.up") { sheet = .share }
                 .disabled(model.detail?.analytics == nil)
             Menu {
+                Button("How It Went", systemImage: "flag.checkered") { sheet = .score }
                 Button("Edit Match", systemImage: "pencil") { sheet = .edit }
                 Button("Video", systemImage: "video") { sheet = .video }
                 if model.detail?.analytics?.hasRoute == true {
@@ -239,12 +241,18 @@ private struct MatchScoreline: View {
     let digest: MatchDigest?
     let fallbackTitle: String
     let startDate: Date
+    var keepsScore = true
     let onEdit: () -> Void
 
     var body: some View {
         Button(action: onEdit) {
             VStack(spacing: 4) {
-                if let digest, let result = digest.result, let us = digest.goalsUs, let them = digest.goalsThem {
+                if let games = digest?.games {
+                    Text("\(games.won) of \(games.count)")
+                        .font(.system(size: 64, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                    Text(games.drawn > 0 ? "games won, \(games.drawn) drawn" : "games won").font(.headline)
+                } else if let digest, let result = digest.result, let us = digest.goalsUs, let them = digest.goalsThem {
                     Text(word(result)).font(.headline).foregroundStyle(color(result))
                     Text("\(us) – \(them)")
                         .font(.system(size: 64, weight: .bold, design: .rounded))
@@ -255,7 +263,7 @@ private struct MatchScoreline: View {
                     Text(digest?.opponent.map { "vs \($0)" } ?? digest?.fieldName ?? fallbackTitle)
                         .font(.largeTitle.bold())
                         .multilineTextAlignment(.center)
-                    Text("Add the Score").font(.headline).foregroundStyle(.tint).frame(minHeight: 32)
+                    if keepsScore { Text("Add the Score").font(.headline).foregroundStyle(.tint).frame(minHeight: 32) }
                 }
                 Text(details).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }

@@ -671,11 +671,24 @@ final class MatchStore: ObservableObject {
         edit(matchID) { record, recorded in record.trimJourneys(recorded: recorded, track: track, field: field) }
     }
 
-    /// Everything said after a match, in one edit: the result, and what the marked moments were.
-    func review(_ matchID: UUID, score: FinalScore, kinds: [UUID: MatchEventKind]) {
+    /// Everything said after a match, in one edit.
+    struct Review {
+        var keepsScore: Bool
+        var score: FinalScore
+        var games: [GameResult]?
+        var assists: Int
+        /// What the marked moments turned out to be.
+        var kinds: [UUID: MatchEventKind]
+    }
+
+    func review(_ matchID: UUID, _ review: Review) {
         edit(matchID) { record, _ in
-            for (id, kind) in kinds { record.setEvent(id, kind: kind) }
-            record.finalScore = score
+            for (id, kind) in review.kinds { record.setEvent(id, kind: kind) }
+            record.keepsScore = review.keepsScore
+            record.games = review.games
+            record.finalScore = review.keepsScore && review.games == nil ? review.score : nil
+            record.myGoals = review.score.mine
+            record.myAssists = review.assists
             record.reviewedAt = Date()
         }
     }

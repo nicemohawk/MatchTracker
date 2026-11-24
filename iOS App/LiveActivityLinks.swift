@@ -108,7 +108,7 @@ private struct SystemLinks: ViewModifier {
         try? await Task.sleep(for: .seconds(1.5))
         guard !Task.isCancelled, !liveMatches.isLive, !showingLive, reviewing == nil, router.pending == nil,
               UserDefaults.standard.bool(forKey: "hasOnboarded"),
-              MatchReminders.shared.shouldAsk(about: summary.id) else { return }
+              MatchReminders.shared.shouldAsk(about: summary.id, summary.record) else { return }
         await review(summary)
     }
 
