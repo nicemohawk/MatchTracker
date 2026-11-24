@@ -132,6 +132,30 @@ public struct PitchHeat: Hashable, Codable, Sendable {
         public var heat: PitchHeat { PitchHeat(columns: columns, rows: rows, values: values) }
     }
 
+    /// A match's heat as it was built up, in `steps` pictures. The last is exactly the whole match.
+    public static func buildUp(_ analytics: MatchAnalytics, steps: Int) -> [PitchHeat] {
+        let whole = PitchHeat(analytics)
+        let cells = analytics.pitchPath.filter(\.onPitch).map { sample in
+            let column = min(max(Int(sample.x * Double(whole.columns)), 0), whole.columns - 1)
+            let row = min(max(Int((1 - sample.y) * Double(whole.rows)), 0), whole.rows - 1)
+            return row * whole.columns + column
+        }
+        guard !whole.isEmpty, steps > 1, cells.count >= steps else { return [whole] }
+        var visits = [Float](repeating: 0, count: whole.values.count)
+        for cell in cells { visits[cell] += 1 }
+
+        var seen = [Float](repeating: 0, count: whole.values.count)
+        var pictures: [PitchHeat] = []
+        for (index, cell) in cells.enumerated() {
+            seen[cell] += 1
+            guard pictures.count < steps - 1, (index + 1) * steps >= (pictures.count + 1) * cells.count else { continue }
+            pictures.append(PitchHeat(columns: whole.columns, rows: whole.rows, values: whole.values.indices.map {
+                visits[$0] > 0 ? whole.values[$0] * seen[$0] / visits[$0] : 0
+            }))
+        }
+        return pictures + [whole]
+    }
+
     /// The time-weighted middle of it all.
     public var average: PitchPoint? {
         var total = 0.0, across = 0.0, up = 0.0

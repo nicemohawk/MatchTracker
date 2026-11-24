@@ -7,96 +7,128 @@ import HealthKit
 import SwiftUI
 import MatchTrackerKit
 
-/// Post-match summary: the match drawn large, then its numbers. Says plainly when everything is
-/// saved — the one thing worth knowing before walking off.
+/// Post-match summary: the result, whether it's saved — the one thing worth knowing before walking
+/// off — then the match drawn large, then its numbers.
 struct SummaryView: View {
     @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showFieldPrompt = false
+    @State private var hasPromptedForField = false
+    @State private var isLeaving = false
+    @State private var enteredScore = FinalScore(us: 0, them: 0)
+    @State private var hasSkippedScore = false
+    @State private var field: FieldModel?
+    @State private var hasNoHeat = false
 
     private var record: MatchRecord? { workoutManager.finishedRecord }
+    private var track: [TrackPoint] { record?.track ?? workoutManager.track }
     private var format: MatchFormat { record?.format ?? workoutManager.matchFormat }
     private var isIndoor: Bool { format == .indoor }
+    private var asksForScore: Bool { score == nil && !hasSkippedScore && !WatchSettings.refereeMode }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                if let track = record?.track, track.count > 20 {
-                    RouteSketch(track: track)
-                        .frame(height: 110)
-                        .accessibilityLabel("Your route")
+                if asksForScore {
+                    FinalScoreQuestion(score: $enteredScore) {
+                        workoutManager.setFinalScore(enteredScore)
+                    } onSkip: {
+                        hasSkippedScore = true
+                    }
                 }
+                picture
                 stats
-                saveState
-                if #available(watchOS 11.0, *), let workout = workoutManager.finishedWorkout {
-                    EffortButton(workout: workout)
-                }
                 Button("Done") {
                     WatchHaptics.click()
-                    workoutManager.reset()
+                    leave()
                 }
                 .font(.headline)
                 .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 52, prominent: true))
+                if #available(watchOS 11.0, *), let workout = workoutManager.finishedWorkout {
+                    EffortButton(workout: workout)
+                }
             }
             .scenePadding(.horizontal)
+            .animation(.snappy, value: asksForScore)
         }
-        .onAppear(perform: promptForFieldIfNeeded)
-        // Field learning finishes after the record publishes, so the prompt waits for it.
+        .onAppear {
+            field = AppGroupStorage.fieldStore.resolve(recordFieldID: workoutManager.fieldID, track: track)
+            promptForFieldIfNeeded()
+        }
+        // Field learning finishes after the record publishes, so the prompt waits for it. It also
+        // waits for the score, rather than landing under a finger.
         .onChange(of: workoutManager.proposedField?.id) { _, _ in promptForFieldIfNeeded() }
+        .onChange(of: asksForScore) { _, _ in promptForFieldIfNeeded() }
         .sheet(isPresented: $showFieldPrompt) {
+            if isLeaving { workoutManager.reset() }
+        } content: {
             ProposedFieldSheet()
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(MatchTrackerFormat.hoursMinutesSeconds(workoutManager.elapsedAtPause))
+        VStack(alignment: .leading, spacing: 2) {
+            Text(resultText ?? fieldName ?? format.startTitle)
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .monospacedDigit()
-                .minimumScaleFactor(0.7)
-                .foregroundStyle(WatchTheme.cardYellow)
-            Text([resultText, fieldName].compactMap { $0 }.joined(separator: " · "))
-                .font(.headline)
-                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.6)
+                .accessibilityAddTraits(.isHeader)
+            saveState
         }
     }
 
+    private var score: FinalScore? {
+        let logged = workoutManager.score
+        return workoutManager.finalScore ?? (logged.us + logged.them > 0 ? FinalScore(us: logged.us, them: logged.them) : nil)
+    }
+
     private var resultText: String? {
-        let score = workoutManager.score
-        guard score.us + score.them > 0 else { return nil }
-        let outcome = score.us > score.them ? "Won" : score.us < score.them ? "Lost" : "Drew"
-        return "\(outcome) \(score.us)–\(score.them)"
+        MatchResultText.title(goalsUs: score?.us, goalsThem: score?.them)
     }
 
     private var fieldName: String? {
-        guard let fieldID = record?.fieldID else { return nil }
+        guard let fieldID = record?.fieldID ?? workoutManager.fieldID else { return nil }
         return AppGroupStorage.fieldStore.fields.first { $0.id == fieldID }?.name
+    }
+
+    @ViewBuilder
+    private var picture: some View {
+        if !isIndoor, track.count > 20 {
+            if let field, !hasNoHeat {
+                MatchHeat(field: field, record: record) { hasNoHeat = true }
+            } else {
+                RouteSketch(track: track)
+                    .frame(height: 110)
+                    .accessibilityElement()
+                    .accessibilityLabel("Your route")
+            }
+        }
     }
 
     @ViewBuilder
     private var stats: some View {
         VStack(alignment: .leading, spacing: 10) {
             if WatchSettings.refereeMode {
-                stat("Yellow cards", "\(count(of: .yellowCard))", tint: WatchTheme.cardYellow)
-                stat("Red cards", "\(count(of: .redCard))", tint: WatchTheme.loss)
-                stat("Fouls", "\(count(of: .foul))", tint: .white)
+                stat("Yellow cards", "\(count(of: .yellowCard))")
+                stat("Red cards", "\(count(of: .redCard))")
+                stat("Fouls", "\(count(of: .foul))")
             }
             if !isIndoor {
-                let distance = UnitSystem.current.distance(workoutManager.distanceMeters)
-                stat("Distance", distance.text, tint: WatchTheme.pace)
+                stat("Distance", UnitSystem.current.distance(workoutManager.distanceMeters).text)
             }
-            if !WatchSettings.refereeMode, let timeOnPitch { stat("On the pitch", timeOnPitch, tint: WatchTheme.turf) }
-            if let bpm = workoutManager.summaryAverageHeartRate, bpm > 0 {
-                stat("Average heart rate", "\(Int(bpm)) BPM", tint: WatchTheme.heart)
+            if !WatchSettings.refereeMode { stat("Played", timeOnPitch ?? "—") }
+            let bpm = Int(workoutManager.summaryAverageHeartRate ?? 0)
+            stat("Average heart rate", bpm > 0 ? "\(bpm) BPM" : "—", tint: WatchTheme.heart)
+            stat("Match time", MatchTrackerFormat.hoursMinutesSeconds(workoutManager.elapsedAtPause))
+            if !isIndoor {
+                stat("Sprints", workoutManager.summaryRunCounts.map { "\($0.sprints)" } ?? "—")
             }
-            if !isIndoor, let counts = workoutManager.summaryRunCounts {
-                stat("Sprints", "\(counts.sprints)", tint: WatchTheme.sprint)
-            }
-            stat("Active calories", "\(Int(workoutManager.activeCalories)) CAL", tint: .white)
+            stat("Active calories", "\(Int(workoutManager.activeCalories)) CAL")
         }
     }
 
-    private func stat(_ title: String, _ value: String, tint: Color) -> some View {
+    private func stat(_ title: String, _ value: String, tint: Color = .white) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.footnote)
@@ -111,20 +143,26 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var saveState: some View {
-        if record == nil {
-            HStack(spacing: 6) {
-                ProgressView().frame(width: 18, height: 18)
-                Text("Saving. Safe to leave.")
+        Group {
+            if record == nil {
+                Label {
+                    Text("Saving. Safe to leave.")
+                } icon: {
+                    ProgressView().frame(width: 18, height: 18)
+                }
+                .foregroundStyle(.secondary)
+            } else {
+                Label(workoutManager.finishedWorkout == nil ? "Saved to MatchTracker" : "Saved to Health",
+                      systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(WatchTheme.turf)
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        } else {
-            Label(workoutManager.finishedWorkout == nil ? "Saved to MatchTracker" : "Saved to Health",
-                  systemImage: "checkmark.circle.fill")
-                .font(.footnote)
-                .foregroundStyle(WatchTheme.turf)
         }
-        if !isIndoor, let record, record.track == nil {
+        .font(.headline)
+        // One line from saving to saved, so nothing below it moves under a finger.
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+        .minimumScaleFactor(0.7)
+        .frame(minHeight: 24)
+        if !isIndoor, track.isEmpty {
             Label("No GPS was recorded", systemImage: "location.slash.fill")
                 .font(.footnote)
                 .foregroundStyle(WatchTheme.sprint)
@@ -133,8 +171,8 @@ struct SummaryView: View {
 
     private var timeOnPitch: String? {
         guard let record, let end = record.endDate else { return nil }
-        return MatchTrackerFormat.hoursMinutesSeconds(
-            SubstitutionTracker.timeOnPitch(events: record.events, matchStart: record.startDate, matchEnd: end))
+        return UnitSystem.minutes(
+            SubstitutionTracker.timeOnPitch(events: record.events, matchStart: record.startDate, matchEnd: end)).text
     }
 
     private func count(of kind: MatchEventKind) -> Int {
@@ -142,7 +180,87 @@ struct SummaryView: View {
     }
 
     private func promptForFieldIfNeeded() {
-        if workoutManager.proposedField != nil { showFieldPrompt = true }
+        guard workoutManager.proposedField != nil, !asksForScore, !hasPromptedForField else { return }
+        hasPromptedForField = true
+        showFieldPrompt = true
+    }
+
+    /// Goals tapped in are an answer, whether or not Save was.
+    private func leave() {
+        if asksForScore {
+            if enteredScore != FinalScore(us: 0, them: 0) { workoutManager.setFinalScore(enteredScore) }
+            hasSkippedScore = true
+        }
+        promptForFieldIfNeeded()
+        isLeaving = true
+        if !showFieldPrompt { workoutManager.reset() }
+    }
+}
+
+/// How the match ended, when no goal was logged. The same two tiles that count goals during it.
+private struct FinalScoreQuestion: View {
+    @Binding var score: FinalScore
+    let onSave: () -> Void
+    let onSkip: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("How did it end?")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 8) {
+                side("Us", value: $score.us, tint: WatchTheme.turf)
+                side("Them", value: $score.them, tint: WatchTheme.loss)
+            }
+            HStack(spacing: 8) {
+                Button("Skip") {
+                    WatchHaptics.click()
+                    onSkip()
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.bench, minHeight: 52))
+                Button("Save") {
+                    WatchHaptics.success()
+                    onSave()
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 52, prominent: true))
+                .accessibilityHint("Saves the score")
+            }
+            .font(.headline)
+        }
+    }
+
+    private func side(_ name: String, value: Binding<Int>, tint: Color) -> some View {
+        VStack(spacing: 4) {
+            Button {
+                WatchHaptics.click()
+                value.wrappedValue += 1
+            } label: {
+                VStack(spacing: 0) {
+                    Text("\(value.wrappedValue)")
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text(name)
+                        .font(.headline)
+                }
+            }
+            .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: 80))
+            .accessibilityLabel("\(name), goals")
+            .accessibilityValue("\(value.wrappedValue)")
+            .accessibilityHint("Adds a goal")
+            Button {
+                WatchHaptics.click()
+                value.wrappedValue -= 1
+            } label: {
+                Image(systemName: "minus")
+                    .font(.headline)
+            }
+            .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.bench, minHeight: 44))
+            .opacity(value.wrappedValue > 0 ? 1 : 0.4)
+            .disabled(value.wrappedValue == 0)
+            .accessibilityLabel("\(name), take one off")
+        }
+        .animation(.snappy, value: value.wrappedValue)
     }
 }
 
@@ -156,12 +274,17 @@ private struct EffortButton: View {
 
     var body: some View {
         Button { isRating = true } label: {
-            VStack(spacing: 0) {
-                Text(score.map { "\(EffortRating.word(for: $0)), \($0)" } ?? "Rate Effort").font(.headline)
-                if score == nil { Text("For Training Load").font(.footnote) }
+            HStack {
+                Text(score.map { "Effort: \(EffortRating.word(for: $0)), \($0)" } ?? "Rate Effort")
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.sprint, minHeight: 52))
+        .buttonStyle(.plain)
         .sheet(isPresented: $isRating) {
             EffortSheet(initial: score ?? 5) { chosen in
                 score = chosen

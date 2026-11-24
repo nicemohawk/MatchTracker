@@ -57,6 +57,17 @@ final class MatchAnalysisTests: XCTestCase {
         XCTAssertFalse(analytics.heat[(analytics.heat.count / 2)...].contains { $0 > 0.2 }, "row 0 is the attacking end")
     }
 
+    func testHeatBuildsUpToTheWholeMatch() throws {
+        let analytics = try analyze(twoHalves())
+        let steps = PitchHeat.buildUp(analytics, steps: 20)
+        XCTAssertEqual(steps.count, 20)
+        XCTAssertEqual(steps.last, PitchHeat(analytics))
+        for (before, after) in zip(steps, steps.dropFirst()) {
+            XCTAssertTrue(zip(before.values, after.values).allSatisfy { $0 <= $1 + 0.0001 }, "heat only ever grows")
+        }
+        XCTAssertFalse(try XCTUnwrap(steps.first).isEmpty)
+    }
+
     func testPickupIsNotTurnedAround() throws {
         let analytics = try analyze(twoHalves(), format: .smallSided)
         XCTAssertNil(analytics.halftime)

@@ -134,3 +134,49 @@ enum AppGroupStorage {
             at: finishedMatchesDirectory.appendingPathComponent("\(id.uuidString).json"))
     }
 }
+
+/// One finished match's record on disk, and the result the wearer may give at any moment while it's
+/// being saved. One lock, so whichever copy ends up on disk has the result in it, and only one does.
+final class FinishedRecordFile: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: MatchRecord?
+    private var idOnDisk: UUID?
+    private var isFinal = false
+    private var givenScore: FinalScore?
+
+    var finalScore: FinalScore? {
+        lock.withLock { givenScore }
+    }
+
+    /// Write a record in place of the copy before it. Off the main thread: records are megabytes.
+    func write(_ record: MatchRecord, isFinal: Bool) -> (record: MatchRecord, saved: Bool) {
+        lock.withLock {
+            var record = record
+            record.finalScore = givenScore
+            latest = record
+            self.isFinal = isFinal
+            return (record, persist(record))
+        }
+    }
+
+    /// Add the result to the copy on disk. Returns the record to send again, or nil if the save
+    /// that will send it is still to come.
+    func setFinalScore(_ score: FinalScore) -> MatchRecord? {
+        lock.withLock {
+            givenScore = score
+            guard var record = latest else { return nil }
+            record.finalScore = score
+            latest = record
+            _ = persist(record)
+            return isFinal ? record : nil
+        }
+    }
+
+    private func persist(_ record: MatchRecord) -> Bool {
+        guard AppGroupStorage.persistFinished(record) != nil else { return false }
+        // At once: two copies on disk at the next launch would reach the phone as two matches.
+        if let idOnDisk, idOnDisk != record.id { AppGroupStorage.removeFinished(id: idOnDisk) }
+        idOnDisk = record.id
+        return true
+    }
+}
