@@ -1,0 +1,201 @@
+// EditMatchView.swift
+// MatchTracker
+
+import MatchTrackerKit
+import SwiftUI
+
+/// Put right whatever the watch got wrong — or never knew.
+struct EditMatchView: View {
+    @ObservedObject var detail: MatchDetailModel
+    @EnvironmentObject private var store: MatchStore
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.undoManager) private var undoManager
+
+    @State private var opponent = ""
+    @State private var notes = ""
+    @State private var editing: MatchEvent?
+    @State private var addingEvent = false
+    @State private var adjusting: MatchDetailModel.AdjustableField?
+
+    private var id: UUID { detail.matchIdentifier }
+
+    private var moments: [MatchEvent] {
+        detail.events.filter { MomentsChapter.isMoment($0.kind) || $0.source == .manual && [.subIn, .subOut].contains($0.kind) }
+            .sorted { $0.date < $1.date }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Opponent", text: $opponent)
+                        .onSubmit { store.setOpponent(opponent, for: id) }
+                    scoreStepper("Us", kind: .goalForUs, count: detail.digest?.goalsUs ?? 0)
+                    scoreStepper("Them", kind: .goalAgainstUs, count: detail.digest?.goalsThem ?? 0)
+                }
+                Section("Moments") {
+                    ForEach(moments) { event in
+                        Button { editing = event } label: {
+                            LabeledContent {
+                                Text("\(minute(event.date))′").monospacedDigit()
+                            } label: {
+                                Label(event.kind.momentTitle, systemImage: event.kind.momentSymbol)
+                            }
+                        }
+                        .tint(.primary)
+                        .swipeActions {
+                            Button("Delete", systemImage: "trash", role: .destructive) { delete(event) }
+                        }
+                    }
+                    Button("Add Moment", systemImage: "plus") { addingEvent = true }
+                }
+                Section {
+                    DatePicker("Kickoff", selection: kickoff, in: detail.recordedInterval.start...detail.matchEnd,
+                               displayedComponents: .hourAndMinute)
+                    DatePicker("Full time", selection: fullTime, in: detail.matchStart...detail.recordedInterval.end,
+                               displayedComponents: .hourAndMinute)
+                    if detail.record?.trimmedStart != nil || detail.record?.trimmedEnd != nil {
+                        Button("Use the Whole Recording") { store.trim(id, start: nil, end: nil) }
+                    }
+                } header: {
+                    Text("When it was played")
+                } footer: {
+                    Text("Nothing is deleted. Warm-ups, drives home and forgotten stops are just left out.")
+                }
+                if let analytics = detail.analytics, analytics.hasRoute {
+                    Section("Pitch") {
+                        Button("We Attacked the Other Way", systemImage: "arrow.up.arrow.down") {
+                            store.setFlipsAttack(!analytics.attackDirection.flipsAttack, for: id)
+                        }
+                        if detail.canAdjustField {
+                            Button("Adjust the Outline", systemImage: "skew") { adjusting = detail.adjustableField() }
+                        }
+                    }
+                }
+                Section("Notes") {
+                    TextField("How did it go?", text: $notes, axis: .vertical)
+                        .lineLimit(3...8)
+                }
+            }
+            .navigationTitle("Edit Match")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        commit()
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(item: $editing) { MomentEditor(detail: detail, event: $0) }
+            .sheet(isPresented: $addingEvent) { MomentEditor(detail: detail, event: nil) }
+            .sheet(item: $adjusting) { adjustable in
+                CornerEditorView(field: adjustable.field) {
+                    if adjustable.isDraft { detail.bindField(id: adjustable.field.id) }
+                    adjusting = nil
+                }
+            }
+        }
+        .onAppear {
+            opponent = detail.record?.opponent ?? ""
+            notes = detail.record?.notes ?? ""
+        }
+        // A swipe down keeps what was typed, like every other Apple form that saves as you go.
+        .onDisappear(perform: commit)
+    }
+
+    private func commit() {
+        if opponent != detail.record?.opponent ?? "" { store.setOpponent(opponent, for: id) }
+        if notes != detail.record?.notes ?? "" { store.setNotes(notes, for: id) }
+    }
+
+    /// Goals can be counted without saying when: an added one lands at full time until it's moved.
+    private func scoreStepper(_ title: String, kind: MatchEventKind, count: Int) -> some View {
+        Stepper(value: Binding(get: { count }, set: { newValue in
+            if newValue > count {
+                _ = store.addEvent(kind, at: detail.matchEnd, note: nil, to: id)
+            } else if let last = detail.events.last(where: { $0.kind == kind || (kind == .goalForUs && $0.kind == .goalMine) }) {
+                delete(last)
+            }
+        }), in: 0...30) {
+            LabeledContent(title) { Text("\(count)").font(.system(.title2, design: .rounded, weight: .semibold)) }
+        }
+    }
+
+    private func delete(_ event: MatchEvent) {
+        guard let removed = store.deleteEvent(event.id, from: id) else { return }
+        undoManager?.registerUndo(withTarget: store) { store in
+            Task { @MainActor in store.restoreEvent(removed, to: id) }
+        }
+        undoManager?.setActionName("Delete Moment")
+    }
+
+    private func minute(_ date: Date) -> Int { max(1, Int(date.timeIntervalSince(detail.matchStart) / 60) + 1) }
+
+    private var kickoff: Binding<Date> {
+        Binding(get: { detail.matchStart }, set: { store.trim(id, start: $0, end: detail.record?.trimmedEnd) })
+    }
+
+    private var fullTime: Binding<Date> {
+        Binding(get: { detail.matchEnd }, set: { store.trim(id, start: detail.record?.trimmedStart, end: $0) })
+    }
+}
+
+/// One moment: what, when, and anything worth remembering about it.
+private struct MomentEditor: View {
+    @ObservedObject var detail: MatchDetailModel
+    let event: MatchEvent?
+
+    @EnvironmentObject private var store: MatchStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var kind: MatchEventKind = .goalForUs
+    @State private var minute = 1
+    @State private var note = ""
+
+    private let kinds: [MatchEventKind] = [.goalForUs, .goalMine, .assist, .goalAgainstUs, .subOut, .subIn,
+                                           .flag, .yellowCard, .redCard, .foul]
+
+    private var lastMinute: Int { max(1, Int(detail.playedInterval.duration / 60) + 1) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("What happened", selection: $kind) {
+                    ForEach(kinds, id: \.self) { Label($0.momentTitle, systemImage: $0.momentSymbol).tag($0) }
+                }
+                Picker("Minute", selection: $minute) {
+                    ForEach(1...lastMinute, id: \.self) { Text("\($0)′").tag($0) }
+                }
+                .pickerStyle(.wheel)
+                TextField("Note", text: $note, axis: .vertical)
+            }
+            .navigationTitle(event == nil ? "Add Moment" : "Edit Moment")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(event == nil ? "Add" : "Save") {
+                        save()
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            kind = event?.kind ?? .goalForUs
+            minute = event.map { max(1, Int($0.date.timeIntervalSince(detail.matchStart) / 60) + 1) } ?? lastMinute / 2
+            note = event?.note ?? ""
+        }
+    }
+
+    private func save() {
+        let date = detail.matchStart.addingTimeInterval(Double(minute - 1) * 60 + 30)
+        if let event {
+            let sameMinute = Int(event.date.timeIntervalSince(detail.matchStart) / 60) + 1 == minute
+            store.setEvent(event.id, in: detail.matchIdentifier, kind: kind, date: sameMinute ? nil : date, note: note)
+        } else {
+            _ = store.addEvent(kind, at: date, note: note.isEmpty ? nil : note, to: detail.matchIdentifier)
+        }
+    }
+}

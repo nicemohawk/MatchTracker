@@ -20,8 +20,7 @@ struct AddFieldView: View {
         NavigationStack {
             FieldOutlineEditor(title: "Add Field",
                                initialCorners: detected?.coordinateRing ?? [],
-                               initialRegion: detected?.mapRegion ?? initialRegion,
-                               showsCancel: true) { corners, rectangle in
+                               initialRegion: detected?.mapRegion ?? initialRegion) { corners, rectangle in
                 // "New Field" is a placeholder the model replaces with the place's name.
                 let field = FieldModel(id: UUID(), name: "New Field", createdAt: Date(),
                                        outline: corners.map(Coordinate2D.init), rectangle: rectangle,

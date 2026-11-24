@@ -6,14 +6,18 @@
 	<array>
 		<string>com.nicemohawk.MatchTracker.refresh</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
 	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>MatchTracker reads the calendar you choose to find your next match and suggest the opponent afterwards. It never changes your calendar, and nothing in it leaves your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>MatchTracker imports the match video you choose and cuts clips around the moments you logged.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>MatchTracker saves match clips to your photo library.</string>
+	<string>MatchTracker saves your match clips, pictures and replays to your photo library.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>MatchTracker records sideline video and cuts clips around the moments you logged.</string>
 	<key>NSMicrophoneUsageDescription</key>

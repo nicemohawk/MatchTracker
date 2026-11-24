@@ -39,6 +39,7 @@ struct OnboardingView: View {
         .scrollBounceBehavior(.basedOnSize)
         .bottomActionBar { actions }
         .background(Theme.background.ignoresSafeArea())
+        .tint(Theme.turf)
         .sensoryFeedback(.selection, trigger: step)
         .sensoryFeedback(.success, trigger: importer.summary) { _, summary in summary?.cancelled == false }
         .alert("Couldn’t Import", isPresented: $importFailed) {
@@ -120,8 +121,11 @@ private struct PayoffPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            ExampleHeatPitch()
-                .frame(height: dynamicTypeSize.isAccessibilitySize ? 240 : 400)
+            HeatPitch(heat: ExampleMatch.heat)
+                .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 240 : 420)
+                .accessibilityLabel("Example heat map. A right winger, mostly along the right side in the attacking half.")
                 .frame(maxWidth: .infinity)
             OnboardingHeading(title: "See where you played",
                               detail: "Wear your Apple Watch in a match. Afterward you get your heat map, your best runs and the score.")
@@ -144,75 +148,29 @@ private struct OnboardingHeading: View {
     }
 }
 
-/// A portrait pitch, attacking up, with one player's match on it.
-private struct ExampleHeatPitch: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isVisible = false
-
-    var body: some View {
-        ZStack {
-            Canvas { context, size in
-                var context = context
-                let field = CGRect(origin: .zero, size: size)
-                SoccerPitch.fillTurf(&context, rect: field)
-            }
-            Image(decorative: Self.heat, scale: 1)
-                .resizable()
-                .interpolation(.high)
-                .padding(10)
-                .opacity(isVisible ? 1 : 0)
-            Canvas { context, size in
-                // SoccerPitch draws lengthwise along x; stand it up.
-                var upright = context
-                upright.translateBy(x: size.width / 2, y: size.height / 2)
-                upright.rotate(by: .degrees(-90))
-                let length = size.height - 20, width = size.width - 20
-                SoccerPitch.draw(in: &upright, rect: CGRect(x: -length / 2, y: -width / 2, width: length, height: width))
-            }
-        }
-        .aspectRatio(CGSize(width: 68 + 6, height: 105 + 6), contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .onAppear {
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 1.1).delay(0.2)) { isVisible = true }
-        }
-        .accessibilityElement()
-        .accessibilityLabel("Example heat map. A right winger, mostly along the right side in the attacking half.")
-        .accessibilityAddTraits(.isImage)
-    }
-
-    /// A right winger's match, summed from a few spots and blurred by its own size.
-    private static let heat: CGImage = {
-        let width = 68, height = 105
+/// A right winger's match, for the first screen to show what a match looks like.
+private enum ExampleMatch {
+    static let heat: PitchHeat = {
+        let columns = PitchHeat.defaultColumns, rows = PitchHeat.defaultRows
         // x across (0 left), y up the field (0 own goal), spread and weight, in field fractions.
         let spots: [(x: Double, y: Double, spread: Double, weight: Double)] = [
-            (0.80, 0.68, 0.13, 1.0), (0.74, 0.55, 0.15, 0.75), (0.83, 0.42, 0.13, 0.55), (0.66, 0.80, 0.11, 0.65),
-            (0.52, 0.86, 0.09, 0.45), (0.58, 0.62, 0.16, 0.35), (0.70, 0.27, 0.14, 0.28), (0.42, 0.50, 0.18, 0.16)
+            (0.82, 0.70, 0.08, 1.0), (0.75, 0.57, 0.09, 0.8), (0.86, 0.47, 0.07, 0.65), (0.66, 0.82, 0.08, 0.7),
+            (0.54, 0.88, 0.06, 0.5), (0.58, 0.64, 0.10, 0.45), (0.72, 0.30, 0.09, 0.4), (0.44, 0.50, 0.10, 0.25),
+            (0.80, 0.18, 0.06, 0.3)
         ]
-        var values = [Double](repeating: 0, count: width * height)
-        for row in 0..<height {
-            for column in 0..<width {
-                let x = (Double(column) + 0.5) / Double(width)
-                let y = 1 - (Double(row) + 0.5) / Double(height)
-                values[row * width + column] = spots.reduce(0) { sum, spot in
-                    let dx = x - spot.x, dy = (y - spot.y) * 105 / 68
-                    return sum + spot.weight * exp(-(dx * dx + dy * dy) / (2 * spot.spread * spot.spread))
-                }
+        let values = (0..<(columns * rows)).map { index -> Float in
+            let x = (Double(index % columns) + 0.5) / Double(columns)
+            let y = 1 - (Double(index / columns) + 0.5) / Double(rows)
+            var total = 0.0
+            for spot in spots {
+                let dx = x - spot.x
+                let dy = (y - spot.y) * 105 / 68
+                let distance = dx * dx + dy * dy
+                total += spot.weight * exp(-distance / (2 * spot.spread * spot.spread))
             }
+            return Float(total)
         }
-        let peak = values.max() ?? 1
-        let pixels = values.flatMap { value -> [UInt8] in
-            let t = value / peak
-            // Clear, through green, to almost white.
-            let alpha = min(1, max(0, (t - 0.04) / 0.5))
-            let glow = max(0, (t - 0.45) / 0.55)
-            let red = 0.10 + 0.85 * glow, green = 0.72 + 0.28 * min(1, t * 1.2), blue = 0.28 + 0.48 * glow
-            return [red, green, blue, 1].map { UInt8(($0 * alpha * 255).rounded()) }
-        }
-        let provider = CGDataProvider(data: Data(pixels) as CFData)!
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)!
+        return PitchHeat(columns: columns, rows: rows, values: values)
     }()
 }
 
@@ -230,7 +188,7 @@ private struct HealthPage: View {
                               detail: "Your matches are workouts in Apple Health. MatchTracker needs to see them to show them.")
             VStack(alignment: .leading, spacing: 20) {
                 OnboardingRow(symbol: "eye", title: "Reads your soccer",
-                              detail: "Workouts, routes, distance, energy and heart rate.")
+                              detail: "Workouts, routes, distance, energy, heart rate and cardio fitness.")
                 OnboardingRow(symbol: "square.and.arrow.down", title: "Saves your matches",
                               detail: "So the ones you record count in Health and Fitness.")
                 OnboardingRow(symbol: "switch.2", title: "Tap Turn On All",

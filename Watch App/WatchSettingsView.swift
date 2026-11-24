@@ -27,8 +27,6 @@ struct WatchSettingsView: View {
                 .onChange(of: sportID) { _, newValue in
                     WatchSettings.sportID = newValue
                 }
-            } header: {
-                sectionHeader("Sport", tint: WatchTheme.turf)
             }
 
             Section {
@@ -53,26 +51,19 @@ struct WatchSettingsView: View {
                 .onChange(of: doubleTapAction) { _, newValue in
                     WatchSettings.doubleTapAction = newValue
                 }
-            } header: {
-                sectionHeader("Double Tap", tint: WatchTheme.pace)
+            } footer: {
+                Text("On the score and controls pages. Not available while the screen is locked.")
             }
 
             if let teamCode = connectivity.teamCode, !teamCode.isEmpty {
                 Section {
                     settingLabel(teamCode, systemImage: "person.3.fill", tint: WatchTheme.bench)
-                } header: {
-                    sectionHeader("Team", tint: WatchTheme.bench)
+                } footer: {
+                    Text("Team")
                 }
             }
         }
         .navigationTitle("Settings")
-    }
-
-    /// Themed uppercase section header tinted to the section's semantic accent.
-    private func sectionHeader(_ title: String, tint: Color) -> some View {
-        Text(title)
-            .watchCaptionLabel()
-            .foregroundStyle(tint)
     }
 
     /// A row label whose glyph carries the section's tint while the text stays neutral.

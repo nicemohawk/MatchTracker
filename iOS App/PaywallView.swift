@@ -27,6 +27,7 @@ struct PaywallView: View {
                     }
                 }
         }
+        .tint(Theme.turf)
         .task {
             if entitlements.teamProduct == nil { await load() }
         }

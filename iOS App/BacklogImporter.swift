@@ -9,9 +9,8 @@
 // mistakenly recorded as outdoor runs/walks.
 //
 // Honest about the data: native `.soccer` workouts carry NO `HKWorkoutRoute` (Apple only saves
-// routes for run/walk/cycle/hike). Those route-less matches still import — the record is written
-// with `format = .indoor` so the analyzer's heart-rate-only effort path engages (it renders as an
-// "Indoor session"; a v1 compromise, since the batch UX can't place a field it can't see).
+// routes for run/walk/cycle/hike). Those route-less matches still import, and their effort comes
+// from heart rate.
 
 import Foundation
 import HealthKit
@@ -100,9 +99,8 @@ final class BacklogImporter {
             return
         }
         do {
-            let workouts = try await healthKit.fetchSoccerWorkouts()
             let records = matches.loadRecords()
-            let pending = workouts
+            let pending = try await matches.fetchListedWorkouts(records: records)
                 .filter { records[$0.uuid] == nil }
                 .sorted { $0.startDate < $1.startDate }
 
@@ -169,7 +167,7 @@ final class BacklogImporter {
 
         let pendingSoccer: [HKWorkout]
         do {
-            pendingSoccer = try await healthKit.fetchSoccerWorkouts()
+            pendingSoccer = try await matches.fetchListedWorkouts(records: records)
                 .filter { records[$0.uuid] == nil }
                 .sorted { $0.startDate < $1.startDate }
         } catch {
@@ -217,9 +215,10 @@ final class BacklogImporter {
                         break
                     }
                 }
-                // Route-less native soccer: no track to place onto. Persist as `.indoor` so the
-                // heart-rate-only workrate path engages instead of leaving the match un-analyzable.
-                let format: MatchTrackerKit.MatchFormat? = track.isEmpty ? .indoor : nil
+                // No route doesn't make it indoor: Apple saves none for outdoor soccer either, and
+                // the analysis scores any match without one from heart rate.
+                let isIndoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool == true
+                let format: MatchTrackerKit.MatchFormat? = isIndoor ? .indoor : nil
                 if track.isEmpty { routelessImported += 1 }
 
                 let record = MatchRecord(

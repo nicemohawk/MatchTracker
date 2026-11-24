@@ -6,163 +6,104 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// The live match is our "now playing": this is the content of the iOS 26 `tabViewBottomAccessory`,
-/// mirroring Apple Music's now-playing bar. It floats above the tab bar in a Liquid Glass capsule
-/// while expanded and merges inline with the bar when it minimizes on scroll. Tapping anywhere
-/// opens the full sideline dashboard, just as Apple Music's mini-player expands to the full player.
-///
-/// Content adapts to `\.tabViewBottomAccessoryPlacement`:
-///   - `.expanded`: pulsing live dot, "LIVE", ticking clock, hero score, on-pitch/bench pill, chevron.
-///   - `.inline` (merged into the minimized bar): just dot + score + a compact clock.
+/// The live match as the iOS 26 `tabViewBottomAccessory`: the "now playing" of a match. A plain
+/// button — whoever owns the binding presents the sheet, because this view is rebuilt with every
+/// update and anything it presented would go with it.
 @available(iOS 26.0, *)
 struct LiveMatchAccessory: View {
+    @Binding var isPresented: Bool
     @Environment(LiveMatchStore.self) private var liveMatches
-    @EnvironmentObject private var fields: FieldsModel
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
-    @State private var showingDashboard = false
 
     var body: some View {
-        Button {
-            Haptics.selection()
-            showingDashboard = true
-        } label: {
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // Keep the whole capsule tappable, including the gaps between elements.
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        // Legible on the Liquid Glass material: lean on the score's own weight rather than a heavy
-        // opaque background that would fight the glass.
-        .sheet(isPresented: $showingDashboard) {
-            NavigationStack {
-                LiveMatchView(store: liveMatches, projector: liveProjector)
+        if let state = liveMatches.state {
+            Button {
+                isPresented = true
+            } label: {
+                content(state)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .sensoryFeedback(.selection, trigger: isPresented)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Live match. \(state.spokenScore). \(state.status).")
+            .accessibilityHint("Opens the live match")
+            .accessibilityAddTraits(.isButton)
         }
     }
 
-    // MARK: - Placement-adaptive content
-
-    @ViewBuilder private var content: some View {
+    @ViewBuilder private func content(_ state: LiveMatchState) -> some View {
         if placement == .inline {
-            inlineContent
-        } else {
-            expandedContent
-        }
-    }
-
-    /// Full capsule content shown while the accessory floats above the tab bar.
-    private var expandedContent: some View {
-        HStack(spacing: 12) {
-            LivePulseDot(diameter: 10)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("LIVE")
-                    .captionLabel()
-                    .foregroundStyle(Theme.heart)
-                if let update = liveMatches.latest {
-                    clock(update)
-                        .font(.system(.caption, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                LiveDot(diameter: 8)
+                if let score = state.score {
+                    scoreText(score, font: .headline)
                 }
-            }
-            Spacer(minLength: 8)
-            if let update = liveMatches.latest {
-                distanceLabel(update)
-                lastEventGlyph
-                Text(score(update))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: score(update))
-                    .foregroundStyle(.primary)
-            }
-            Image(systemName: "chevron.up")
-                .font(.footnote.weight(.bold))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-
-    /// Compact content shown once the bar minimizes and the accessory merges inline.
-    private var inlineContent: some View {
-        HStack(spacing: 8) {
-            LivePulseDot(diameter: 8)
-            if let update = liveMatches.latest {
-                Text(score(update))
-                    .font(.system(.subheadline, design: .rounded).weight(.bold))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: score(update))
-                    .foregroundStyle(.primary)
-                clock(update)
-                    .font(.system(.caption, design: .rounded).monospacedDigit())
+                LiveClock(store: liveMatches)
+                    .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 12)
+        } else {
+            HStack(spacing: 10) {
+                LiveDot(diameter: 10)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Live")
+                        .font(.subheadline.weight(.semibold))
+                    Text(state.status)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                LiveClock(store: liveMatches)
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if let score = state.score {
+                    scoreText(score, font: .title2)
+                }
+            }
+            .lineLimit(1)
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 12)
     }
 
-    // MARK: - Pieces
-
-    /// Current scoreline, en dash between goals (nil goals read as 0), matching the app style.
-    private func score(_ update: LiveMatchUpdate) -> String {
-        "\(update.usGoals ?? 0)–\(update.themGoals ?? 0)"
-    }
-
-    /// Elapsed clock, extrapolated from `lastReceivedAt` so it ticks smoothly between updates —
-    /// the same drift trick `LiveMatchView` uses.
-    private func clock(_ update: LiveMatchUpdate) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            let drift = liveMatches.isLive
-                ? timeline.date.timeIntervalSince(liveMatches.lastReceivedAt ?? timeline.date)
-                : 0
-            Text(MatchTrackerFormat.hoursMinutesSeconds(update.elapsed + max(0, drift)))
-        }
-    }
-
-    /// Compact distance readout (km) in the pace tint.
-    private func distanceLabel(_ update: LiveMatchUpdate) -> some View {
-        Text(String(format: "%.1f km", update.distanceMeters / 1000))
-            .font(.system(.caption, design: .rounded).weight(.semibold))
+    private func scoreText(_ score: String, font: Font) -> some View {
+        Text(score)
+            .font(font.bold())
+            .fontDesign(.rounded)
             .monospacedDigit()
-            .foregroundStyle(Theme.pace)
-    }
-
-    /// Glyph for the most recent event, tinted by its kind — a glanceable "what just happened".
-    @ViewBuilder private var lastEventGlyph: some View {
-        if let kind = liveMatches.events.last?.kind {
-            Image(systemName: kind.systemImage)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(kind.tint)
-                .transition(.scale.combined(with: .opacity))
-        }
-    }
-
-    /// Field projector for the live position dot, resolved from streamed points — the same
-    /// resolution `MatchesView` uses (duplicated here rather than restructuring that view).
-    private var liveProjector: FieldProjector? {
-        let coordinates = liveMatches.recentPoints.suffix(30).map(\.coordinate)
-        guard !coordinates.isEmpty,
-              let field = fields.store.bestMatch(for: Array(coordinates)) else { return nil }
-        return FieldProjector(rectangle: field.rectangle)
+            .contentTransition(.numericText())
+            .animation(.snappy, value: score)
     }
 }
 
-/// A softly pulsing coral dot — the "recording"/live indicator, echoing Apple Music's animated
-/// now-playing glyph. Shared by the accessory and the full `LiveMatchView` header.
-struct LivePulseDot: View {
+/// The recording light. Breathes unless motion is reduced.
+struct LiveDot: View {
     var diameter: CGFloat = 10
-    @State private var pulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Circle()
-            .fill(Theme.heart)
-            .frame(width: diameter, height: diameter)
-            .glow(Theme.heart, radius: 6)
-            .scaleEffect(pulsing ? 1.0 : 0.7)
-            .opacity(pulsing ? 1.0 : 0.55)
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
-            .onAppear { pulsing = true }
+        Image(systemName: "circle.fill")
+            .font(.system(size: diameter))
+            .foregroundStyle(Theme.loss)
+            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The match clock in the app: ticks on from the last update while updates are arriving.
+struct LiveClock: View {
+    let store: LiveMatchStore
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let state = store.state {
+                Text(MatchTrackerFormat.hoursMinutesSeconds(
+                    store.isLive && state.isClockRunning
+                        ? max(state.elapsed, context.date.timeIntervalSince(state.clockStart))
+                        : state.elapsed))
+            }
+        }
     }
 }

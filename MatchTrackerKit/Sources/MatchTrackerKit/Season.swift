@@ -31,6 +31,10 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     public var sprintCount: Int?
     public var averageHeartRate: Double?
     public var hasRoute: Bool
+    /// Where the match was played, as a portrait `PortraitHeat` thumbnail. Nil without a route.
+    public var heat: [Float]?
+    /// Whether the top of `heat` is known to be the attacking end.
+    public var heatIsDirected: Bool?
 
     public init(id: UUID, startDate: Date, endDate: Date, format: MatchFormat) {
         version = Self.currentVersion
@@ -111,6 +115,32 @@ public struct SeasonSummary: Equatable, Sendable {
                   let previous = earlier.compactMap({ best.value(in: $0) }).max() else { return false }
             return value > previous
         }
+    }
+
+    /// Where these matches were played, together.
+    public var heat: [Float]? { PortraitHeat.average(matches.compactMap(\.heat)) }
+
+    /// Mean effort over the `days` up to a date.
+    public func averageEffort(days: Int, asOf date: Date, excluding id: UUID? = nil) -> Double? {
+        let efforts = played(days: days, asOf: date).filter { $0.id != id }.compactMap(\.effort)
+        return efforts.isEmpty ? nil : efforts.reduce(0, +) / Double(efforts.count)
+    }
+
+    /// The last week's load against the usual week's: effort times minutes, summed over 7 days,
+    /// over the weekly mean of the last 28. Nil until there are four weeks and four matches to
+    /// call usual; a ratio made of less says more about the gaps than about the player.
+    public func loadRatio(asOf date: Date) -> Double? {
+        guard let first = matches.first, date.timeIntervalSince(first.startDate) >= 28 * 86_400 else { return nil }
+        func load(_ digests: [MatchDigest]) -> Double {
+            digests.reduce(0) { $0 + ($1.effort ?? 0) * $1.secondsOnPitch / 60 }
+        }
+        let month = played(days: 28, asOf: date).filter { $0.effort != nil }
+        guard month.count >= 4, load(month) > 0 else { return nil }
+        return load(played(days: 7, asOf: date)) / (load(month) / 4)
+    }
+
+    private func played(days: Int, asOf date: Date) -> [MatchDigest] {
+        matches.filter { $0.startDate <= date && date.timeIntervalSince($0.startDate) < Double(days) * 86_400 }
     }
 
     /// Seasons as most leagues run them: spring is January–June, fall July–December.

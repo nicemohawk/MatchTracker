@@ -16,41 +16,33 @@ import MapKit
 import CoreLocation
 import MatchTrackerKit
 
-/// Adjust a saved field's four corners and persist the correction. Also presented from a match.
-struct FieldBoundsEditor: View {
+/// Adjust a saved field's four corners and persist the correction. Present it on its own, full
+/// screen or in a sheet; it brings its navigation bar with it.
+struct CornerEditorView: View {
     let field: FieldModel
     /// The match's GPS route, when opened from a match: the evidence to line the corners up with.
     var route: [CLLocationCoordinate2D] = []
-    /// Set when the presenter doesn't supply its own Cancel button.
-    var showsCancel = false
     /// Called after a successful save (the caller dismisses / reprojects).
     var onSaved: () -> Void
 
     @EnvironmentObject private var fields: FieldsModel
     @Environment(\.dismiss) private var dismiss
 
-    init(field: FieldModel, route: [CLLocationCoordinate2D] = [], showsCancel: Bool = false,
-         onSaved: @escaping () -> Void) {
-        self.field = field
-        self.route = route
-        self.showsCancel = showsCancel
-        self.onSaved = onSaved
-    }
-
     var body: some View {
-        FieldOutlineEditor(title: "Adjust Outline",
-                           initialCorners: field.rectangle.corners.map(\.clCoordinate),
-                           initialRegion: field.rectangle.mapRegion,
-                           route: route,
-                           showsCancel: showsCancel) { corners, rectangle in
-            var updated = field
-            updated.rectangle = rectangle
-            updated.outline = corners.map(Coordinate2D.init)
-            updated.source = .trained
-            updated.observationCount += 1
-            fields.save(updated)
-            dismiss()
-            onSaved()
+        NavigationStack {
+            FieldOutlineEditor(title: "Adjust Outline",
+                               initialCorners: field.rectangle.corners.map(\.clCoordinate),
+                               initialRegion: field.rectangle.mapRegion,
+                               route: route) { corners, rectangle in
+                var updated = field
+                updated.rectangle = rectangle
+                updated.outline = corners.map(Coordinate2D.init)
+                updated.source = .trained
+                updated.observationCount += 1
+                fields.save(updated)
+                dismiss()
+                onSaved()
+            }
         }
     }
 }
@@ -134,7 +126,6 @@ struct FieldOutlineEditor: View {
     let title: String
     let initialCorners: [CLLocationCoordinate2D]
     var route: [CLLocationCoordinate2D] = []
-    var showsCancel = false
     let onSave: ([CLLocationCoordinate2D], OrientedRectangle) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -160,12 +151,10 @@ struct FieldOutlineEditor: View {
          initialCorners: [CLLocationCoordinate2D] = [],
          initialRegion: MKCoordinateRegion? = nil,
          route: [CLLocationCoordinate2D] = [],
-         showsCancel: Bool = false,
          onSave: @escaping ([CLLocationCoordinate2D], OrientedRectangle) -> Void) {
         self.title = title
         self.initialCorners = initialCorners
         self.route = route
-        self.showsCancel = showsCancel
         self.onSave = onSave
         _corners = State(initialValue: initialCorners)
         _cameraPosition = State(initialValue: initialRegion.map { .region($0) } ?? .automatic)
@@ -212,16 +201,14 @@ struct FieldOutlineEditor: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if showsCancel {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    if undoStack.isEmpty { dismiss() } else { confirmingDiscard = true }
-                }
-                .tint(.primary)
-                .confirmationDialog("Discard your changes?", isPresented: $confirmingDiscard,
-                                    titleVisibility: .visible) {
-                    Button("Discard Changes", role: .destructive) { dismiss() }
-                }
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Cancel") {
+                if undoStack.isEmpty { dismiss() } else { confirmingDiscard = true }
+            }
+            .tint(.primary)
+            .confirmationDialog("Discard your changes?", isPresented: $confirmingDiscard,
+                                titleVisibility: .visible) {
+                Button("Discard Changes", role: .destructive) { dismiss() }
             }
         }
         ToolbarItem(placement: .confirmationAction) {

@@ -1,7 +1,18 @@
 import Foundation
 import CoreGraphics
 
-// MARK: - Speed helpers
+// MARK: - Definitions
+//
+// Every number the app shows has one definition, and this is where they live:
+//
+// - **Distance**: the HealthKit workout's distance when there is one (cut to the trim), else the
+//   route distance. Same value in lists, details, digests and uploads.
+// - **Route distance**: reported GPS speed integrated over time (`trackStepDistances`). Adding up
+//   the gaps between fixes instead counts their jitter as running; on a wrist at 1 Hz that
+//   overstates a match by half.
+// - **Run**: at least two seconds at running speed (`SpeedThresholds.running`).
+// - **Sprint**: a run whose sustained top speed reaches `SpeedThresholds.sprinting`.
+// - **Top speed**: the best speed held for about a second (`sustainedTopSpeed`), on the pitch.
 
 /// Per-point speed in m/s: the reported point speed when valid, otherwise a GPS-derived
 /// point-to-point speed (distance / elapsed time).
@@ -23,6 +34,57 @@ func rawPointSpeeds(_ track: [TrackPoint]) -> [Double] {
     return speeds
 }
 
+/// Meters covered arriving at each point (0 for the first), from a time-ordered track.
+func trackStepDistances(_ track: [TrackPoint]) -> [Double] {
+    var steps = [Double](repeating: 0, count: track.count)
+    for index in track.indices.dropFirst() {
+        let dt = track[index].timestamp.timeIntervalSince(track[index - 1].timestamp)
+        guard dt > 0 else { continue }
+        let speed = track[index].speedMetersPerSecond
+        let straight = haversineMeters(track[index - 1].coordinate, track[index].coordinate)
+        // Faster than anyone runs: a jump in the fixes, or a car.
+        guard (speed >= 0 && dt <= 5 ? speed : straight / dt) <= SpeedThresholds.plausibleMaximum else { continue }
+        steps[index] = speed >= 0 && dt <= 5 ? speed * dt : straight
+    }
+    return steps
+}
+
+/// Route distance of a track (meters). See the definitions above.
+public func routeDistanceMeters(_ track: [TrackPoint]) -> Double {
+    trackStepDistances(track.sorted { $0.timestamp < $1.timestamp }).reduce(0, +)
+}
+
+/// The best speed held across at least two consecutive samples spanning about a second, or nil
+/// when nothing was. One sample is GPS noise as often as it is running. Samples faster than
+/// `SpeedThresholds.plausibleMaximum` break the window rather than being clamped into it.
+func sustainedTopSpeed(speeds: [Double], timestamps: [Date], in range: Range<Int>,
+                       where isCounted: (Int) -> Bool = { _ in true }) -> Double? {
+    var best: Double?
+    for start in range {
+        var slowest = Double.infinity
+        for index in start..<range.upperBound {
+            guard speeds[index] >= 0, speeds[index] <= SpeedThresholds.plausibleMaximum, isCounted(index),
+                  index == start || timestamps[index].timeIntervalSince(timestamps[index - 1]) <= 2.5
+            else { break }
+            slowest = min(slowest, speeds[index])
+            // Fixes arrive a few milliseconds either side of the second.
+            if timestamps[index].timeIntervalSince(timestamps[start]) >= 0.8 {
+                best = max(best ?? 0, slowest)
+                break
+            }
+        }
+    }
+    return best
+}
+
+/// Speeds fit to set a peak: reported ones. Derived speeds only count on a track that never
+/// reported any, where they are all there is.
+func peakSpeeds(_ track: [TrackPoint]) -> [Double] {
+    track.contains { $0.speedMetersPerSecond >= 0 }
+        ? track.map(\.speedMetersPerSecond)
+        : rawPointSpeeds(track)
+}
+
 /// `rawPointSpeeds` smoothed with a 3-point moving average (endpoints left untouched).
 func smoothedPointSpeeds(_ track: [TrackPoint]) -> [Double] {
     let raw = rawPointSpeeds(track)
@@ -41,13 +103,16 @@ func isWithin(_ date: Date, intervals: [DateInterval]) -> Bool {
 
 // MARK: - Analytics
 
-/// Canonical speed thresholds (m/s), shared by run detection and workrate speed-zone bucketing
-/// so the two never drift apart. Each value is the boundary *entering* the next-faster zone.
+/// Canonical speed thresholds (m/s), shared by run detection, load metrics, the live view and
+/// speed-zone bucketing so they never drift apart. Each value is the boundary *entering* the
+/// next-faster zone. They don't scale with the pitch: a sprint is a sprint on any field.
 public enum SpeedThresholds {
     public static let walking = 0.5     // standing → walking
     public static let jogging = 2.0     // walking → jogging
     public static let running = 4.0     // jogging → running
     public static let sprinting = 5.5   // running → sprinting
+    /// Faster than this is a GPS error or a car. Elite sprinters pass it; amateur players don't.
+    public static let plausibleMaximum = 9.5
 }
 
 public struct HeatmapGrid: Codable, Sendable {
@@ -109,6 +174,7 @@ public struct HeatmapGrid: Codable, Sendable {
     }
 }
 
+/// Jogs are no longer detected as runs; the case stays for callers that label segments.
 public enum RunIntensity: String, Codable, CaseIterable, Sendable { case jog, run, sprint }
 
 public struct RunSegment: Codable, Identifiable, Hashable, Sendable {
@@ -131,117 +197,84 @@ public struct RunSegment: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+public extension Array where Element == RunSegment {
+    var sprintCount: Int { filter { $0.intensity == .sprint }.count }
+    /// Sprints are runs too.
+    var runCount: Int { filter { $0.intensity != .jog }.count }
+}
+
 public struct RunDetectorConfiguration: Sendable {
-    public var jogThreshold: Double      // m/s, default 2.0
-    public var runThreshold: Double      // default 4.0
+    public var runThreshold: Double      // m/s, default 4.0
     public var sprintThreshold: Double   // default 5.5
     public var minimumDuration: TimeInterval // default 2.0
     public var mergeGap: TimeInterval    // default 1.5 s below-threshold gap merged
 
     public init() {
-        self.jogThreshold = SpeedThresholds.jogging
         self.runThreshold = SpeedThresholds.running
         self.sprintThreshold = SpeedThresholds.sprinting
         self.minimumDuration = 2.0
         self.mergeGap = 1.5
-    }
-
-    /// Speed thresholds scaled for the match context: on a shorter field the same effort tops out
-    /// at a lower speed, so each threshold multiplies by `context.pitchScale`. Sensible floors keep
-    /// a scaled sprint from collapsing into a brisk jog (jog ≥ 1.6, run ≥ 2.8, sprint ≥ 4.0 m/s),
-    /// so a hard burst on a small turf field still registers as a sprint even below 5.5 m/s.
-    public static func scaled(for context: MatchContext) -> RunDetectorConfiguration {
-        var configuration = RunDetectorConfiguration()
-        let scale = context.pitchScale
-        configuration.jogThreshold = max(configuration.jogThreshold * scale, 1.6)
-        configuration.runThreshold = max(configuration.runThreshold * scale, 2.8)
-        configuration.sprintThreshold = max(configuration.sprintThreshold * scale, 4.0)
-        return configuration
     }
 }
 
 public enum RunDetector {
     /// Speed-threshold segmentation with hysteresis + gap merging. Uses GPS-derived speed
     /// (point-to-point) when speedMetersPerSecond invalid.
-    public static func detectRuns(in track: [TrackPoint], configuration: RunDetectorConfiguration) -> [RunSegment] {
+    public static func detectRuns(in track: [TrackPoint],
+                                  configuration: RunDetectorConfiguration = .init()) -> [RunSegment] {
         guard track.count >= 2 else { return [] }
         let ordered = track.sorted { $0.timestamp < $1.timestamp }
         let speeds = smoothedPointSpeeds(ordered)
+        let peaks = peakSpeeds(ordered)
+        let steps = trackStepDistances(ordered)
+        let timestamps = ordered.map(\.timestamp)
 
-        let startThreshold = configuration.jogThreshold
-        let endThreshold = configuration.jogThreshold * 0.8
-
-        // Hysteresis segmentation: enter a run at the jog threshold, leave once speed drops
-        // below 80% of it. Segments are inclusive index ranges into `ordered`.
+        // Hysteresis: in at running speed, out below 80% of it. Inclusive index ranges.
+        let endThreshold = configuration.runThreshold * 0.8
         var rawSegments: [(start: Int, end: Int)] = []
-        var inRun = false
-        var segmentStart = 0
+        var segmentStart: Int?
         for index in speeds.indices {
-            if inRun {
+            if let start = segmentStart {
                 if speeds[index] < endThreshold {
-                    rawSegments.append((segmentStart, index - 1))
-                    inRun = false
+                    rawSegments.append((start, index - 1))
+                    segmentStart = nil
                 }
-            } else if speeds[index] >= startThreshold {
-                inRun = true
+            } else if speeds[index] >= configuration.runThreshold {
                 segmentStart = index
             }
         }
-        if inRun {
-            rawSegments.append((segmentStart, speeds.count - 1))
+        if let start = segmentStart {
+            rawSegments.append((start, speeds.count - 1))
         }
 
         // Merge segments separated by a below-threshold gap shorter than mergeGap.
         var merged: [(start: Int, end: Int)] = []
         for segment in rawSegments {
-            if let last = merged.last {
-                let gap = ordered[segment.start].timestamp.timeIntervalSince(ordered[last.end].timestamp)
-                if gap < configuration.mergeGap {
-                    merged[merged.count - 1] = (last.start, segment.end)
-                    continue
-                }
+            if let last = merged.last,
+               timestamps[segment.start].timeIntervalSince(timestamps[last.end]) < configuration.mergeGap {
+                merged[merged.count - 1] = (last.start, segment.end)
+            } else {
+                merged.append(segment)
             }
-            merged.append(segment)
         }
 
         // Build the run segments, dropping anything shorter than the minimum duration.
-        var runs: [RunSegment] = []
-        for segment in merged {
-            let startDate = ordered[segment.start].timestamp
-            let endDate = ordered[segment.end].timestamp
-            let duration = endDate.timeIntervalSince(startDate)
-            guard duration >= configuration.minimumDuration else { continue }
-
-            var distance = 0.0
-            var peakSpeed = 0.0
-            var speedSum = 0.0
-            for index in segment.start...segment.end {
-                peakSpeed = max(peakSpeed, speeds[index])
-                speedSum += speeds[index]
-                if index > segment.start {
-                    distance += haversineMeters(ordered[index - 1].coordinate, ordered[index].coordinate)
-                }
-            }
-            let averageSpeed = speedSum / Double(segment.end - segment.start + 1)
-            let intensity: RunIntensity
-            if peakSpeed >= configuration.sprintThreshold {
-                intensity = .sprint
-            } else if peakSpeed >= configuration.runThreshold {
-                intensity = .run
-            } else {
-                intensity = .jog
-            }
-
-            runs.append(RunSegment(
-                interval: DateInterval(start: startDate, end: endDate),
-                distanceMeters: distance,
+        return merged.compactMap { segment -> RunSegment? in
+            let interval = DateInterval(start: timestamps[segment.start], end: timestamps[segment.end])
+            guard interval.duration >= configuration.minimumDuration,
+                  // Nothing held for a second below the plausible maximum: not a person running.
+                  let peakSpeed = sustainedTopSpeed(speeds: peaks, timestamps: timestamps,
+                                                    in: segment.start..<(segment.end + 1)) else { return nil }
+            let range = segment.start...segment.end
+            return RunSegment(
+                interval: interval,
+                distanceMeters: range.dropFirst().reduce(0) { $0 + steps[$1] },
                 peakSpeed: peakSpeed,
-                averageSpeed: averageSpeed,
-                intensity: intensity,
+                averageSpeed: range.reduce(0) { $0 + speeds[$1] } / Double(range.count),
+                intensity: peakSpeed >= configuration.sprintThreshold ? .sprint : .run,
                 pointRange: segment.start..<(segment.end + 1)
-            ))
+            )
         }
-        return runs
     }
 }
 
@@ -323,29 +356,29 @@ enum WorkrateCalibration {
     typealias Anchor = (x: Double, score: Double)
 
     /// distanceRate — meters covered per on-pitch minute → 0–100. Full-pitch reference.
-    ///   30 →  5  (barely moving: mostly stood still — clamps here, no gifted floor)
-    ///   50 → 20  (casual: lots of standing, the occasional stroll)
-    ///   70 → 45  (average amateur floor)
-    ///   90 → 65  (strong amateur, covers real ground)
-    ///  110 → 80  (pro-like full-pitch distance rate)
-    ///  130 → 92  (elite ceiling; saturates above)
-    static let distanceRate: [Anchor] = [(30, 5), (50, 20), (70, 45), (90, 65), (110, 80), (130, 92)]
+    ///   20 →  5  (barely moving: mostly stood still — clamps here, no gifted floor)
+    ///   35 → 20  (casual: lots of standing, the occasional stroll)
+    ///   47 → 45  (average amateur floor)
+    ///   60 → 65  (strong amateur, covers real ground)
+    ///   75 → 80  (as much as a semi-professional)
+    ///  100 → 92  (professional; saturates above)
+    static let distanceRate: [Anchor] = [(20, 5), (35, 20), (47, 45), (60, 65), (75, 80), (100, 92)]
 
-    /// sprintRate — sprints per 10 on-pitch minutes → 0–100.
-    ///  0.0 →  3  (no bursts at all — clamps here)
-    ///  0.5 → 30  (casual: an odd chase)
-    ///  1.5 → 55  (average amateur)
-    ///  3.0 → 75  (strong amateur, repeated bursts)
-    ///  5.0 → 90  (pro-like sprint density; saturates above)
-    static let sprintRate: [Anchor] = [(0, 3), (0.5, 30), (1.5, 55), (3, 75), (5, 90)]
+    /// sprintRate — sprints per 10 on-pitch minutes → 0–100. Most amateur matches have a handful.
+    ///  0.0 →  3  (none at all — clamps here)
+    ///  0.1 → 30  (one in a match)
+    ///  0.4 → 55  (average amateur)
+    ///  1.2 → 75  (strong amateur, repeated bursts)
+    ///  3.0 → 90  (pro-like sprint density; saturates above)
+    static let sprintRate: [Anchor] = [(0, 3), (0.1, 30), (0.4, 55), (1.2, 75), (3, 90)]
 
     /// highIntensityShare — fraction of on-pitch time in running+sprinting zones → 0–100.
     ///  0.00 →  3  (never got out of a walk — clamps here)
-    ///  0.05 → 30  (casual)
-    ///  0.10 → 55  (average amateur)
-    ///  0.18 → 75  (strong amateur)
-    ///  0.28 → 90  (pro-like; saturates above)
-    static let highIntensityShare: [Anchor] = [(0, 3), (0.05, 30), (0.10, 55), (0.18, 75), (0.28, 90)]
+    ///  0.01 → 30  (casual)
+    ///  0.025 → 55 (average amateur)
+    ///  0.05 → 75  (strong amateur)
+    ///  0.10 → 90  (professional; saturates above)
+    static let highIntensityShare: [Anchor] = [(0, 3), (0.01, 30), (0.025, 55), (0.05, 75), (0.10, 90)]
 
     /// hrEffort — time-weighted mean %HRR on pitch → 0–100. Physiological, so it is NOT format-scaled.
     ///  0.35 →  8  (near-resting: coasting, not exerting — clamps here)
@@ -380,7 +413,7 @@ enum WorkrateCalibration {
 }
 
 public enum WorkrateAnalyzer {
-    /// Reference distance rate (m/min) anchoring the full-pitch distance curve (its 110→80 anchor).
+    /// Reference distance rate (m/min) anchoring the full-pitch distance curve.
     private static let matchDistanceRateReference = 110.0
     /// Reference distance rate (m/min) for a small-sided pitch, before pitch-scale adjustment. The
     /// ratio `smallSided·pitchScale / match` scales the distance curve's x-anchors on short fields.
@@ -417,6 +450,7 @@ public enum WorkrateAnalyzer {
                                context: MatchContext) -> WorkrateReport {
         let ordered = track.sorted { $0.timestamp < $1.timestamp }
         let speeds = rawPointSpeeds(ordered)
+        let steps = trackStepDistances(ordered)
 
         var zones = SpeedZones()
         var totalDistance = 0.0
@@ -440,7 +474,7 @@ public enum WorkrateAnalyzer {
             else if speed < SpeedThresholds.sprinting { zones.running += dt }
             else { zones.sprinting += dt }
 
-            let stepDistance = haversineMeters(point.coordinate, next.coordinate)
+            let stepDistance = steps[index + 1]
             totalDistance += stepDistance
 
             let minuteIndex = Int(cumulativeOnPitch / 60)
@@ -450,8 +484,8 @@ public enum WorkrateAnalyzer {
         }
 
         let timeOnPitch = playingIntervals.reduce(0) { $0 + $1.duration }
-        let sprintCount = runs.filter { $0.intensity == .sprint }.count
-        let runCount = runs.filter { $0.intensity == .run || $0.intensity == .sprint }.count
+        let sprintCount = runs.sprintCount
+        let runCount = runs.runCount
 
         let scale = context.pitchScale
         let minutes = timeOnPitch / 60

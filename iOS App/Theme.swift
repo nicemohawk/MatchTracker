@@ -2,19 +2,12 @@
 // MatchTracker
 //
 // The app's visual identity, kept small on purpose: system backgrounds, system type, one green.
-// Dark is the identity; light is the same layout on system grouped backgrounds. Several helpers
-// here predate DESIGN.md and survive only so call sites compile. They are marked "Legacy".
+// Dark is the identity; light is the same layout on system grouped backgrounds. The chip and tile
+// helpers predate DESIGN.md and survive only for the sideline video screens.
 
 import SwiftUI
 
 enum Theme {
-    // MARK: - Layout
-
-    /// Horizontal content inset that MatchDetailView applies to section content via
-    /// `.padding(.horizontal)` (the SwiftUI system default). `View.fullBleed()` negates exactly
-    /// this so a hero element can span edge-to-edge without the container changing its padding.
-    static let detailContentInset: CGFloat = 16
-
     /// The comfortable reading measure content is capped to at regular width (iPad, wide split
     /// views). Around this width a single column of cards / body copy stays legible instead of
     /// stretching edge-to-edge across ~1000+pt. See `View.readableWidth(_:)`.
@@ -93,23 +86,6 @@ enum Theme {
     static let cardYellow = dynamic(dark: (1.0, 0.839, 0.039),
                                     light: (0.694, 0.541, 0.0))
 
-    // MARK: - Signature gradients
-
-    /// Legacy: flat green. Was a turf-to-teal gradient.
-    static var turfFlow: LinearGradient {
-        LinearGradient(colors: [turf, turf], startPoint: .top, endPoint: .bottom)
-    }
-
-    /// Legacy: no wash.
-    static var heroWash: LinearGradient {
-        LinearGradient(colors: [surface, surface], startPoint: .top, endPoint: .bottom)
-    }
-
-    /// Legacy: flat green sweep.
-    static var scoreRing: AngularGradient {
-        AngularGradient(colors: [turf, turf], center: .center)
-    }
-
     // MARK: - Pitch canvas colors
 
     /// Deep green-black turf top color (for a vertical gradient with `pitchTurfBottom`).
@@ -123,16 +99,6 @@ enum Theme {
         LinearGradient(colors: [pitchTurfTop, pitchTurfBottom],
                        startPoint: .top, endPoint: .bottom)
     }
-
-    // MARK: - Section headers
-
-    /// Legacy: no wash behind headers; scroll edges belong to the system.
-    static func headerGradient(_ tint: Color) -> LinearGradient {
-        LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom)
-    }
-
-    /// Legacy: sections no longer have their own hues.
-    static func sectionTint(_ section: String) -> Color { turf }
 }
 
 // MARK: - Haptics
@@ -204,15 +170,6 @@ private struct HeroNumeral: ViewModifier {
 // MARK: - View modifiers
 
 extension View {
-    /// Opt a section element OUT of the match-detail scroll container's horizontal content
-    /// padding so it draws edge-to-edge (full bleed). MatchDetailView keeps applying
-    /// `.padding(.horizontal)` (system default, 16pt) to section content; this cancels exactly
-    /// that inset for a single hero element while supporting content stays padded. Additive,
-    /// non-destructive — the container's padding is untouched.
-    func fullBleed() -> some View {
-        padding(.horizontal, -Theme.detailContentInset)
-    }
-
     /// Constrain content to a comfortable reading measure and center it in the wider canvas — the
     /// Apple Fitness / Strava iPad discipline of a readable column rather than a stretched phone
     /// layout. Applies ONLY at the regular horizontal size class (iPad, wide split views); a no-op
@@ -235,11 +192,6 @@ extension View {
         modifier(ThemedCard(cornerRadius: cornerRadius))
     }
 
-    /// A panel floating over imagery.
-    func glassCard(cornerRadius: CGFloat = 20) -> some View {
-        modifier(GlassCard(cornerRadius: cornerRadius))
-    }
-
     /// Legacy: a plain surface. The tint is unused.
     func metricTile(tint: Color, cornerRadius: CGFloat = 16) -> some View {
         modifier(MetricTile(tint: tint, cornerRadius: cornerRadius))
@@ -260,10 +212,6 @@ extension View {
         }
     }
 
-    /// Legacy: nothing glows.
-    func glow(_ color: Color, radius: CGFloat = 8) -> some View {
-        self
-    }
 }
 
 /// Caps content to a readable measure and centers it, but only at the regular horizontal size
@@ -314,14 +262,6 @@ struct ThemedCard: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    }
-}
-
-struct GlassCard: ViewModifier {
-    var cornerRadius: CGFloat = 20
-    func body(content: Content) -> some View {
-        content
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 

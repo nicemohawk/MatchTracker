@@ -6,22 +6,21 @@ import MapKit
 import CoreLocation
 import MatchTrackerKit
 
-/// The places you play: a satellite map with your fields listed beside it.
+/// The places you play: a satellite map with your fields listed over it on iPhone (a persistent
+/// sheet, as in Maps and Find My) and beside it on iPad.
 ///
-/// Three native containers, one model. Presented on iPhone (from Settings) it is a map under a
-/// persistent sheet, as in Maps and Find My. As a tab, where a sheet would cover the tab bar, the
-/// list sits under the map. At regular width it is a split view.
+/// Pushed onto the presenter's navigation stack. Nothing here nests a second stack in that one (a
+/// nested stack stops the push); on iPhone the sheet carries its own, and on iPad a field opens in a
+/// form sheet.
 struct FieldsView: View {
     @EnvironmentObject private var fields: FieldsModel
     @EnvironmentObject private var settings: SettingsStore
     @Environment(NearbyFieldSeeder.self) private var seeder
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.isPresented) private var isPresented
-    @Environment(\.dismiss) private var dismiss
 
     @State private var model = FieldsMapModel()
-    @State private var showingSheet = false
+    @State private var isOnScreen = false
     @State private var containerHeight: CGFloat = 800
     @ScaledMetric(relativeTo: .title3) private var peekHeight: CGFloat = 92
 
@@ -29,12 +28,21 @@ struct FieldsView: View {
     @AppStorage("lastNearbySeedAt") private var lastAutoSeed: Double = 0
     private let autoSeedInterval: TimeInterval = 30 * 60
 
+    private var usesSheet: Bool { horizontalSizeClass != .regular }
+
     var body: some View {
-        container
+        layout
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) { locateButton }
+            }
             .onAppear {
+                isOnScreen = true
                 model.frameInitially(fields.fields)
                 autoSeedIfNeeded()
             }
+            .onDisappear { isOnScreen = false }
             .onChange(of: model.selection) { _, selected in
                 guard let selected, let field = fields.field(id: selected) else { return }
                 model.path = [.field(selected)]
@@ -46,33 +54,9 @@ struct FieldsView: View {
     }
 
     @ViewBuilder
-    private var container: some View {
-        if horizontalSizeClass == .regular {
-            splitLayout
-        } else if isPresented {
-            sheetLayout
-        } else {
-            stackLayout
-        }
-    }
-
-    // MARK: Layouts
-
-    private var splitLayout: some View {
-        NavigationSplitView {
-            panel(showsClose: isPresented)
-                .navigationSplitViewColumnWidth(min: 340, ideal: 380)
-        } detail: {
-            map.ignoresSafeArea()
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .primaryAction) { locateButton } }
-        }
-        .navigationSplitViewStyle(.balanced)
-    }
-
-    private var sheetLayout: some View {
-        NavigationStack {
-            map
+    private var layout: some View {
+        if usesSheet {
+            mapUnderBars
                 // Frame and center fields in the part of the map the sheet leaves visible.
                 .safeAreaPadding(.bottom, model.detent == .height(peekHeight) ? peekHeight : containerHeight * 0.5)
                 .background {
@@ -82,42 +66,67 @@ struct FieldsView: View {
                         }
                     }
                 }
-                // Keeps the status bar readable over pale roofs; the map has no title bar to do it.
-                .overlay(alignment: .top) {
-                    LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 110)
-                        .ignoresSafeArea(edges: .top)
-                        .allowsHitTesting(false)
+                .toolbar(.hidden, for: .tabBar)
+                .sheet(isPresented: .init(get: { isOnScreen }, set: { _ in })) {
+                    NavigationStack(path: $model.path) {
+                        list
+                            .modifier(FieldsPanelChrome(model: model, onDetect: detect))
+                            .navigationTitle("Fields")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .navigationDestination(for: FieldsRoute.self) { destination($0) }
+                    }
+                    .tint(Theme.turf)
+                    .modifier(FieldsSheetDetents(model: model, peekHeight: peekHeight))
                 }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .primaryAction) { locateButton } }
-        }
-        // The map runs under the status bar; light text reads on imagery.
-        .preferredColorScheme(.dark)
-        .onAppear { showingSheet = true }
-        .sheet(isPresented: $showingSheet) {
-            panel(showsClose: true)
-                .modifier(FieldsSheetDetents(model: model, peekHeight: peekHeight))
-        }
-    }
-
-    private var stackLayout: some View {
-        NavigationStack(path: $model.path) {
-            VStack(spacing: 0) {
-                map.frame(maxHeight: .infinity)
-                list.frame(maxHeight: .infinity)
+        } else {
+            HStack(spacing: 0) {
+                list
+                    .frame(width: 380)
+                mapUnderBars
             }
-            .toolbar { ToolbarItem(placement: .topBarLeading) { locateButton } }
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .modifier(FieldsPanelChrome(model: model, showsClose: false, showsPicture: true,
-                                        onClose: {}, onDetect: detect))
+            .modifier(FieldsPanelChrome(model: model, onDetect: detect))
+            .navigationTitle("Fields")
+            .sheet(item: openRoute) { route in
+                NavigationStack {
+                    destination(route)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close", systemImage: "xmark") { model.path = [] }.tint(.primary)
+                            }
+                        }
+                }
+                .tint(Theme.turf)
+            }
         }
     }
 
-    private func panel(showsClose: Bool) -> some View {
-        NavigationStack(path: $model.path) {
-            list.modifier(FieldsPanelChrome(model: model, showsClose: showsClose, showsPicture: false,
-                                            onClose: close, onDetect: detect))
+    private var openRoute: Binding<FieldsRoute?> {
+        .init(get: { model.path.last }, set: { if $0 == nil { model.path = [] } })
+    }
+
+    /// Keeps the status bar and the back button readable over pale roofs.
+    private var mapUnderBars: some View {
+        map.overlay(alignment: .top) {
+            LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
+                .frame(height: 110)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private func destination(_ route: FieldsRoute) -> some View {
+        switch route {
+        case .field(let id):
+            FieldDetailView(fieldID: id) { model.path = [] }
+        case .detected(let candidate):
+            DetectedFieldView(candidate: candidate) { added in
+                model.dismissed.insert(candidate.id)
+                model.path = [.field(added.id)]
+            } onDismissed: {
+                model.dismissed.insert(candidate.id)
+                model.path = []
+            }
         }
     }
 
@@ -131,12 +140,6 @@ struct FieldsView: View {
         } onDetect: {
             detect()
         }
-    }
-
-    private func close() {
-        // The sheet goes first; dismissing under it would only dismiss the sheet.
-        showingSheet = false
-        dismiss()
     }
 
     // MARK: Map
@@ -248,9 +251,11 @@ struct DetectedField: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
-enum FieldsRoute: Hashable {
+enum FieldsRoute: Hashable, Identifiable {
     case field(UUID)
     case detected(DetectedField)
+
+    var id: Self { self }
 }
 
 enum FieldsNotice: Identifiable {
@@ -325,7 +330,7 @@ final class FieldsMapModel {
 
 // MARK: - Chrome shared by the three layouts
 
-/// The persistent sheet.
+/// Keeps the sheet up for as long as the map is.
 private struct FieldsSheetDetents: ViewModifier {
     @Bindable var model: FieldsMapModel
     let peekHeight: CGFloat
@@ -340,28 +345,17 @@ private struct FieldsSheetDetents: ViewModifier {
     }
 }
 
-/// Title, the one add menu, destinations and the alerts. Attached inside whichever container is
+/// The one add menu and the alerts. Attached inside whichever container is
 /// frontmost, so presentations never start from a view that is already covered.
 private struct FieldsPanelChrome: ViewModifier {
     @Bindable var model: FieldsMapModel
-    let showsClose: Bool
-    /// Beside the map, the map is the picture.
-    let showsPicture: Bool
-    let onClose: () -> Void
     let onDetect: () -> Void
 
     @Environment(\.openURL) private var openURL
 
     func body(content: Content) -> some View {
         content
-            .navigationTitle("Fields")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if showsClose {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close", systemImage: "xmark", action: onClose).tint(.primary)
-                    }
-                }
                 ToolbarItem(placement: .primaryAction) {
                     if model.isDetecting {
                         ProgressView().accessibilityLabel("Looking for fields")
@@ -371,20 +365,6 @@ private struct FieldsPanelChrome: ViewModifier {
                             Button("Detect in This View", systemImage: "viewfinder", action: onDetect)
                         }
                         .tint(.primary)
-                    }
-                }
-            }
-            .navigationDestination(for: FieldsRoute.self) { route in
-                switch route {
-                case .field(let id):
-                    FieldDetailView(fieldID: id, showsPicture: showsPicture) { model.path = [] }
-                case .detected(let candidate):
-                    DetectedFieldView(candidate: candidate, showsPicture: showsPicture) { added in
-                        model.dismissed.insert(candidate.id)
-                        model.path = [.field(added.id)]
-                    } onDismissed: {
-                        model.dismissed.insert(candidate.id)
-                        model.path = []
                     }
                 }
             }

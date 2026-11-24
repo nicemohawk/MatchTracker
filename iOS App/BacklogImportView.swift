@@ -40,6 +40,7 @@ struct BacklogImportView: View {
             }
             .bottomActionBar { bottomAction }
         }
+        .tint(Theme.turf)
         .task {
             await importer.scan()
             hasScanned = true

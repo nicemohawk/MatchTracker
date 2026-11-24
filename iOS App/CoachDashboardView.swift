@@ -1,814 +1,553 @@
-//
-//  CoachDashboardView.swift
-//  MatchTracker
-//
+// CoachDashboardView.swift
+// MatchTracker
 
 import SwiftUI
 import MatchTrackerKit
 
-/// Sideline coach view: every rostered player's live position and vitals, polled from the team
-/// live endpoint, plus this device's own stream. A segmented "Timeline" pane coalesces every
-/// teammate's tagged events into one unified, labelable feed. Optimized for iPad width via a
-/// split view; still usable stacked on iPhone. Entitlement-gated by callers.
+/// The coach's page: who's on right now, who has played how much, and what happened.
+/// A plain list on iPhone; on iPad the live pitch sits beside the players.
 struct CoachDashboardView: View {
     let teamCode: String
-    @EnvironmentObject private var uploads: UploadService
+
     @Environment(LiveMatchStore.self) private var liveMatches
+    @State private var coach: CoachModel
+    @State private var chosenPane: Pane?
 
-    @State private var players: [LivePlayerStatus] = []
-    @State private var selectedPlayerName: String?
-    @State private var errorMessage: String?
-    @State private var hasLoadedTeam = false
+    enum Pane: String, CaseIterable { case live = "Live", minutes = "Minutes", events = "Events" }
 
-    /// Which detail pane the coach is viewing. Pitch is the default.
-    @State private var pane: DetailPane = .pitch
-
-    // Timeline state
-    @State private var teamEvents: [TeamEvent] = []
-    @State private var filterPlayer: String?
-    @State private var filterGroup: EventKindGroup?
-    @State private var editingEventID: UUID?
-    @State private var labelDraft: String = ""
-    @State private var toast: String?
-    @State private var hasLoadedEvents = false
-    @State private var eventErrorMessage: String?
-
-    private enum DetailPane: String, CaseIterable, Identifiable {
-        case pitch = "Pitch"
-        case timeline = "Timeline"
-        var id: String { rawValue }
+    init(teamCode: String) {
+        self.teamCode = teamCode
+        _coach = State(initialValue: CoachModel(teamCode: teamCode))
     }
+
+    /// Opens on whatever there is to see: the match if one is on, otherwise the minutes.
+    private var pane: Pane { chosenPane ?? (coach.players.isEmpty ? .minutes : .live) }
 
     var body: some View {
-        NavigationSplitView {
-            rosterList
-                .navigationTitle("Live Team")
-        } detail: {
-            detailColumn
-        }
-        .task { await pollLoop() }
-        .task { await eventPollLoop() }
-    }
-
-    // MARK: Roster
-
-    private var rosterList: some View {
-        List(selection: $selectedPlayerName) {
-            if players.isEmpty {
-                if !hasLoadedTeam {
-                    ForEach(0..<4, id: \.self) { index in
-                        RosterSkeletonRow(width: 150 - CGFloat(index * 18))
-                            .listRowSeparator(.hidden)
-                    }
-                } else {
-                    ContentUnavailableView {
-                        Label("Waiting for Players", systemImage: "dot.radiowaves.left.and.right")
-                    } description: {
-                        Text(errorMessage ?? "Live positions appear when teammates start a match.")
-                    } actions: {
-                        if errorMessage != nil {
-                            Button("Retry") { Task { await refresh() } }
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                    .listRowSeparator(.hidden)
-                }
-            }
-            ForEach(players, id: \.playerName) { player in
-                rosterRow(player)
-                    .tag(player.playerName)
+        Group {
+            switch pane {
+            case .live: CoachLivePane(coach: coach)
+            case .minutes: CoachMinutesPane(coach: coach)
+            case .events: CoachEventsPane(coach: coach)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: players.map(\.playerName))
-    }
-
-    private func rosterRow(_ player: LivePlayerStatus) -> some View {
-        HStack(spacing: 12) {
-            PlayerAvatar(name: player.playerName, size: 38)
-                .overlay(alignment: .bottomTrailing) {
-                    Circle()
-                        .fill(statusTint(player))
-                        .frame(width: 11, height: 11)
-                        .overlay(Circle().strokeBorder(Theme.background, lineWidth: 2))
-                        .offset(x: 2, y: 2)
-                }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(player.playerName)
-                    .font(.system(.body, design: .rounded).weight(.semibold))
-                HStack(spacing: 12) {
-                    if let heartRate = player.heartRate {
-                        Label("\(Int(heartRate))", systemImage: "heart.fill")
-                            .foregroundStyle(Theme.heart)
-                    }
-                    Label(String(format: "%.1f km", player.distanceMeters / 1000),
-                          systemImage: "figure.run")
-                        .foregroundStyle(Theme.pace)
-                }
-                .font(.caption.weight(.medium))
-                .monospacedDigit()
-                .labelStyle(.titleAndIcon)
-            }
-        }
-        .opacity(player.stale ? 0.5 : 1)
-    }
-
-    private func statusTint(_ player: LivePlayerStatus) -> Color {
-        player.stale ? Theme.bench : (player.onPitch ? Theme.turf : Theme.bench)
-    }
-
-    // MARK: Detail column (segmented)
-
-    private var detailColumn: some View {
-        VStack(spacing: 12) {
-            Picker("View", selection: $pane) {
-                ForEach(DetailPane.allCases) { pane in
-                    Text(pane.rawValue).tag(pane)
-                }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("Show", selection: Binding(get: { pane }, set: { chosenPane = $0 })) {
+                ForEach(Pane.allCases, id: \.self) { Text($0.rawValue) }
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
-            .padding(.top, 8)
-
-            Group {
-                switch pane {
-                case .pitch: pitchDetail
-                case .timeline: timelineDetail
-                }
-            }
-            .id(pane)
-            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            .padding(.vertical, 8)
+            .readableWidth()
         }
-        .animation(.easeInOut(duration: 0.28), value: pane)
-        .onChange(of: pane) { Haptics.selection() }
-        .navigationTitle(teamCode)
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Coach")
         .navigationBarTitleDisplayMode(.inline)
-        .background(Theme.background.ignoresSafeArea())
-        .overlay(alignment: .bottom) { toastBanner }
+        .task { await coach.loadHistory() }
+        .task { await coach.follow(liveMatches) }
+    }
+}
+
+// MARK: - Live
+
+private struct CoachLivePane: View {
+    let coach: CoachModel
+
+    @EnvironmentObject private var settings: SettingsStore
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
-    // MARK: Pitch
-
-    private var pitchDetail: some View {
-        VStack(spacing: 16) {
-            // Center the empty board vertically so an offline/waiting coach sees a composed screen,
-            // not a pitch pinned to the top over a void.
-            if players.isEmpty { Spacer(minLength: 0) }
-
-            pitchCanvas
-                .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
-                .background(Theme.pitchTurfBottom, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-                )
-                // In the two-column split the roster's own empty state is hidden behind the sidebar
-                // toggle (iPad portrait), so the pitch must explain itself when there's no one on it.
-                .overlay { if players.isEmpty { pitchEmptyOverlay } }
-                .padding(.horizontal)
-
-            benchStrip
-
-            selectedTiles
-
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical)
-        // Keep the pitch + tiles a sensible measure in a wide split detail column, not stretched.
-        .readableWidth()
-    }
-
-    /// Waiting / offline messaging drawn directly on the empty turf. White-on-turf reads cleanly in
-    /// both app color schemes (the pitch fill is always dark), and mirrors the timeline's error line.
-    @ViewBuilder
-    private var pitchEmptyOverlay: some View {
-        if !hasLoadedTeam {
-            ProgressView()
-                .controlSize(.large)
-                .tint(.white)
-        } else {
-            VStack(spacing: 10) {
-                Image(systemName: errorMessage != nil ? "wifi.slash" : "dot.radiowaves.left.and.right")
-                    .font(.title)
-                    .foregroundStyle(.white.opacity(0.9))
-                Text(errorMessage != nil ? "Live feed unavailable" : "Waiting for players")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text(errorMessage != nil
-                     ? "Positions appear once the team feed reconnects."
-                     : "Live positions appear when teammates start a match.")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.75))
-                    .multilineTextAlignment(.center)
-                if errorMessage != nil {
-                    Button("Retry") { Task { await refresh() } }
-                        .font(.callout.weight(.semibold))
+    @ViewBuilder private var content: some View {
+        if coach.players.isEmpty {
+            switch coach.livePhase {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .failed(let message):
+                ContentUnavailableView {
+                    Label("Couldn't reach the live match", systemImage: "wifi.slash")
+                } description: {
+                    Text(message)
+                } actions: {
+                    Button("Try Again") { Task { await coach.refreshLive() } }
                         .buttonStyle(.borderedProminent)
-                        .tint(Theme.turf)
-                        .padding(.top, 2)
                 }
+            case .loaded:
+                ContentUnavailableView("Nobody's playing right now", systemImage: "figure.soccer",
+                                       description: Text("Players appear here when they start a match on Apple Watch."))
             }
-            .padding(24)
-            // A soft dark scrim so the white copy stays legible over the white pitch markings
-            // (the center circle runs right behind the message at most sizes).
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.black.opacity(0.45))
-            )
+        } else if width > 720 {
+            HStack(alignment: .top, spacing: 0) {
+                pitch
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                List { playerSections }
+                    .frame(width: 320)
+            }
+        } else {
+            List {
+                if coach.players.contains(where: \.hasPlace) {
+                    Section {
+                        pitch
+                            .frame(height: 400)
+                            .frame(maxWidth: .infinity)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
+                }
+                playerSections
+            }
+            .contentMargins(.top, 8, for: .scrollContent)
         }
     }
 
-    /// The live pitch, driven by a `TimelineView(.animation)` so on-pitch players emit a soft,
-    /// continuous pulse ring without per-view state.
-    private var pitchCanvas: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, size in
-                let rect = SoccerPitch.fittedRect(in: size, padding: 10)
-                SoccerPitch.fillTurf(&context, rect: rect)
-                var markings = context
-                SoccerPitch.draw(in: &markings, rect: rect)
-
-                let phase = timeline.date.timeIntervalSinceReferenceDate
-                let pulse = (sin(phase * 2.2) + 1) / 2   // 0…1
-
-                for player in players {
-                    guard let x = player.x, let y = player.y else { continue }
-                    let point = CGPoint(x: rect.minX + CGFloat(x) * rect.width,
-                                        y: rect.minY + CGFloat(y) * rect.height)
-                    let isSelected = player.playerName == selectedPlayerName
-                    let tint = player.stale ? Color.gray : RosterAvatar.tint(for: player.playerName)
-
-                    // Live pulse: an expanding, fading ring for players currently on the pitch.
-                    if player.onPitch && !player.stale {
-                        let ringRadius = 12 + CGFloat(pulse) * 10
-                        let ringRect = CGRect(x: point.x - ringRadius, y: point.y - ringRadius,
-                                              width: ringRadius * 2, height: ringRadius * 2)
-                        context.stroke(Path(ellipseIn: ringRect),
-                                       with: .color(tint.opacity((1 - pulse) * 0.55)),
-                                       lineWidth: 2)
-                    }
-
-                    let radius: CGFloat = isSelected ? 12 : 9
-                    let dotRect = CGRect(x: point.x - radius, y: point.y - radius,
-                                         width: radius * 2, height: radius * 2)
-                    context.drawLayer { layer in
-                        layer.addFilter(.shadow(color: .black.opacity(0.35), radius: 3, y: 1))
-                        layer.fill(Path(ellipseIn: dotRect), with: .color(tint))
-                    }
-                    context.stroke(Path(ellipseIn: dotRect),
-                                   with: .color(isSelected ? Theme.goal : .white.opacity(0.85)),
-                                   lineWidth: isSelected ? 2.5 : 1.25)
-
-                    let label = Text(RosterAvatar.initials(from: player.playerName))
-                        .font(.system(size: isSelected ? 10 : 8, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black)
-                    context.draw(context.resolve(label), at: point)
+    private var pitch: some View {
+        GeometryReader { geometry in
+            let rect = PortraitPitch.fittedRect(in: geometry.size)
+            ZStack {
+                PortraitPitch()
+                ForEach(coach.players.filter(\.hasPlace), id: \.playerName) { player in
+                    CoachMarker(player: player, isMe: settings.isMe(player.playerName))
+                        .position(PortraitPitch.point(x: player.x ?? 0, y: player.y ?? 0, in: rect))
                 }
             }
+            .animation(.smooth, value: coach.players.map { "\($0.x ?? 0),\($0.y ?? 0)" })
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenPitch)
     }
 
-    /// Players not currently on the pitch, as a horizontal strip of tappable avatars beneath it.
-    @ViewBuilder
-    private var benchStrip: some View {
-        let bench = players.filter { !$0.onPitch }
-        if !bench.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Bench").captionLabel().padding(.horizontal)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(bench, id: \.playerName) { player in
-                            Button {
-                                selectedPlayerName = player.playerName
-                                Haptics.selection()
-                            } label: {
-                                VStack(spacing: 4) {
-                                    PlayerAvatar(name: player.playerName, size: 40)
-                                        .overlay(
-                                            Circle().strokeBorder(
-                                                player.playerName == selectedPlayerName ? Theme.goal : .clear,
-                                                lineWidth: 2)
-                                        )
-                                    Text(RosterAvatar.initials(from: player.playerName))
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .opacity(player.stale ? 0.5 : 1)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-        }
+    private var spokenPitch: String {
+        let placed = coach.players.filter(\.hasPlace)
+        return "Live positions. " + placed.map { player in
+            "\(player.playerName), \(FormationShape.role(x: player.x ?? 0, y: player.y ?? 0).lowercased())"
+        }.joined(separator: ". ")
+    }
+
+    @ViewBuilder private var playerSections: some View {
+        let current = coach.players.filter { !$0.stale }
+        section("On the pitch", current.filter(\.onPitch))
+        section("On the bench", current.filter { !$0.onPitch })
+        section("Not heard from", coach.players.filter(\.stale))
     }
 
     @ViewBuilder
-    private var selectedTiles: some View {
-        if let player = players.first(where: { $0.playerName == selectedPlayerName }) {
-            HStack(spacing: 12) {
-                StatTile(title: "HR", value: player.heartRate.map { "\(Int($0))" } ?? "—",
-                         systemImage: "heart.fill", tint: Theme.heart)
-                StatTile(title: "Distance", value: String(format: "%.2f km", player.distanceMeters / 1000),
-                         systemImage: "figure.run", tint: Theme.pace)
-                StatTile(title: "Status", value: player.onPitch ? "On pitch" : "Bench",
-                         systemImage: "sportscourt", tint: player.onPitch ? Theme.turf : Theme.bench)
+    private func section(_ title: String, _ players: [LivePlayerStatus]) -> some View {
+        if !players.isEmpty {
+            Section("\(title) (\(players.count))") {
+                ForEach(players, id: \.playerName) { player in
+                    CoachLiveRow(player: player)
+                }
             }
-            .padding(.horizontal)
         }
     }
+}
 
-    // MARK: Timeline
+private extension LivePlayerStatus {
+    var hasPlace: Bool { x != nil && y != nil && onPitch }
+}
 
-    private var timelineDetail: some View {
-        VStack(spacing: 0) {
-            timelineHeader
+private struct CoachMarker: View {
+    let player: LivePlayerStatus
+    let isMe: Bool
 
-            let rows = timelineRows
-            if rows.isEmpty && !hasLoadedEvents {
-                if let eventErrorMessage {
-                    errorLine(eventErrorMessage) { Task { await refreshEvents() } }
-                } else {
-                    TimelineSkeleton()
-                }
-            } else if rows.isEmpty {
-                ContentUnavailableView(
-                    "No Events Yet",
-                    systemImage: "clock.arrow.circlepath",
-                    description: Text("Events from your team's matches appear here live.")
-                )
-                .frame(maxHeight: .infinity)
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(RosterAvatar.initials(from: player.playerName))
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(player.stale ? .white : .black)
+                .frame(width: 36, height: 36)
+                .background(player.stale ? Color.gray : isMe ? Theme.turf : .white, in: Circle())
+            Text(isMe ? "You" : RosterAvatar.shortName(player.playerName))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize()
+        }
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+    }
+}
+
+private struct CoachLiveRow: View {
+    let player: LivePlayerStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TeamPlayerName(name: player.playerName)
+            if player.stale {
+                Text("Last heard \(player.updatedAt, format: .relative(presentation: .named))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(rows) { row in
-                            TeamEventRow(
-                                row: row,
-                                isEditing: editingEventID == row.id,
-                                labelDraft: $labelDraft,
-                                onBeginLabel: { beginLabeling(row) },
-                                onSubmitLabel: { Task { await submitLabel(for: row) } }
-                            )
-                            .id(row.id)
-                            .transition(.asymmetric(
-                                insertion: .move(edge: .top).combined(with: .opacity),
-                                removal: .opacity
-                            ))
-                            Divider().overlay(Theme.surfaceStroke)
+                HStack(spacing: 16) {
+                    Text(UnitSystem.current.distance(player.distanceMeters).text)
+                        .accessibilityLabel(UnitSystem.current.distance(player.distanceMeters).spoken)
+                    if let heartRate = player.heartRate {
+                        HStack(spacing: 4) {
+                            Image(systemName: "heart.fill").foregroundStyle(Theme.heart)
+                            Text("\(Int(heartRate))")
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Heart rate \(Int(heartRate))")
+                    }
+                }
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Minutes
+
+private struct CoachMinutesPane: View {
+    let coach: CoachModel
+
+    @AppStorage("coachMinutesLeastFirst") private var isLeastFirst = true
+
+    var body: some View {
+        switch coach.historyPhase {
+        case .loading:
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .failed(let message):
+            ContentUnavailableView {
+                Label("Couldn't load minutes", systemImage: "wifi.slash")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try Again") { Task { await coach.loadHistory() } }
+                    .buttonStyle(.borderedProminent)
+            }
+        case .loaded where coach.matches.isEmpty:
+            ContentUnavailableView("No matches to count", systemImage: "clock",
+                                   description: Text("Minutes appear after players record a match on Apple Watch."))
+        case .loaded:
+            List {
+                Section {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline) {
+                            title
+                            Spacer()
+                            orderPicker
+                        }
+                        VStack(alignment: .leading) {
+                            title
+                            orderPicker.padding(.leading, -12)
                         }
                     }
-                    .padding(.horizontal)
-                    .animation(.spring(response: 0.42, dampingFraction: 0.82), value: rows.first?.id)
+                    ForEach(rows, id: \.name) { row in
+                        CoachMinutesRow(name: row.name, load: row.load)
+                    }
+                } footer: {
+                    Text("Counted from each player's watch, without half-time or time on the bench. A dash means nothing was recorded.")
+                }
+            }
+            .contentMargins(.top, 8, for: .scrollContent)
+            .readableFormWidth()
+            .refreshable { await coach.loadHistory() }
+        }
+    }
+
+    private var title: some View {
+        Text(coach.matches.count == 1 ? "Last match" : "Last \(min(5, coach.matches.count)) matches")
+            .font(.title2.bold())
+    }
+
+    private var orderPicker: some View {
+        Picker("Order", selection: $isLeastFirst) {
+            Text("Least first").tag(true)
+            Text("Most first").tag(false)
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var rows: [(name: String, load: RecentLoad)] {
+        coach.squad
+            .map { (name: $0, load: RecentLoad(player: $0, matches: coach.matches)) }
+            .sorted { lhs, rhs in
+                if lhs.load.minutes == rhs.load.minutes { return lhs.name < rhs.name }
+                return (lhs.load.minutes < rhs.load.minutes) == isLeastFirst
+            }
+    }
+}
+
+private struct CoachMinutesRow: View {
+    let name: String
+    let load: RecentLoad
+
+    @ScaledMetric private var barHeight: CGFloat = 32
+    @ScaledMetric private var barWidth: CGFloat = 8
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            VStack(alignment: .leading, spacing: 2) {
+                TeamPlayerName(name: name)
+                Text(load.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
+            HStack(spacing: 12) {
+                bars
+                Text(load.matchesPlayed == 0 ? "—" : "\(Int(load.minutes.rounded())) min")
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                    .frame(minWidth: 72, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name)
+        .accessibilityValue(spoken)
+    }
+
+    /// One bar per match, oldest first, filled as far as they played; a dash where nothing was recorded.
+    private var bars: some View {
+        HStack(alignment: .bottom, spacing: 4) {
+            ForEach(Array(load.shares.enumerated()), id: \.offset) { _, share in
+                if let share, share > 0 {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color(.systemFill))
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(Theme.turf).frame(height: max(3, barHeight * share))
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                        .frame(width: barWidth)
+                } else {
+                    Capsule().fill(.tertiary).frame(width: barWidth, height: 2)
                 }
             }
         }
-        // Keep the header + ticker a readable centered column in a wide split detail pane.
-        .readableWidth()
+        .frame(height: barHeight, alignment: .bottom)
     }
 
-    private var timelineHeader: some View {
-        HStack {
-            SectionHeaderBar(title: "Team Timeline", tint: Theme.goal,
-                             subtitle: filterSubtitle)
-            Spacer()
-            Menu {
-                Picker("Player", selection: $filterPlayer) {
-                    Text("All players").tag(String?.none)
-                    ForEach(rosterNames, id: \.self) { name in
-                        Text(name).tag(String?.some(name))
+    private var spoken: String {
+        guard load.matchesPlayed > 0 else { return load.summary }
+        let matches = load.perMatch.map { $0.map { "\(Int($0.rounded()))" } ?? "none" }.joined(separator: ", ")
+        return "\(load.summary). \(Int(load.minutes.rounded())) minutes in total. Match by match, oldest first: \(matches)"
+    }
+}
+
+// MARK: - Events
+
+private struct CoachEventsPane: View {
+    let coach: CoachModel
+
+    @State private var labeling: TeamEvent?
+    @State private var draft = ""
+    @State private var player: String?
+
+    var body: some View {
+        switch coach.historyPhase {
+        case .loading:
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .failed(let message):
+            ContentUnavailableView {
+                Label("Couldn't load events", systemImage: "wifi.slash")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try Again") { Task { await coach.loadHistory() } }
+                    .buttonStyle(.borderedProminent)
+            }
+        case .loaded where coach.keyEvents.isEmpty:
+            ContentUnavailableView("No events yet", systemImage: "flag",
+                                   description: Text("Goals, cards and flags your players log on Apple Watch appear here."))
+        case .loaded:
+            List {
+                ForEach(days, id: \.day) { day in
+                    Section(day.day.formatted(.dateTime.weekday(.wide).month().day())) {
+                        ForEach(day.events) { event in
+                            row(event)
+                        }
                     }
                 }
-                Picker("Kind", selection: $filterGroup) {
-                    Text("All events").tag(EventKindGroup?.none)
-                    ForEach(EventKindGroup.allCases) { group in
-                        Text(group.title).tag(EventKindGroup?.some(group))
+            }
+            .contentMargins(.top, 8, for: .scrollContent)
+            .readableFormWidth()
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Player", selection: $player) {
+                            Text("Everyone").tag(String?.none)
+                            ForEach(coach.squad, id: \.self) { Text($0).tag(String?.some($0)) }
+                        }
+                    } label: {
+                        Label(player ?? "Filter by player",
+                              systemImage: player == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
                     }
                 }
-            } label: {
-                Label("Filter", systemImage: filterActive ? "line.3.horizontal.decrease.circle.fill"
-                                                           : "line.3.horizontal.decrease.circle")
+            }
+            .refreshable { await coach.loadHistory() }
+            .alert("Coach's note", isPresented: Binding(get: { labeling != nil }, set: { if !$0 { labeling = nil } }),
+                   presenting: labeling) { event in
+                TextField("Great finish", text: $draft)
+                Button("Save") { Task { await coach.annotate(event, note: draft) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { event in
+                Text("\(coach.sentence(event)). Your team sees this note.")
+            }
+            .alert("Couldn't save the note", isPresented: Binding(get: { coach.noteProblem != nil }, set: { if !$0 { coach.noteProblem = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(coach.noteProblem ?? "")
             }
         }
-        .padding(.horizontal)
-        .padding(.bottom, 6)
     }
 
-    private var filterActive: Bool { filterPlayer != nil || filterGroup != nil }
-
-    private var filterSubtitle: String? {
-        var parts: [String] = []
-        if let filterPlayer { parts.append(filterPlayer) }
-        if let filterGroup { parts.append(filterGroup.title) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    private var days: [(day: Date, events: [TeamEvent])] {
+        let events = coach.keyEvents.filter { player == nil || $0.playerName == player }
+        return Dictionary(grouping: events) { Calendar.current.startOfDay(for: $0.date) }
+            .map { (day: $0.key, events: $0.value.sorted { $0.date > $1.date }) }
+            .sorted { $0.day > $1.day }
     }
 
-    /// Roster names offered in the filter menu: the live roster, unioned with any players who only
-    /// appear in the event feed (so their events stay filterable even when they're off the live map).
-    private var rosterNames: [String] {
-        var names = Set(players.map(\.playerName))
-        names.formUnion(teamEvents.map(\.playerName))
-        return names.sorted()
-    }
-
-    /// A quiet, retryable failure line — used where a bare error would be too loud.
-    private func errorLine(_ message: String, retry: @escaping () -> Void) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "wifi.slash").font(.title3).foregroundStyle(.secondary)
-            Text(message).font(.footnote).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Retry", action: retry)
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.bordered)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    @ViewBuilder
-    private var toastBanner: some View {
-        if let toast {
-            Text(toast)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Theme.chipFill(Theme.loss), in: Capsule())
-                .overlay(Capsule().strokeBorder(Theme.chipStroke(Theme.loss), lineWidth: 1))
-                .padding(.bottom, 12)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
-
-    // MARK: Merged rows
-
-    /// Coalesced, filtered, newest-first timeline: every `TeamEvent` from the backend plus the
-    /// local wearer's live events (deduped by event id — the server copy wins). Newest-first so
-    /// fresh events tick in at the top like a broadcast ticker.
-    private var timelineRows: [TimelineRow] {
-        var rows = teamEvents.map(TimelineRow.init(teamEvent:))
-
-        let known = Set(teamEvents.map(\.id))
-        if liveMatches.isLive {
-            let localName = SettingsStore.shared.playerName.isEmpty ? "Me" : SettingsStore.shared.playerName
-            for event in liveMatches.events where !known.contains(event.id) {
-                rows.append(TimelineRow(localEvent: event, playerName: localName))
+    private func row(_ event: TeamEvent) -> some View {
+        Button {
+            draft = event.coachLabel ?? ""
+            labeling = event
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Image(systemName: event.kind?.systemImage ?? "circle")
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(coach.sentence(event))
+                    if let note = event.note, !note.isEmpty {
+                        Text(note).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if let label = event.coachLabel, !label.isEmpty {
+                        Text("Coach: \(label)").font(.subheadline).foregroundStyle(Theme.turf)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(event.date, format: .dateTime.hour().minute())
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
+            .contentShape(Rectangle())
         }
+        .tint(.primary)
+        .accessibilityHint("Adds a coach's note")
+    }
+}
 
-        rows = rows.filter { row in
-            if let filterPlayer, row.playerName != filterPlayer { return false }
-            if let filterGroup, !filterGroup.contains(row.kind) { return false }
-            return true
-        }
-        return rows.sorted { $0.date > $1.date }
+// MARK: - Model
+
+@Observable
+@MainActor
+final class CoachModel {
+    enum Phase: Equatable { case loading, loaded, failed(String) }
+
+    private(set) var livePhase: Phase = .loading
+    private(set) var historyPhase: Phase = .loading
+    private(set) var players: [LivePlayerStatus] = []
+    /// Newest first.
+    private(set) var matches: [TeamMatchMinutes] = []
+    private(set) var keyEvents: [TeamEvent] = []
+    private(set) var squad: [String] = []
+    var noteProblem: String?
+
+    private var events: [UUID: TeamEvent] = [:]
+    private let teamCode: String
+    private static let historyHours = 8 * 7 * 24
+    private static let keyKinds: Set<MatchEventKind> = [.goalForUs, .goalAgainstUs, .goalMine, .assist, .flag, .yellowCard, .redCard]
+
+    init(teamCode: String) {
+        self.teamCode = teamCode
     }
 
-    // MARK: Labeling
-
-    private func beginLabeling(_ row: TimelineRow) {
-        labelDraft = ""
-        editingEventID = row.id
-        Haptics.selection()
-    }
-
-    private func submitLabel(for row: TimelineRow) async {
-        let text = labelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        editingEventID = nil
-        guard !text.isEmpty, let matchUUID = row.matchUUID else { return }
-
-        // Optimistic: show the label immediately, roll back if the write fails.
-        applyCoachLabel(text, toEventID: row.id)
+    func loadHistory() async {
         do {
-            try await uploads.annotateTeamEvent(id: row.id, matchUUID: matchUUID, label: text)
-            MatchLog.info("Labeled event \(row.id) for \(row.playerName)", category: "coach")
+            async let history = TeamService.events(code: teamCode, sinceHours: Self.historyHours)
+            async let stats = TeamService.stats(code: teamCode, since: TeamModel.seasonStart)
+            let (newEvents, newStats) = try await (history, stats)
+            events = Dictionary(newEvents.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            squad = Set(newStats.players.map(\.name) + newEvents.map(\.playerName)).sorted()
+            summarizeEvents()
+            historyPhase = .loaded
         } catch {
-            applyCoachLabel(nil, toEventID: row.id)
-            showToast("Couldn't save label")
-            MatchLog.error("Annotate failed: \(error.localizedDescription)", category: "coach")
+            if historyPhase != .loaded && !Task.isCancelled { historyPhase = .failed(TeamService.explain(error)) }
         }
     }
 
-    private func applyCoachLabel(_ label: String?, toEventID id: UUID) {
-        guard let index = teamEvents.firstIndex(where: { $0.id == id }) else { return }
-        teamEvents[index].coachLabel = label
-    }
-
-    private func showToast(_ message: String) {
-        withAnimation { toast = message }
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            withAnimation { toast = nil }
-        }
-    }
-
-    // MARK: Polling
-
-    private func pollLoop() async {
+    /// Keeps up with the match while the page is open.
+    func follow(_ liveMatches: LiveMatchStore) async {
         while !Task.isCancelled {
-            await refresh()
+            await refreshLive()
+            mergeOwnMatch(liveMatches)
+            if !players.isEmpty, let recent = try? await TeamService.events(code: teamCode, sinceHours: 6) {
+                events.merge(recent.map { ($0.id, $0) }) { $1 }
+                summarizeEvents()
+            }
             try? await Task.sleep(for: .seconds(10))
         }
     }
 
-    private func eventPollLoop() async {
-        while !Task.isCancelled {
-            await refreshEvents()
-            try? await Task.sleep(for: .seconds(15))
-        }
-    }
-
-    private func refresh() async {
+    func refreshLive() async {
         do {
-            var fetched = try await uploads.fetchLiveTeam(code: teamCode)
-            // Merge the local wearer's own live stream (fresher than the server round-trip).
-            if liveMatches.isLive, let update = liveMatches.latest {
-                let localName = SettingsStore.shared.playerName.isEmpty ? "Me" : SettingsStore.shared.playerName
-                fetched.removeAll { $0.playerName == localName }
-                fetched.append(LivePlayerStatus(
-                    playerName: localName, updatedAt: update.timestamp,
-                    x: nil, y: nil,
-                    heartRate: update.heartRate, distanceMeters: update.distanceMeters,
-                    onPitch: update.onPitch, stale: false
-                ))
-            }
-            players = fetched.sorted { $0.playerName < $1.playerName }
-            errorMessage = nil
+            players = try await TeamService.livePlayers(code: teamCode).sorted { $0.playerName < $1.playerName }
+            livePhase = .loaded
         } catch {
-            errorMessage = "Live feed unavailable: \(error.localizedDescription)"
+            if livePhase != .loaded && !Task.isCancelled { livePhase = .failed(TeamService.explain(error)) }
         }
-        hasLoadedTeam = true
     }
 
-    private func refreshEvents() async {
+    /// This phone's own watch is fresher than the trip through the server.
+    private func mergeOwnMatch(_ liveMatches: LiveMatchStore) {
+        guard liveMatches.isLive, let update = liveMatches.latest else { return }
+        let name = SettingsStore.shared.playerName.isEmpty ? "You" : SettingsStore.shared.playerName
+        let known = players.first { $0.playerName == name }
+        players.removeAll { $0.playerName == name }
+        players.append(LivePlayerStatus(playerName: name, updatedAt: update.timestamp, x: known?.x, y: known?.y,
+                                        heartRate: update.heartRate, distanceMeters: update.distanceMeters,
+                                        onPitch: update.onPitch, stale: false))
+        players.sort { $0.playerName < $1.playerName }
+    }
+
+    private func summarizeEvents() {
+        matches = TeamMinutes.matches(from: Array(events.values))
+        keyEvents = events.values.filter { $0.kind.map(Self.keyKinds.contains) ?? false }
+    }
+
+    func annotate(_ event: TeamEvent, note: String) async {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = events[event.id]?.coachLabel
+        events[event.id]?.coachLabel = trimmed.isEmpty ? nil : trimmed
+        summarizeEvents()
         do {
-            teamEvents = try await uploads.fetchTeamEvents(code: teamCode)
-            eventErrorMessage = nil
-            hasLoadedEvents = true
+            try await TeamService.annotate(event, note: trimmed)
         } catch {
-            // Non-fatal: the live pitch still works; keep the last-known events on screen.
-            if !hasLoadedEvents {
-                eventErrorMessage = "Team timeline unavailable right now."
-            }
-            MatchLog.error("Team events unavailable: \(error.localizedDescription)", category: "coach")
-        }
-    }
-}
-
-// MARK: - Timeline row model
-
-/// One display row in the merged coach timeline, sourced either from a backend `TeamEvent` or the
-/// local wearer's live `MatchEvent`. Local events carry no `matchUUID` (their match hasn't been
-/// uploaded yet), so they can't be coach-labeled until they land server-side.
-private struct TimelineRow: Identifiable {
-    let id: UUID
-    let date: Date
-    let playerName: String
-    let kind: MatchEventKind?
-    let kindRaw: String
-    let note: String?
-    let coachLabel: String?
-    /// nil for local live events (no server match to annotate against yet).
-    let matchUUID: UUID?
-
-    init(teamEvent event: TeamEvent) {
-        id = event.id
-        date = event.date
-        playerName = event.playerName
-        kind = event.kind
-        kindRaw = event.kindRawValue
-        note = event.note
-        coachLabel = event.coachLabel
-        matchUUID = event.matchUUID
-    }
-
-    init(localEvent event: MatchEvent, playerName: String) {
-        id = event.id
-        date = event.date
-        self.playerName = playerName
-        kind = event.kind
-        kindRaw = event.kind.rawValue
-        note = event.note
-        coachLabel = nil
-        matchUUID = nil
-    }
-
-    var title: String { kind?.title ?? kindRaw.capitalized }
-    var systemImage: String { kind?.systemImage ?? "circle" }
-
-    /// The glyph's semantic color. Subs read neutral bench (per the coach palette); every other
-    /// kind uses the app-wide `MatchEventKind.tint` (goals turf, cards yellow, etc.).
-    var glyphTint: Color {
-        switch kind {
-        case .subIn, .subOut: return Theme.bench
-        default: return kind.map(\.tint) ?? Color.secondary
+            events[event.id]?.coachLabel = previous
+            summarizeEvents()
+            noteProblem = TeamService.explain(error)
         }
     }
 
-    /// A quiet "Label" affordance shows only when the coach can actually annotate: the event
-    /// has neither a player note nor a coach label, and it lives server-side (has a matchUUID).
-    var canLabel: Bool {
-        (note?.isEmpty ?? true) && (coachLabel?.isEmpty ?? true) && matchUUID != nil
-    }
-}
-
-/// Kind buckets offered in the timeline filter menu.
-private enum EventKindGroup: String, CaseIterable, Identifiable {
-    case goals, cardsAndFouls, flags, subs
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .goals: return "Goals"
-        case .cardsAndFouls: return "Cards & Fouls"
-        case .flags: return "Flags"
-        case .subs: return "Subs"
+    /// The event as a sentence about the player who logged it.
+    func sentence(_ event: TeamEvent) -> String {
+        switch event.kind {
+        case .goalMine: return "\(event.playerName) scored"
+        case .assist: return "Assist by \(event.playerName)"
+        case .goalForUs: return "Goal for us"
+        case .goalAgainstUs: return "Goal against us"
+        case .yellowCard: return "Yellow card, \(event.playerName)"
+        case .redCard: return "Red card, \(event.playerName)"
+        case .flag: return "\(event.playerName) marked a moment"
+        default: return event.playerName
         }
     }
-
-    func contains(_ kind: MatchEventKind?) -> Bool {
-        guard let kind else { return false }
-        switch self {
-        case .goals: return [.goalForUs, .goalAgainstUs, .goalMine, .assist].contains(kind)
-        case .cardsAndFouls: return [.yellowCard, .redCard, .foul].contains(kind)
-        case .flags: return [.flag, .turnover, .timeout].contains(kind)
-        case .subs: return [.subIn, .subOut].contains(kind)
-        }
-    }
-}
-
-// MARK: - Timeline row view
-
-private struct TeamEventRow: View {
-    let row: TimelineRow
-    let isEditing: Bool
-    @Binding var labelDraft: String
-    let onBeginLabel: () -> Void
-    let onSubmitLabel: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Relative time chip — monospaced, ticks like a broadcast clock.
-            Text(row.date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: 52, alignment: .leading)
-
-            PlayerAvatar(name: row.playerName, size: 30)
-
-            // Event glyph in its semantic color, on a matching tint chip.
-            Image(systemName: row.systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(row.glyphTint)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(Theme.chipFill(row.glyphTint)))
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(row.playerName).font(.caption.weight(.bold)).foregroundStyle(.primary)
-                    Text(row.title).font(.subheadline)
-                }
-
-                if let note = row.note, !note.isEmpty {
-                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-
-                if let coachLabel = row.coachLabel, !coachLabel.isEmpty {
-                    Label(coachLabel, systemImage: "tag.fill")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Theme.signal)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Theme.chipFill(Theme.signal), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.chipStroke(Theme.signal), lineWidth: 1))
-                }
-
-                if isEditing {
-                    TextField("Add label", text: $labelDraft)
-                        .textFieldStyle(.plain)
-                        .font(.caption)
-                        .submitLabel(.done)
-                        .onSubmit(onSubmitLabel)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Theme.surfaceElevated, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
-                } else if row.canLabel {
-                    PulsingLabelChip(action: onBeginLabel)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-/// The quiet "Label" affordance for unlabeled events: a tinted chip with a gentle breathing
-/// pulse to draw the eye without shouting. Tapping opens the inline label field.
-private struct PulsingLabelChip: View {
-    let action: () -> Void
-    @State private var pulsing = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button(action: action) {
-            Label("Label", systemImage: "tag")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Theme.signal)
-                .padding(.horizontal, 9).padding(.vertical, 3)
-                .background(Theme.chipFill(Theme.signal), in: Capsule())
-                .overlay(Capsule().strokeBorder(Theme.chipStroke(Theme.signal), lineWidth: 1))
-                .opacity(pulsing ? 0.55 : 1)
-        }
-        .buttonStyle(.plain)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-                pulsing = true
-            }
-        }
-    }
-}
-
-// MARK: - Skeletons
-
-/// A leaderboard-shaped shimmer row for the loading roster sidebar.
-private struct RosterSkeletonRow: View {
-    var width: CGFloat = 140
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle().fill(Theme.surfaceElevated).frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 6) {
-                RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                    .frame(width: width, height: 13)
-                RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                    .frame(width: 90, height: 10)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 4)
-        .redacted(reason: .placeholder)
-        .coachShimmer()
-    }
-}
-
-/// Ticker-shaped shimmer rows shown while the timeline first loads.
-private struct TimelineSkeleton: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(0..<6, id: \.self) { index in
-                HStack(alignment: .top, spacing: 12) {
-                    RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                        .frame(width: 44, height: 12)
-                    Circle().fill(Theme.surfaceElevated).frame(width: 30, height: 30)
-                    Circle().fill(Theme.surfaceElevated).frame(width: 30, height: 30)
-                    VStack(alignment: .leading, spacing: 6) {
-                        RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                            .frame(width: 160 - CGFloat(index * 14), height: 13)
-                        RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                            .frame(width: 100, height: 10)
-                    }
-                    Spacer()
-                }
-                .padding(.vertical, 10)
-                Divider().overlay(Theme.surfaceStroke)
-            }
-        }
-        .padding(.horizontal)
-        .redacted(reason: .placeholder)
-        .coachShimmer()
-    }
-}
-
-// MARK: - Shimmer
-
-/// A lightweight left-to-right sheen for redacted placeholders (local to the coach surface so it
-/// stays self-contained; mirrors the roster leaderboard's shimmer).
-private struct CoachShimmer: ViewModifier {
-    @State private var phase: CGFloat = -1
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                GeometryReader { geometry in
-                    LinearGradient(
-                        colors: [.clear, Color.white.opacity(0.06), .clear],
-                        startPoint: .leading, endPoint: .trailing
-                    )
-                    .frame(width: geometry.size.width * 1.5)
-                    .offset(x: phase * geometry.size.width * 1.5)
-                }
-                .allowsHitTesting(false)
-            )
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
-                    phase = 1
-                }
-            }
-    }
-}
-
-private extension View {
-    func coachShimmer() -> some View { modifier(CoachShimmer()) }
 }

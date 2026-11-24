@@ -3,6 +3,7 @@
 //  MatchTracker
 //
 
+import HealthKit
 import SwiftUI
 import MatchTrackerKit
 
@@ -73,6 +74,23 @@ struct MatchTrackerWatchApp: App {
 final class WatchAppDelegate: NSObject, WKApplicationDelegate {
     func handleActiveWorkoutRecovery() {
         Task { await WorkoutManager.shared.recoverActiveWorkoutSession() }
+    }
+
+    /// "Start on Apple Watch", tapped on the phone. The same as tapping Start here.
+    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        Task { @MainActor in
+            let manager = WorkoutManager.shared
+            // A match that was interrupted outranks a new one, and comes back by itself.
+            await manager.recoverActiveWorkoutSession()
+            guard manager.phase == .idle else {
+                MatchLog.info("phone start ignored (phase \(manager.phase))", category: "workout")
+                return
+            }
+            MatchLog.info("start requested from the phone", category: "workout")
+            manager.beginCountdown(
+                field: manager.detectedField,
+                format: workoutConfiguration.locationType == .indoor ? .indoor : WatchSettings.predictedFormat)
+        }
     }
 }
 

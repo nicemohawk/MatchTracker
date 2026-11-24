@@ -80,55 +80,6 @@ enum WatchHaptics {
     }
 }
 
-// MARK: - Typography helpers
-
-extension Text {
-    /// Big rounded hero numeral (score, countdown) sized for the watch face.
-    func watchHeroNumeral() -> some View {
-        font(.system(size: 44, weight: .bold, design: .rounded)).monospacedDigit()
-    }
-
-    /// Medium rounded stat numeral for summary/metric values.
-    func watchStatNumeral() -> some View {
-        font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
-    }
-
-    /// Uppercase, tracked caption label above/below numerals.
-    func watchCaptionLabel() -> some View {
-        font(.system(size: 11, weight: .semibold, design: .rounded))
-            .textCase(.uppercase)
-            .tracking(1.1)
-    }
-}
-
-// MARK: - Card / tile modifiers
-
-extension View {
-    /// Elevated card: surface fill, hairline stroke, watch-scaled radius.
-    func watchCard(cornerRadius: CGFloat = 14) -> some View {
-        background(WatchTheme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(WatchTheme.surfaceStroke, lineWidth: 1)
-            )
-    }
-
-    /// Metric/stat tile: elevated surface with a semantic tint wash and a thin tinted stroke.
-    func watchTile(tint: Color, cornerRadius: CGFloat = 12) -> some View {
-        background(
-            ZStack {
-                WatchTheme.surfaceElevated
-                tint.opacity(0.12)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
-        )
-    }
-}
-
 // MARK: - Button styles
 
 /// Fat-finger event/control tile: a tinted translucent fill with a hairline tinted stroke and a

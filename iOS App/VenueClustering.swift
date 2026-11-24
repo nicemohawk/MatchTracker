@@ -67,6 +67,8 @@ struct CohortComparison {
         case anyFieldAllTime    // same format, all time (last-resort baseline)
     }
 
+    /// This match, shaped like `average` (the analysis's own grid is finer).
+    let current: HeatmapGrid
     let average: HeatmapGrid
     let count: Int
     let scope: Scope

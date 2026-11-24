@@ -5,10 +5,9 @@ import SwiftUI
 import MapKit
 import MatchTrackerKit
 
-/// One field: what it looks like, its name and size, and what you can do with it.
+/// One field: its name and size, and what you can do with it. The map it opens over is its picture.
 struct FieldDetailView: View {
     let fieldID: UUID
-    var showsPicture = true
     var onDeleted: () -> Void = {}
 
     @EnvironmentObject private var fields: FieldsModel
@@ -28,14 +27,6 @@ struct FieldDetailView: View {
 
     private func form(for field: FieldModel) -> some View {
         Form {
-            if showsPicture {
-                Section {
-                    FieldSatelliteImage(rectangle: field.rectangle, isGuess: field.needsOutlineCheck)
-                        .aspectRatio(1.5, contentMode: .fit)
-                        .listRowInsets(EdgeInsets())
-                        .accessibilityLabel("Satellite picture of \(field.name), \(MatchFormat.spokenFieldSize(field.rectangle))")
-                }
-            }
             Section {
                 TextField("Field name", text: $name, axis: .vertical)
                     .font(.title2.bold())
@@ -93,9 +84,7 @@ struct FieldDetailView: View {
         .onChange(of: field.name, initial: true) { _, newName in name = newName }
         .onDisappear { rename(field) }
         .fullScreenCover(isPresented: $isAdjusting) {
-            NavigationStack {
-                FieldBoundsEditor(field: field, showsCancel: true, onSaved: {})
-            }
+            CornerEditorView(field: field, onSaved: {})
         }
     }
 
@@ -128,7 +117,6 @@ struct FieldDetailView: View {
 /// Review a field found in satellite imagery before adding it.
 struct DetectedFieldView: View {
     let candidate: DetectedField
-    var showsPicture = true
     let onAdded: (FieldModel) -> Void
     let onDismissed: () -> Void
 
@@ -138,13 +126,6 @@ struct DetectedFieldView: View {
 
     var body: some View {
         Form {
-            if showsPicture {
-                Section {
-                    FieldSatelliteImage(rectangle: candidate.rectangle, isGuess: true)
-                        .aspectRatio(1.5, contentMode: .fit)
-                        .listRowInsets(EdgeInsets())
-                }
-            }
             Section {
                 LabeledContent("Name") {
                     TextField("Field name", text: $name)

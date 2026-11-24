@@ -33,6 +33,7 @@ enum WatchSettings {
         static let doubleTapAction = "doubleTapAction"
         static let sportID = "sportID"
         static let formatHistory = "formatHistory"
+        static let units = "units"
     }
 
     /// The mirrored values. Guarded by `lock` — read from the main thread, written from whichever
@@ -69,6 +70,7 @@ enum WatchSettings {
         loaded.sportID = defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id
         loaded.formatHistory = defaults.data(forKey: Key.formatHistory)
             .flatMap { try? JSONDecoder().decode(FormatHistory.self, from: $0) } ?? FormatHistory()
+        UnitSystem.override = defaults.string(forKey: Key.units).flatMap(UnitSystem.init(rawValue:))
         lock.lock()
         snapshot = loaded
         lock.unlock()
@@ -107,6 +109,15 @@ enum WatchSettings {
             MatchLog.info("user: sport -> \(newValue)", category: "settings")
             write(\.sportID, newValue)
             store(newValue, forKey: Key.sportID)
+        }
+    }
+
+    /// The phone's units setting; nil follows the region.
+    static var unitOverride: UnitSystem? {
+        get { UnitSystem.override }
+        set {
+            UnitSystem.override = newValue
+            store(newValue?.rawValue ?? "automatic", forKey: Key.units)
         }
     }
 

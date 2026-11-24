@@ -81,7 +81,18 @@ struct SettingsView: View {
                     Task { await recordConsent(guardianName: guardianName) }
                 }
             }
-            .fullScreenCover(isPresented: $showingFields) { FieldsView() }
+            .tint(Theme.turf)
+            .fullScreenCover(isPresented: $showingFields) {
+                NavigationStack {
+                    FieldsView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close", systemImage: "xmark") { showingFields = false }
+                                    .tint(.primary)
+                            }
+                        }
+                }
+            }
         }
     }
 
@@ -440,7 +451,7 @@ private struct HealthAccessView: View {
                 Section {
                     Button("Connect Health", action: connect)
                 } footer: {
-                    Text("MatchTracker hasn’t been set up with Health yet. It reads your soccer workouts, routes, distance, energy and heart rate, and saves the matches you record.")
+                    Text("MatchTracker hasn’t been set up with Health yet. It reads your soccer workouts, routes, distance, energy, heart rate and cardio fitness, and saves the matches you record.")
                 }
             } else {
                 Section {
