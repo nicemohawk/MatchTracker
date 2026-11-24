@@ -120,7 +120,7 @@ struct MatchDetailView: View {
             if let end = detail.suggestedTrimEnd {
                 TrimSuggestion(end: end) { store.trim(detail.matchIdentifier, start: nil, end: end) }
             }
-            MomentsChapter(detail: detail, onEdit: { sheet = .edit }, onVideo: { sheet = .video })
+            MomentsChapter(detail: detail, onEdit: { sheet = .edit })
             if let runs = detail.analytics?.keyRuns, !runs.isEmpty {
                 BestRunsChapter(runs: runs)
             }
@@ -171,12 +171,7 @@ struct MatchDetailView: View {
         case .share: ShareMatchSheet(detail: detail, summary: summary, teamName: teamName)
         case .map: MatchMapView(detail: detail)
         case .video:
-            NavigationStack {
-                ScrollView { VideoHighlightsSection(detail: detail, matchStart: detail.matchStart).padding() }
-                    .navigationTitle("Video")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .closeToolbar()
-            }
+            NavigationStack { MatchVideoView(detail: detail) }
         }
     }
 }

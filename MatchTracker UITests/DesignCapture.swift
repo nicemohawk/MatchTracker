@@ -73,4 +73,31 @@ final class DesignCapture: XCTestCase {
             screenshot("13-edit-2")
         }
     }
+
+    func testVideo() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(8)
+        app.tabBars.buttons["Matches"].tap()
+        let row = app.collectionViews.cells.containing(NSPredicate(format: "label CONTAINS 'Jul 14'")).firstMatch
+        for _ in 0..<12 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        sleep(5)
+        app.swipeUp()
+        sleep(2)
+        screenshot("20-moments")
+        app.buttons["More"].tap()
+        app.buttons["Video"].tap()
+        sleep(3)
+        screenshot("21-video")
+        app.collectionViews.cells.element(boundBy: 1).tap()
+        sleep(4)
+        screenshot("22-clip")
+        app.buttons["Done"].firstMatch.tap()
+        sleep(1)
+        for _ in 0..<3 { app.swipeUp() }
+        app.buttons["Line Up with the Match"].tap()
+        sleep(3)
+        screenshot("23-line-up")
+    }
 }

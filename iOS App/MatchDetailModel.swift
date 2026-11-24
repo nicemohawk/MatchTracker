@@ -79,6 +79,8 @@ final class MatchDetailModel: ObservableObject {
     var matchStart: Date { playedInterval.start }
     var matchEnd: Date { playedInterval.end }
     var events: [MatchEvent] { record?.events ?? [] }
+    /// The minute an event fell in, counted the way football does: the first is 1.
+    func minute(of event: MatchEvent) -> Int { max(1, Int(event.date.timeIntervalSince(matchStart) / 60) + 1) }
     var matchFormat: MatchTrackerKit.MatchFormat { MatchSummary.format(workout: workout, record: record) }
 
     var isLoading: Bool { state == .loading }
