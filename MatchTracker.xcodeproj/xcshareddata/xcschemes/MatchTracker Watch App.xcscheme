@@ -56,6 +56,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0A0000000000000000000040"
             BuildableName = "MatchTracker Watch App.app"
+            BlueprintName = "MatchTracker Watch App"
             ReferencedContainer = "container:MatchTracker.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -72,6 +73,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0A0000000000000000000040"
             BuildableName = "MatchTracker Watch App.app"
+            BlueprintName = "MatchTracker Watch App"
             ReferencedContainer = "container:MatchTracker.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
