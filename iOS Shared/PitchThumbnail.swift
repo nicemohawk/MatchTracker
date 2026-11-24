@@ -46,12 +46,11 @@ struct PitchThumbnail: View {
 
     private func color(for value: Double) -> Color {
         if monochrome { return .white.opacity(0.15 + 0.75 * value) }
-        let opacity = min(0.92, 0.08 + 1.3 * value)
-        // Emerald to amber to rose, as in the app's heatmap.
-        let t = value < 0.5 ? value * 2 : (value - 0.5) * 2
-        return value < 0.5
-            ? Color(red: 0.188 + 0.812 * t, green: 0.820 - 0.196 * t, blue: 0.345 - 0.306 * t).opacity(opacity)
-            : Color(red: 1, green: 0.624 - 0.408 * t, blue: 0.039 + 0.334 * t).opacity(opacity)
+        // Deep green to pale mint, as in the app's heatmap, whose square root this shares.
+        let t = value.squareRoot()
+        let glow = max(0, (t - 0.55) / 0.45)
+        return Color(red: 0.10 + 0.72 * glow, green: 0.55 + 0.45 * glow, blue: 0.28 + 0.42 * glow)
+            .opacity(min(1, 0.05 + 1.1 * t))
     }
 
     private func drawMarkings(in context: inout GraphicsContext, rect: CGRect) {

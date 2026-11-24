@@ -76,9 +76,16 @@ final class MatchDetailModel: ObservableObject {
     /// The match as played: the recording, cut to the trim.
     var playedInterval: DateInterval { record?.played(within: recordedInterval) ?? recordedInterval }
 
+    /// How much of the recording the match was, for totals Health keeps only for the whole.
+    var playedShare: Double {
+        recordedInterval.duration > 0 ? playedInterval.duration / recordedInterval.duration : 1
+    }
+
     var matchStart: Date { playedInterval.start }
     var matchEnd: Date { playedInterval.end }
     var events: [MatchEvent] { record?.events ?? [] }
+    /// The minute an event fell in, counted the way football does: the first is 1.
+    func minute(of event: MatchEvent) -> Int { max(1, Int(event.date.timeIntervalSince(matchStart) / 60) + 1) }
     var matchFormat: MatchTrackerKit.MatchFormat { MatchSummary.format(workout: workout, record: record) }
 
     var isLoading: Bool { state == .loading }
@@ -129,9 +136,12 @@ final class MatchDetailModel: ObservableObject {
            record.digestStamp != self.record?.digestStamp || record.notes != self.record?.notes {
             updateRecord(record)
         }
-        guard wantsLoad, gainedWorkout || gainedSource else { return }
+        // A route can reach the phone well after its workout and record.
+        let awaitsRoute = state == .loaded && analytics?.hasRoute != true && matchFormat != .indoor
+            && (self.record?.track != nil || matchEnd > Date().addingTimeInterval(-7 * 86_400))
+        guard wantsLoad, gainedWorkout || gainedSource || awaitsRoute else { return }
         // Whatever was read without the workout is incomplete.
-        if analytics?.hasRoute != true { state = .loading }
+        if analytics?.hasRoute != true, !awaitsRoute { state = .loading }
         Task {
             await loadTask?.value
             samples = nil
@@ -168,7 +178,7 @@ final class MatchDetailModel: ObservableObject {
                 return record
             }.value
             // An edit made meanwhile wins; detection runs again next time.
-            guard self.record?.digestStamp == record.digestStamp else { return }
+            guard self.record?.digestStamp == record.digestStamp, self.record?.notes == record.notes else { return }
             save(redetected)
         }
     }

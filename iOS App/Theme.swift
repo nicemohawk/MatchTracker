@@ -2,8 +2,8 @@
 // MatchTracker
 //
 // The app's visual identity, kept small on purpose: system backgrounds, system type, one green.
-// Dark is the identity; light is the same layout on system grouped backgrounds. The chip and tile
-// helpers predate DESIGN.md and survive only for the sideline video screens.
+// Dark is the identity; light is the same layout on system grouped backgrounds. What's marked
+// "Legacy" predates DESIGN.md and survives only for the sideline camera.
 
 import SwiftUI
 
@@ -60,7 +60,7 @@ enum Theme {
 
     /// You and your team, and the app's tint. The light value holds 4.5:1 as text on white.
     static let turf = dynamic(dark: (0.188, 0.820, 0.345),
-                              light: (0.0, 0.490, 0.200))
+                              light: (0.0, 0.50, 0.21))
     /// Legacy: teal. DESIGN.md gives color three jobs and this isn't one of them.
     static let signal = dynamic(dark: (0.400, 0.831, 0.812),
                                 light: (0.0, 0.478, 0.463))
@@ -113,26 +113,6 @@ enum Haptics {
     }
 }
 
-// MARK: - Section header
-
-/// A section title with an optional line under it.
-struct SectionHeaderBar: View {
-    let title: String
-    /// Legacy: titles are primary text; the tint is unused.
-    var tint: Color = Theme.turf
-    var subtitle: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
-            if let subtitle {
-                Text(subtitle).font(.footnote).foregroundStyle(Theme.secondaryLabel)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 // MARK: - Typography helpers
 
 extension Text {
@@ -141,17 +121,6 @@ extension Text {
         modifier(HeroNumeral())
     }
 
-    /// A supporting number.
-    func statNumeral() -> some View {
-        font(.system(.title2, design: .rounded).weight(.bold))
-            .monospacedDigit()
-    }
-
-    /// The label beside or under a number.
-    func captionLabel() -> some View {
-        font(.subheadline)
-            .foregroundStyle(Theme.secondaryLabel)
-    }
 }
 
 /// Larger than any text style, so it scales by `ScaledMetric` and shrinks before it wraps.
@@ -185,16 +154,6 @@ extension View {
     /// regular width. A no-op at compact width. Attach any full-width background AFTER this modifier.
     func readableFormWidth(_ maxWidth: CGFloat = Theme.readableContentWidth) -> some View {
         modifier(ReadableFormWidth(maxWidth: maxWidth))
-    }
-
-    /// A flat card. No stroke and no shadow; the background contrast is the edge.
-    func themedCard(cornerRadius: CGFloat = 22) -> some View {
-        modifier(ThemedCard(cornerRadius: cornerRadius))
-    }
-
-    /// Legacy: a plain surface. The tint is unused.
-    func metricTile(tint: Color, cornerRadius: CGFloat = 16) -> some View {
-        modifier(MetricTile(tint: tint, cornerRadius: cornerRadius))
     }
 
     /// A screen's main action, pinned below scrolling content. The system's scroll edge on iOS 26,
@@ -255,23 +214,6 @@ struct ReadableFormWidth: ViewModifier {
                         .onChange(of: proxy.size.width) { _, newValue in containerWidth = newValue }
                 }
             )
-    }
-}
-
-struct ThemedCard: ViewModifier {
-    var cornerRadius: CGFloat = 22
-    func body(content: Content) -> some View {
-        content
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    }
-}
-
-struct MetricTile: ViewModifier {
-    var tint: Color
-    var cornerRadius: CGFloat = 16
-    func body(content: Content) -> some View {
-        content
-            .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 

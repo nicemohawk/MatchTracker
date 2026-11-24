@@ -17,7 +17,7 @@ struct MatchDetailView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     enum Sheet: String, Identifiable {
-        case edit, share, map, video
+        case edit, score, share, map, video
         var id: String { rawValue }
     }
 
@@ -91,7 +91,7 @@ struct MatchDetailView: View {
 
     private func scoreline(_ detail: MatchDetailModel) -> some View {
         MatchScoreline(digest: detail.digest, fallbackTitle: detail.matchFormat.title, startDate: detail.matchStart) {
-            sheet = .edit
+            sheet = .score
         }
     }
 
@@ -120,7 +120,7 @@ struct MatchDetailView: View {
             if let end = detail.suggestedTrimEnd {
                 TrimSuggestion(end: end) { store.trim(detail.matchIdentifier, start: nil, end: end) }
             }
-            MomentsChapter(detail: detail, onEdit: { sheet = .edit }, onVideo: { sheet = .video })
+            MomentsChapter(detail: detail, onEdit: { sheet = .edit })
             if let runs = detail.analytics?.keyRuns, !runs.isEmpty {
                 BestRunsChapter(runs: runs)
             }
@@ -148,7 +148,6 @@ struct MatchDetailView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button("Share", systemImage: "square.and.arrow.up") { sheet = .share }
                 .disabled(model.detail?.analytics == nil)
-            MatchCommentsButton(matchUUID: summary.id)
             Menu {
                 Button("Edit Match", systemImage: "pencil") { sheet = .edit }
                 Button("Video", systemImage: "video") { sheet = .video }
@@ -167,15 +166,11 @@ struct MatchDetailView: View {
     private func content(of sheet: Sheet, _ detail: MatchDetailModel) -> some View {
         switch sheet {
         case .edit: EditMatchView(detail: detail)
+        case .score: ScoreSheet(detail: detail)
         case .share: ShareMatchSheet(detail: detail, summary: summary, teamName: teamName)
         case .map: MatchMapView(detail: detail)
         case .video:
-            NavigationStack {
-                ScrollView { VideoHighlightsSection(detail: detail, matchStart: detail.matchStart).padding() }
-                    .navigationTitle("Video")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .closeToolbar()
-            }
+            NavigationStack { MatchVideoView(detail: detail) }
         }
     }
 }
@@ -200,9 +195,10 @@ private struct MatchScoreline: View {
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                 } else {
-                    Text(digest?.opponent.map { "vs \($0)" } ?? fallbackTitle)
+                    Text(digest?.opponent.map { "vs \($0)" } ?? digest?.fieldName ?? fallbackTitle)
                         .font(.largeTitle.bold())
-                    Text("Add Score").font(.subheadline).foregroundStyle(.tint)
+                        .multilineTextAlignment(.center)
+                    Text("Add the Score").font(.headline).foregroundStyle(.tint).frame(minHeight: 32)
                 }
                 Text(details).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
@@ -210,15 +206,17 @@ private struct MatchScoreline: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Edits the match")
+        .accessibilityHint("Edits the score")
     }
 
     private var details: String {
         let sameYear = Calendar.current.isDate(startDate, equalTo: Date(), toGranularity: .year)
         let day = startDate.formatted(sameYear ? .dateTime.weekday(.abbreviated).month(.abbreviated).day()
                                                : .dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
-        let opponent = digest?.result == nil ? nil : digest?.opponent.map { "vs \($0)" }
-        return [opponent, day, startDate.formatted(date: .omitted, time: .shortened), digest?.fieldName]
+        let hasScore = digest?.result != nil
+        let opponent = hasScore ? digest?.opponent.map { "vs \($0)" } : nil
+        let field = hasScore || digest?.opponent != nil ? digest?.fieldName : nil
+        return [opponent, day, startDate.formatted(date: .omitted, time: .shortened), field]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -232,7 +230,7 @@ private struct MatchScoreline: View {
 
     private func color(_ result: MatchDigest.Result) -> Color {
         switch result {
-        case .won: return .green
+        case .won: return Theme.turf
         case .drawn: return .secondary
         case .lost: return .red
         }

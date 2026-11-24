@@ -12,7 +12,6 @@ final class TeamStub {
 
     private enum Scenario: String { case full, new, quiet, error, live }
     private let scenario: Scenario
-    private var posted: [MatchComment] = []
 
     private init?(rawValue: String) {
         guard let scenario = Scenario(rawValue: rawValue) else { return nil }
@@ -59,24 +58,6 @@ final class TeamStub {
         guard scenario == .full, cohort != .position else { return nil }
         return CohortBenchmark(cohort: cohort == .everyone ? "Everyone" : "30–39", sampleSize: 1240, percentiles: .init(
             workrate: 78, distancePerMatchMeters: 64, sprintDistanceMeters: 52, highSpeedRunningMeters: 71, topSpeedMetersPerSecond: 45))
-    }
-
-    func comments(match: UUID) async throws -> [MatchComment] {
-        try await respond()
-        guard scenario == .full || scenario == .live else { return posted }
-        let ago = { (hours: Double) in Date().addingTimeInterval(-hours * 3600) }
-        return [
-            MatchComment(id: Self.id(1), matchUUID: match, author: "Maya Ortiz", body: "What a finish in the 84th! Anyone get it on video?", postedAt: ago(5)),
-            MatchComment(id: Self.id(2), matchUUID: match, author: "Coach Dana", body: "Best we've pressed all season. Back four held their line for the whole second half.", postedAt: ago(3.5)),
-            MatchComment(id: Self.id(3), matchUUID: match, author: "Ben Lachman", body: "Legs are gone. Worth it.", postedAt: ago(3)),
-            MatchComment(id: Self.id(4), matchUUID: match, author: "Sam Whitfield", body: "I've got the clip, sending tonight", postedAt: ago(0.4))
-        ] + posted
-    }
-
-    func post(_ comment: MatchComment) async throws {
-        try await respond()
-        if scenario == .quiet { throw APIError.httpStatus(402) }
-        posted.append(comment)
     }
 
     func livePlayers() async throws -> [LivePlayerStatus] {

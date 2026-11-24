@@ -139,13 +139,8 @@ private struct FieldRow: View {
 }
 
 extension MatchStore {
-    /// How many recorded matches were played on a field: the ones that say so, plus the ones whose
-    /// analysis placed them there.
+    /// How many matches were played on a field.
     func matchCount(at field: FieldModel) -> Int {
-        matches.filter { match in
-            if let fieldID = match.record?.fieldID { return fieldID == field.id }
-            guard let badge = cachedBadge(for: match.id), badge.stale != true else { return false }
-            return badge.fieldName == field.name
-        }.count
+        playedDigests.filter { $0.fieldID == field.id }.count
     }
 }

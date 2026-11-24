@@ -9,6 +9,8 @@ import UniformTypeIdentifiers
 /// Every match as one spreadsheet row. Written only when the player actually shares it.
 struct MatchHistoryExport: Transferable {
     let matches: [MatchSummary]
+    /// Where a match has been analyzed, its numbers come from here, as they do on screen.
+    let digests: [UUID: MatchDigest]
     let fieldNames: [UUID: String]
 
     static var transferRepresentation: some TransferRepresentation {
@@ -27,15 +29,15 @@ struct MatchHistoryExport: Transferable {
         for match in matches.sorted(by: { $0.startDate < $1.startDate }) {
             let events = match.record?.events ?? []
             func count(_ kinds: MatchEventKind...) -> Int { events.filter { kinds.contains($0.kind) }.count }
-            let hasScore = count(.goalForUs, .goalMine, .goalAgainstUs) > 0
-            let meters = match.distanceMeters
+            let score = match.record?.score
+            let meters = digests[match.id]?.distanceMeters ?? match.distanceMeters
             let cells = [
                 match.startDate.ISO8601Format(),
                 match.record?.fieldID.flatMap { fieldNames[$0] } ?? "",
                 match.duration > 0 ? String(Int((match.duration / 60).rounded())) : "",
                 meters > 0 ? String(format: "%.2f", units == .metric ? meters / 1000 : meters / 1609.344) : "",
-                hasScore ? String(count(.goalForUs, .goalMine)) : "",
-                hasScore ? String(count(.goalAgainstUs)) : "",
+                score.map { String($0.us) } ?? "",
+                score.map { String($0.them) } ?? "",
                 events.isEmpty ? "" : String(count(.goalMine)),
                 events.isEmpty ? "" : String(count(.assist))
             ]

@@ -12,9 +12,9 @@ import SwiftUI
 struct MomentsChapter: View {
     @ObservedObject var detail: MatchDetailModel
     let onEdit: () -> Void
-    let onVideo: () -> Void
 
     @ObservedObject private var videos = SidelineVideoStore.shared
+    @State private var clip: ClipSelection?
 
     static func isMoment(_ kind: MatchEventKind) -> Bool {
         switch kind {
@@ -44,8 +44,9 @@ struct MomentsChapter: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(moments) { event in
-                        MomentRow(event: event, minute: minute(of: event),
-                                  hasVideo: !videos.videos(for: detail.matchIdentifier).isEmpty, onVideo: onVideo)
+                        let footage = ClipSelection.of(event, in: detail)
+                        MomentRow(event: event, minute: detail.minute(of: event),
+                                  onPlay: footage.map { footage in { clip = footage } })
                     }
                     if let bench {
                         Label(bench, systemImage: "figure.seated.side")
@@ -57,6 +58,7 @@ struct MomentsChapter: View {
                 }
             }
         }
+        .sheet(item: $clip) { MomentClipView(selection: $0) }
     }
 
     private var bench: String? {
@@ -66,16 +68,12 @@ struct MomentsChapter: View {
         return minutes >= 3 ? "\(minutes) min on the bench" : nil
     }
 
-    private func minute(of event: MatchEvent) -> Int {
-        max(1, Int(event.date.timeIntervalSince(detail.matchStart) / 60) + 1)
-    }
 }
 
 private struct MomentRow: View {
     let event: MatchEvent
     let minute: Int
-    let hasVideo: Bool
-    let onVideo: () -> Void
+    var onPlay: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -95,16 +93,19 @@ private struct MomentRow: View {
                 }
             }
             Spacer(minLength: 0)
-            if hasVideo {
-                Button("Play Video", systemImage: "play.circle.fill", action: onVideo)
+            if let onPlay {
+                Button("Play Video", systemImage: "play.circle.fill", action: onPlay)
                     .labelStyle(.iconOnly)
                     .font(.title2)
                     .frame(width: 44, height: 44)
             }
         }
         .frame(minHeight: 48)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Minute \(minute), \(event.kind.momentTitle)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Minute \(minute), \([event.kind.momentTitle, event.note ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))")
+        .accessibilityActions {
+            if let onPlay { Button("Play Video", action: onPlay) }
+        }
     }
 }
 
@@ -158,6 +159,7 @@ extension MatchEventKind {
 
 struct BestRunsChapter: View {
     let runs: [KeyRun]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -166,22 +168,26 @@ struct BestRunsChapter: View {
                 ForEach(runs) { run in
                     let speed = UnitSystem.current.speed(run.peakSpeed)
                     let distance = UnitSystem.current.shortDistance(run.distanceMeters)
-                    HStack(spacing: 14) {
+                    let layout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                        : AnyLayout(HStackLayout(spacing: 14))
+                    layout {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(run.title).font(.body)
                             Text(["\(Int(run.fromT / 60) + 1)′", run.detail].compactMap { $0 }.joined(separator: " · "))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
-                        VStack(alignment: .trailing, spacing: 2) {
+                        if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
+                        VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 2) {
                             Text(speed.text)
                                 .font(.system(.title3, design: .rounded, weight: .semibold))
                                 .monospacedDigit()
                             Text(distance.text).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
-                    .frame(minHeight: 56)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(run.title), \(speed.spoken) over \(distance.spoken), minute \(Int(run.fromT / 60) + 1)")
                 }
@@ -207,6 +213,7 @@ struct EffortChapter: View {
                 HeartRateChart(series: detail.heartRateSeries, start: detail.matchStart, halftime: analytics.halftime)
                     .frame(height: 180)
             }
+            EffortRatingRow(workout: detail.workout)
             NavigationLink {
                 AllNumbersView(detail: detail, analytics: analytics)
             } label: {

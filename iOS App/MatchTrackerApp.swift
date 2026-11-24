@@ -29,7 +29,6 @@ struct MatchTrackerApp: App {
                 .environmentObject(environment.uploads)
                 .environment(environment.liveMatches)
                 .environment(environment.entitlements)
-                .environment(environment.trainingLoad)
                 .environment(environment.seeder)
                 .environment(environment.backlogImporter)
                 .task { await environment.bootstrap() }
@@ -84,7 +83,6 @@ final class AppEnvironment: ObservableObject {
     let connectivity: ConnectivityManager
     let liveMatches = LiveMatchStore()
     let entitlements = EntitlementStore()
-    let trainingLoad = TrainingLoadService()
     let seeder: NearbyFieldSeeder
     let backlogImporter: BacklogImporter
 
@@ -109,7 +107,7 @@ final class AppEnvironment: ObservableObject {
         fields.onFieldsChanged = { [weak connectivity, weak uploads, weak matches] in
             connectivity?.pushContext()
             // A field's geometry may have changed (corner edit) — reproject every match that resolves
-            // to it and drop stale row badges. One mechanism for both the Fields tab's own corner
+            // to it. One mechanism for both the Fields tab's own corner
             // editor and a match's Adjust Field flow, since both save through `FieldsModel`.
             matches?.invalidateForFieldChange()
             Task { await uploads?.uploadFields() }
@@ -153,9 +151,6 @@ final class AppEnvironment: ObservableObject {
         )
 #endif
         await uploads.flushQueue()
-        await trainingLoad.refresh()
-        // Workrate average is computed live where it's rendered (WorkrateSection) — the detail
-        // cache is still empty at launch, so a snapshot here would always be a stale nil.
     }
 
     /// Foreground / background-refresh reconciliation: matches vs HealthKit + queued uploads.
@@ -183,7 +178,7 @@ struct RootTabView: View {
 
     var body: some View {
         tabs
-            .tint(.green)
+            .tint(Theme.turf)
             .systemLinks(showingLive: $showingLive,
                          openMatch: { id in
                              selectedTab = .summary
@@ -217,16 +212,17 @@ struct RootTabView: View {
 }
 
 /// Mounts the live match above the tab bar, and only while there is one: an empty accessory would
-/// reserve an empty bar.
+/// reserve an empty bar. One branch per system, whatever is live, or the tabs would start over
+/// (sheets, drafts and all) each time a match began or went quiet.
 private struct LiveAccessoryPresenter: ViewModifier {
     let isLive: Bool
     @Binding var showingLive: Bool
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *), isLive {
+        if #available(iOS 26.1, *) {
             content
                 .tabBarMinimizeBehavior(.onScrollDown)
-                .tabViewBottomAccessory { LiveMatchAccessory(isPresented: $showingLive) }
+                .tabViewBottomAccessory(isEnabled: isLive) { LiveMatchAccessory(isPresented: $showingLive) }
         } else if #available(iOS 26.0, *) {
             content.tabBarMinimizeBehavior(.onScrollDown)
         } else {

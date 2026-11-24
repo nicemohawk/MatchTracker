@@ -52,7 +52,9 @@ final class LiveActivityController {
                 let start = session.startDate ?? Date()
                 MatchLog.info("mirrored match session began", category: "live")
                 // The background grant is for this moment, so start on what's known: it has begun.
-                controller.show(controller.latest ?? LiveMatchState(startDate: start))
+                // What's known may be the match before.
+                let known = controller.latest.flatMap { !$0.hasEnded && $0.updatedAt >= start ? $0 : nil }
+                controller.show(known ?? LiveMatchState(startDate: start))
             }
         }
     }
@@ -62,6 +64,7 @@ final class LiveActivityController {
         guard let state else { return }
         latest = state
         adoptRunningActivity()
+        endPrevious(before: state)
         if state.hasEnded {
             finish(with: state)
         } else if activity != nil {
@@ -86,12 +89,8 @@ final class LiveActivityController {
                 || record.startDate...(record.endDate ?? Date()) ~= activity.attributes.startDate else { return }
         var state = latest ?? activity.content.state
         let end = record.endDate ?? state.updatedAt
-        let us = record.events.filter { $0.kind == .goalForUs || $0.kind == .goalMine }.count
-        let them = record.events.filter { $0.kind == .goalAgainstUs }.count
-        if us + them > 0 {
-            state.goalsUs = us
-            state.goalsThem = them
-        }
+        state.goalsUs = record.score?.us
+        state.goalsThem = record.score?.them
         if end > state.updatedAt, state.isClockRunning {
             state.elapsed += end.timeIntervalSince(state.updatedAt)
         }
@@ -147,6 +146,15 @@ final class LiveActivityController {
         if let running = MatchActivity.activities.first(where: { $0.activityState == .active || $0.activityState == .stale }) {
             follow(running)
         }
+    }
+
+    /// An activity left over because the last match's end never arrived. A long pause moves the
+    /// apparent start too, hence the margin.
+    private func endPrevious(before state: LiveMatchState) {
+        guard let activity, state.startDate > activity.content.state.updatedAt,
+              state.startDate > activity.attributes.startDate.addingTimeInterval(30 * 60) else { return }
+        stopFollowing()
+        enqueue { await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
     private func endAbandoned() {

@@ -15,30 +15,23 @@ final class DesignCapture: XCTestCase {
         app.launchArguments += ProcessInfo.processInfo.environment["APP_ARGUMENTS"]?.split(separator: " ").map(String.init) ?? []
     }
 
-    /// Grants whatever Health asks for, so a fresh simulator can be used.
-    private func allowHealth() {
-        let health = app.navigationBars["Health Access"]
-        guard health.waitForExistence(timeout: 12) else { return }
-        for label in ["Turn On All", "UIA.Health.AllCategoryButton"] where app.descendants(matching: .any)[label].exists {
-            app.descendants(matching: .any)[label].firstMatch.tap()
-        }
-        let allow = app.buttons["Allow"].exists ? app.buttons["Allow"] : app.buttons["UIA.Health.Allow.Button"]
-        if allow.waitForExistence(timeout: 3) { allow.tap() }
-        sleep(2)
+    func testGrantHealth() {
+        app.launch()
+        for _ in 0..<2 { handleHealthKitPrompt(app: app) }
     }
 
     func testImportArchive() {
         app.launchArguments += ["-ImportDiagnostics", "YES"]
         app.launch()
-        for _ in 0..<3 { allowHealth() }
-        sleep(90)
+        for _ in 0..<3 { handleHealthKitPrompt(app: app) }
+        sleep(100)
         screenshot("00-imported")
     }
 
     func testWalk() {
         app.launch()
-        for _ in 0..<2 { allowHealth() }
-        sleep(12)
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(10)
         screenshot("01-summary")
         app.swipeUp()
         sleep(1)
@@ -46,12 +39,16 @@ final class DesignCapture: XCTestCase {
         app.swipeUp()
         sleep(1)
         screenshot("03-summary-3")
+        // The bar minimizes on the way down and comes back on the way up.
+        for _ in 0..<3 { app.swipeDown() }
+        sleep(1)
         app.tabBars.buttons["Matches"].tap()
         sleep(3)
         screenshot("04-matches")
-        let row = app.collectionViews.cells.element(boundBy: ProcessInfo.processInfo.environment["ROW"].flatMap(Int.init) ?? 0)
+        let row = app.collectionViews.cells.element(boundBy: ProcessInfo.processInfo.environment["ROW"].flatMap(Int.init) ?? 3)
         if row.waitForExistence(timeout: 5) { row.tap() }
-        sleep(6)
+        XCTAssertTrue(app.buttons["Share"].waitForExistence(timeout: 15), "A row should open its match")
+        sleep(5)
         screenshot("05-match")
         if app.buttons["Runs"].exists { app.buttons["Runs"].tap(); sleep(1); screenshot("06-match-runs") }
         if app.buttons["Season"].exists { app.buttons["Season"].tap(); sleep(1); screenshot("07-match-season") }
@@ -75,5 +72,102 @@ final class DesignCapture: XCTestCase {
             sleep(1)
             screenshot("13-edit-2")
         }
+    }
+
+    func testVideo() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(8)
+        app.tabBars.buttons["Matches"].tap()
+        let row = app.collectionViews.cells.containing(NSPredicate(format: "label CONTAINS 'Jul 14'")).firstMatch
+        for _ in 0..<12 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        sleep(5)
+        app.swipeUp()
+        sleep(2)
+        screenshot("20-moments")
+        app.buttons["More"].tap()
+        app.buttons["Video"].tap()
+        sleep(3)
+        screenshot("21-video")
+        app.collectionViews.cells.element(boundBy: 1).tap()
+        sleep(4)
+        screenshot("22-clip")
+        app.buttons["Done"].firstMatch.tap()
+        sleep(1)
+        for _ in 0..<3 { app.swipeUp() }
+        app.buttons["Line Up with the Match"].tap()
+        sleep(3)
+        screenshot("23-line-up")
+    }
+
+    func testEffort() {
+        for pass in 1...2 {
+            app.launch()
+            handleHealthKitPrompt(app: app, timeout: 4)
+            sleep(8)
+            app.tabBars.buttons["Matches"].tap()
+            app.collectionViews.cells.element(boundBy: 3).tap()
+            sleep(4)
+            let rate = app.buttons["Rate your effort"]
+            for _ in 0..<5 { app.swipeUp() }
+            sleep(1)
+            screenshot("30-effort-\(pass)")
+            if rate.exists {
+                rate.tap()
+                sleep(1)
+                app.sliders["Effort"].adjust(toNormalizedSliderPosition: 0.8)
+                screenshot("31-rating-\(pass)")
+                app.buttons["Save"].tap()
+                handleHealthKitPrompt(app: app, timeout: 6)
+                sleep(3)
+                screenshot("32-rated-\(pass)")
+            }
+            app.terminate()
+        }
+    }
+
+    /// The iPad's Health sheet is a centered form whose controls don't report as hittable.
+    func testPadGrantHealth() {
+        app.launchArguments += ["-ImportDiagnostics", "YES"]
+        app.launch()
+        for pass in 0..<2 {
+            sleep(8)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.557)).tap()
+            sleep(2)
+            screenshot("0\(pass)-on")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.664)).tap()
+            sleep(2)
+            screenshot("0\(pass)-allowed")
+        }
+        sleep(90)
+        screenshot("00-granted")
+    }
+
+    func testPad() {
+        app.launch()
+        sleep(6)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.557)).tap()
+        sleep(1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.664)).tap()
+        sleep(8)
+        screenshot("40-pad-summary")
+        app.buttons["Matches"].firstMatch.tap()
+        sleep(3)
+        screenshot("41-pad-matches")
+        app.collectionViews.cells.element(boundBy: 3).tap()
+        sleep(6)
+        screenshot("42-pad-match")
+        app.buttons["Team"].firstMatch.tap()
+        sleep(2)
+        screenshot("43-pad-team")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        app.buttons["Matches"].firstMatch.tap()
+        sleep(3)
+        screenshot("44-pad-landscape")
+        app.buttons["Summary"].firstMatch.tap()
+        sleep(2)
+        screenshot("45-pad-summary-landscape")
+        XCUIDevice.shared.orientation = .portrait
     }
 }

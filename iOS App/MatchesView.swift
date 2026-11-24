@@ -32,9 +32,9 @@ struct MatchesView: View {
                 NavigationSplitView {
                     list
                 } detail: {
-                    if let selection {
-                        detail(selection)
-                    } else {
+                    if let selection, matches.matches.contains(where: { $0.id == selection }) {
+                        detail(selection).id(selection)
+                    } else if !matches.matches.isEmpty {
                         ContentUnavailableView("Choose a Match", systemImage: "soccerball")
                     }
                 }
@@ -68,7 +68,7 @@ struct MatchesView: View {
             .navigationTitle(isSearchTab ? "Search" : "Matches")
             .modifier(Searching(isActive: isSearchTab, text: $query))
             // Built once per change rather than per render: hundreds of matches, all date-formatted.
-            .task(id: ListKey(revision: matches.contentVersion, digests: matches.digests.count, filter: filter, query: query)) {
+            .task(id: ListKey(revision: matches.contentVersion, digests: matches.digestRevision, filter: filter, query: query)) {
                 sections = MatchListSection.build(from: matches, filter: filter, query: query)
                 hasBuilt = true
             }
@@ -120,22 +120,31 @@ struct MatchList: View {
     let onDelete: (MatchSummary) -> Void
 
     var body: some View {
-        List(selection: selection ?? .constant(nil)) {
-            ForEach(sections) { section in
-                Section(section.title) {
-                    ForEach(section.items) { item in
-                        NavigationLink(value: item.id) { MatchRow(item: item) }
-                            .swipeActions {
-                                Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
-                            }
-                            .contextMenu {
-                                Button("Delete Match", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
-                            }
-                    }
-                }
+        // A selection binding on a list inside a stack swallows the taps its links need.
+        Group {
+            if let selection {
+                List(selection: selection) { rows }
+            } else {
+                List { rows }
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    private var rows: some View {
+        ForEach(sections) { section in
+            Section(section.title) {
+                ForEach(section.items) { item in
+                    NavigationLink(value: item.id) { MatchRow(item: item) }
+                        .swipeActions {
+                            Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
+                        }
+                        .contextMenu {
+                            Button("Delete Match", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
+                        }
+                }
+            }
+        }
     }
 }
 
@@ -208,7 +217,7 @@ struct ResultMark: View {
 
     private var color: Color {
         switch result {
-        case .won: return .green
+        case .won: return Theme.turf
         case .drawn: return .secondary
         case .lost: return .red
         }

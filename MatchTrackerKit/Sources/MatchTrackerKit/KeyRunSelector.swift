@@ -51,8 +51,13 @@ public enum KeyRunSelector {
         }
         let decisive = decisiveRun(among: candidates, events: events)
         var winners: [KeyRunCategory: RunSegment] = [:]
-        winners[.fastest] = best(candidates, by: \.peakSpeed)
-        winners[.longest] = best(candidates, by: \.distanceMeters)
+        // The match's fastest and longest, or nobody: a runner-up must not take the title.
+        func qualified(_ run: RunSegment?) -> RunSegment? {
+            candidates.contains { $0.id == run?.id } ? run : nil
+        }
+        let chronological = runs.sorted { $0.interval.start < $1.interval.start }
+        winners[.fastest] = qualified(best(chronological, by: \.peakSpeed))
+        winners[.longest] = qualified(best(chronological, by: \.distanceMeters))
         winners[.decisive] = decisive?.run
 
         var chosen: [RunSegment] = []

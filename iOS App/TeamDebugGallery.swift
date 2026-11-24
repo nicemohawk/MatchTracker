@@ -32,9 +32,6 @@ struct TeamDebugGallery: View {
         case "compare": stack { CohortBenchmarkView() }
         case "fixtures": stack { FixturesListView() }
         case "next": stack { List { NextMatchCard() }.navigationTitle("Summary") }
-        case "comments":
-            stack { Text("Match").toolbar { MatchCommentsButton(matchUUID: UUID()) } }
-                .sheet(isPresented: $isShowingSheet) { MatchCommentsSheet(matchUUID: UUID()) }
         case "join": TeamView().sheet(isPresented: $isShowingSheet) { TeamJoinSheet() }
         case "create": TeamView().sheet(isPresented: $isShowingSheet) { TeamCreateSheet() }
         case "manage": TeamView().sheet(isPresented: $isShowingSheet) { TeamManageSheet(sharedName: "Red Dragons") }

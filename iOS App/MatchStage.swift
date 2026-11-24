@@ -158,11 +158,12 @@ struct MatchStage: View {
                 .accessibilityLabel("Match time")
                 .accessibilityValue("\(minute(time ?? duration)) minutes")
 
-            Button("Whole Match") { pause(); time = nil }
-                .opacity(time == nil ? 0 : 1)
-                .disabled(time == nil)
-                .labelStyle(.titleOnly)
-                .font(.subheadline)
+            if time != nil {
+                Button("Whole Match", systemImage: "arrow.counterclockwise") { pause(); time = nil }
+                    .labelStyle(.iconOnly)
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+            }
         }
     }
 

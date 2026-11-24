@@ -100,7 +100,7 @@ struct SettingsView: View {
     // MARK: Profile
 
     private var profileSection: some View {
-        Section("Profile") {
+        Section {
             LabeledContent("Name") {
                 TextField("Player name", text: $playerName)
                     .textInputAutocapitalization(.words)
@@ -123,6 +123,10 @@ struct SettingsView: View {
             } else {
                 DisclosureRow(title: "MatchTracker Team", value: "Not subscribed") { showingPaywall = true }
             }
+        } header: {
+            Text("Profile")
+        } footer: {
+            Text("Your team sees this name.")
         }
     }
 
@@ -143,6 +147,7 @@ struct SettingsView: View {
             Picker("Units", selection: .init(get: { settings.units }, set: { units in
                 settings.units = units
                 environment.settingsChanged()
+                SystemSurfaces.publish(digests: matches.playedDigests)
             })) {
                 Text("Automatic").tag(UnitsPreference.automatic)
                 Text("Miles and yards").tag(UnitsPreference.imperial)
@@ -163,6 +168,7 @@ struct SettingsView: View {
             DisclosureRow(title: "Fields", value: fields.fields.isEmpty ? "None" : fields.fields.count.formatted()) {
                 showingFields = true
             }
+            NavigationLink("Fixtures") { FixturesListView() }
         } footer: {
             Text("Where you play. MatchTracker lines your heat map up with the field’s outline.")
         }
@@ -196,7 +202,8 @@ struct SettingsView: View {
             }
             if !matches.matches.isEmpty {
                 ShareLink("Export Matches",
-                          item: MatchHistoryExport(matches: matches.matches, fieldNames: fieldNames),
+                          item: MatchHistoryExport(matches: matches.matches, digests: matches.digests,
+                                                   fieldNames: fieldNames),
                           preview: SharePreview("MatchTracker matches"))
                     .labelStyle(.titleOnly)
             }
@@ -236,7 +243,7 @@ struct SettingsView: View {
                                     isPresented: $showingDeletionConfirmation, titleVisibility: .visible) {
                     Button("Delete Server Data", role: .destructive) { Task { await requestDeletion() } }
                 } message: {
-                    Text("Your matches, fields, comments and live updates are removed from the MatchTracker server. What’s on this iPhone stays.")
+                    Text("Your matches, fields and live updates are removed from the MatchTracker server. What’s on this iPhone stays.")
                 }
             if let privacyMessage {
                 Text(privacyMessage).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
@@ -262,6 +269,7 @@ struct SettingsView: View {
     private func requestDeletion() async {
         do {
             try await uploads.requestServerDeletion()
+            SystemSurfaces.erase()
             privacyMessage = "Deletion requested."
         } catch {
             privacyMessage = "Couldn’t reach the server, so nothing was deleted. Check your connection and try again."

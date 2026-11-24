@@ -10,9 +10,15 @@ import CoreGraphics
 // - **Route distance**: reported GPS speed integrated over time (`trackStepDistances`). Adding up
 //   the gaps between fixes instead counts their jitter as running; on a wrist at 1 Hz that
 //   overstates a match by half.
-// - **Run**: at least two seconds at running speed (`SpeedThresholds.running`).
-// - **Sprint**: a run whose sustained top speed reaches `SpeedThresholds.sprinting`.
-// - **Top speed**: the best speed held for about a second (`sustainedTopSpeed`), on the pitch.
+// - **Run**: an effort of at least two seconds on the pitch that holds running speed
+//   (`SpeedThresholds.running`) for about a second.
+// - **Sprint**: a run that holds `SpeedThresholds.sprinting` for about a second.
+// - **Top speed**: the fastest run's peak (`topSpeed`): the best speed held for about a second
+//   (`sustainedTopSpeed`). A burst too brief to be a run is a GPS spike, not a top speed.
+// - **Sprint distance**: what was covered at sprint speed inside sprints, so there is some exactly
+//   when there are sprints.
+//
+// All four read one speed series (`peakSpeeds`) through one on-pitch filter.
 
 /// Per-point speed in m/s: the reported point speed when valid, otherwise a GPS-derived
 /// point-to-point speed (distance / elapsed time).
@@ -58,12 +64,13 @@ public func routeDistanceMeters(_ track: [TrackPoint]) -> Double {
 /// when nothing was. One sample is GPS noise as often as it is running. Samples faster than
 /// `SpeedThresholds.plausibleMaximum` break the window rather than being clamped into it.
 func sustainedTopSpeed(speeds: [Double], timestamps: [Date], in range: Range<Int>,
-                       where isCounted: (Int) -> Bool = { _ in true }) -> Double? {
+                       below limit: Double = .infinity, where isCounted: (Int) -> Bool = { _ in true }) -> Double? {
     var best: Double?
     for start in range {
         var slowest = Double.infinity
         for index in start..<range.upperBound {
-            guard speeds[index] >= 0, speeds[index] <= SpeedThresholds.plausibleMaximum, isCounted(index),
+            guard speeds[index] >= 0, speeds[index] <= SpeedThresholds.plausibleMaximum, speeds[index] < limit,
+                  isCounted(index),
                   index == start || timestamps[index].timeIntervalSince(timestamps[index - 1]) <= 2.5
             else { break }
             slowest = min(slowest, speeds[index])
@@ -85,15 +92,12 @@ func peakSpeeds(_ track: [TrackPoint]) -> [Double] {
         : rawPointSpeeds(track)
 }
 
-/// `rawPointSpeeds` smoothed with a 3-point moving average (endpoints left untouched).
-func smoothedPointSpeeds(_ track: [TrackPoint]) -> [Double] {
-    let raw = rawPointSpeeds(track)
-    guard raw.count >= 3 else { return raw }
-    var smoothed = raw
-    for index in 1..<(raw.count - 1) {
-        smoothed[index] = (raw[index - 1] + raw[index] + raw[index + 1]) / 3
-    }
-    return smoothed
+/// A match's top speed (see "Definitions"). `track` is time-ordered, and `runs` were detected in it
+/// with the same filter. Without a run it is the best speed held below running.
+func topSpeed(of track: [TrackPoint], runs: [RunSegment], where isCounted: (Int) -> Bool) -> Double? {
+    runs.map(\.peakSpeed).max() ?? sustainedTopSpeed(
+        speeds: peakSpeeds(track), timestamps: track.map(\.timestamp), in: track.indices,
+        below: SpeedThresholds.running, where: isCounted)
 }
 
 /// Whether a timestamp falls inside any of the intervals.
@@ -185,8 +189,10 @@ public struct RunSegment: Codable, Identifiable, Hashable, Sendable {
     public var averageSpeed: Double
     public var intensity: RunIntensity
     public var pointRange: Range<Int>   // indices into source track
+    /// Covered at sprint speed. Zero unless this is a sprint.
+    public var sprintDistanceMeters: Double
 
-    public init(id: UUID = UUID(), interval: DateInterval, distanceMeters: Double, peakSpeed: Double, averageSpeed: Double, intensity: RunIntensity, pointRange: Range<Int>) {
+    public init(id: UUID = UUID(), interval: DateInterval, distanceMeters: Double, peakSpeed: Double, averageSpeed: Double, intensity: RunIntensity, pointRange: Range<Int>, sprintDistanceMeters: Double = 0) {
         self.id = id
         self.interval = interval
         self.distanceMeters = distanceMeters
@@ -194,6 +200,7 @@ public struct RunSegment: Codable, Identifiable, Hashable, Sendable {
         self.averageSpeed = averageSpeed
         self.intensity = intensity
         self.pointRange = pointRange
+        self.sprintDistanceMeters = sprintDistanceMeters
     }
 }
 
@@ -201,33 +208,41 @@ public extension Array where Element == RunSegment {
     var sprintCount: Int { filter { $0.intensity == .sprint }.count }
     /// Sprints are runs too.
     var runCount: Int { filter { $0.intensity != .jog }.count }
+    var sprintDistanceMeters: Double { reduce(0) { $0 + $1.sprintDistanceMeters } }
 }
 
 public struct RunDetectorConfiguration: Sendable {
     public var runThreshold: Double      // m/s, default 4.0
     public var sprintThreshold: Double   // default 5.5
     public var minimumDuration: TimeInterval // default 2.0
-    public var mergeGap: TimeInterval    // default 1.5 s below-threshold gap merged
+    public var mergeGap: TimeInterval    // default 2.5 s below-threshold gap merged: one lost fix
 
     public init() {
         self.runThreshold = SpeedThresholds.running
         self.sprintThreshold = SpeedThresholds.sprinting
         self.minimumDuration = 2.0
-        self.mergeGap = 1.5
+        self.mergeGap = 2.5
     }
 }
 
 public enum RunDetector {
-    /// Speed-threshold segmentation with hysteresis + gap merging. Uses GPS-derived speed
-    /// (point-to-point) when speedMetersPerSecond invalid.
-    public static func detectRuns(in track: [TrackPoint],
+    /// Speed-threshold segmentation with hysteresis + gap merging, over the samples on the pitch.
+    /// `isOnPitch` is indexed like `track`, which must then be time-ordered; nil counts every sample.
+    public static func detectRuns(in track: [TrackPoint], isOnPitch: [Bool]? = nil,
                                   configuration: RunDetectorConfiguration = .init()) -> [RunSegment] {
         guard track.count >= 2 else { return [] }
-        let ordered = track.sorted { $0.timestamp < $1.timestamp }
-        let speeds = smoothedPointSpeeds(ordered)
-        let peaks = peakSpeeds(ordered)
+        let ordered = isOnPitch == nil ? track.sorted { $0.timestamp < $1.timestamp } : track
+        let speeds = peakSpeeds(ordered)
         let steps = trackStepDistances(ordered)
         let timestamps = ordered.map(\.timestamp)
+        func isCounted(_ index: Int) -> Bool {
+            speeds[index] >= 0 && speeds[index] <= SpeedThresholds.plausibleMaximum && isOnPitch?[index] != false
+        }
+
+        /// Whether a sample carries on from the one before it, rather than following a hole in the fixes.
+        func follows(_ index: Int) -> Bool {
+            index > 0 && timestamps[index].timeIntervalSince(timestamps[index - 1]) <= configuration.mergeGap
+        }
 
         // Hysteresis: in at running speed, out below 80% of it. Inclusive index ranges.
         let endThreshold = configuration.runThreshold * 0.8
@@ -235,44 +250,52 @@ public enum RunDetector {
         var segmentStart: Int?
         for index in speeds.indices {
             if let start = segmentStart {
-                if speeds[index] < endThreshold {
-                    rawSegments.append((start, index - 1))
-                    segmentStart = nil
-                }
-            } else if speeds[index] >= configuration.runThreshold {
-                segmentStart = index
+                if speeds[index] >= endThreshold, isCounted(index), follows(index) { continue }
+                rawSegments.append((start, index - 1))
+                segmentStart = nil
             }
+            if speeds[index] >= configuration.runThreshold, isCounted(index) { segmentStart = index }
         }
         if let start = segmentStart {
             rawSegments.append((start, speeds.count - 1))
+        }
+        // The effort begins where the speed was building, not where it crossed the threshold.
+        rawSegments = rawSegments.map { segment in
+            var start = segment.start
+            while follows(start), speeds[start - 1] >= endThreshold, isCounted(start - 1) { start -= 1 }
+            return (start, segment.end)
         }
 
         // Merge segments separated by a below-threshold gap shorter than mergeGap.
         var merged: [(start: Int, end: Int)] = []
         for segment in rawSegments {
             if let last = merged.last,
-               timestamps[segment.start].timeIntervalSince(timestamps[last.end]) < configuration.mergeGap {
+               timestamps[segment.start].timeIntervalSince(timestamps[last.end]) <= configuration.mergeGap {
                 merged[merged.count - 1] = (last.start, segment.end)
             } else {
                 merged.append(segment)
             }
         }
 
-        // Build the run segments, dropping anything shorter than the minimum duration.
+        // Build the run segments, dropping anything too brief, or that never held running speed.
         return merged.compactMap { segment -> RunSegment? in
             let interval = DateInterval(start: timestamps[segment.start], end: timestamps[segment.end])
+            let range = segment.start..<(segment.end + 1)
             guard interval.duration >= configuration.minimumDuration,
-                  // Nothing held for a second below the plausible maximum: not a person running.
-                  let peakSpeed = sustainedTopSpeed(speeds: peaks, timestamps: timestamps,
-                                                    in: segment.start..<(segment.end + 1)) else { return nil }
-            let range = segment.start...segment.end
+                  let peakSpeed = sustainedTopSpeed(speeds: speeds, timestamps: timestamps, in: range, where: isCounted),
+                  peakSpeed >= configuration.runThreshold else { return nil }
+            let isSprint = peakSpeed >= configuration.sprintThreshold
+            let counted = range.filter(isCounted)
             return RunSegment(
                 interval: interval,
                 distanceMeters: range.dropFirst().reduce(0) { $0 + steps[$1] },
                 peakSpeed: peakSpeed,
-                averageSpeed: range.reduce(0) { $0 + speeds[$1] } / Double(range.count),
-                intensity: peakSpeed >= configuration.sprintThreshold ? .sprint : .run,
-                pointRange: segment.start..<(segment.end + 1)
+                averageSpeed: counted.reduce(0) { $0 + speeds[$1] } / Double(counted.count),
+                intensity: isSprint ? .sprint : .run,
+                pointRange: range,
+                sprintDistanceMeters: !isSprint ? 0 : counted.dropFirst()
+                    .filter { speeds[$0] >= configuration.sprintThreshold }
+                    .reduce(0) { $0 + steps[$1] }
             )
         }
     }

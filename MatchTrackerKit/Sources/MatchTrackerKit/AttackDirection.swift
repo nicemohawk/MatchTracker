@@ -16,6 +16,7 @@ public struct PitchSample: Equatable, Sendable {
     /// 0 = own goal line, 1 = the attacking end.
     public let y: Double
     public let speed: Double
+    /// On the pitch, in play, and not standing about (`WaitingDetector`).
     public let onPitch: Bool
 }
 
@@ -104,6 +105,53 @@ public struct AttackDirection: Equatable, Sendable {
     }
 }
 
+// MARK: - Standing about
+
+/// Long spells in one spot: waiting for kickoff, a drink, a free kick being argued over. They say
+/// nothing about where someone plays, and a minute of one outweighs ten of running.
+public enum WaitingDetector {
+    private static let minimumDuration: TimeInterval = 45
+    private static let radiusMeters = 4.0
+    /// Slower than this on average (m/s); above it, staying close is a duel, not a wait.
+    private static let maximumSpeed = 0.8
+    /// Fixes either side a position is averaged over, so GPS wander doesn't read as walking.
+    private static let smoothing = 3
+
+    /// Whether each sample of a time-ordered track is part of one.
+    public static func isWaiting(_ track: [TrackPoint]) -> [Bool] {
+        var waiting = [Bool](repeating: false, count: track.count)
+        guard let reference = track.first?.coordinate else { return waiting }
+        let frame = ENUFrame(reference: reference)
+        let raw = track.map { frame.project($0.coordinate) }
+        let positions = raw.indices.map { index -> CGPoint in
+            let window = raw[max(0, index - smoothing)...min(raw.count - 1, index + smoothing)]
+            return CGPoint(x: mean(window.map { Double($0.x) }), y: mean(window.map { Double($0.y) }))
+        }
+        let speeds = rawPointSpeeds(track)
+
+        var start = 0
+        while start < track.count {
+            var total = CGPoint.zero
+            var end = start
+            while end < track.count {
+                let count = CGFloat(end - start)
+                if count > 0, hypot(Double(positions[end].x - total.x / count),
+                                    Double(positions[end].y - total.y / count)) > radiusMeters { break }
+                total = CGPoint(x: total.x + positions[end].x, y: total.y + positions[end].y)
+                end += 1
+            }
+            let duration = track[end - 1].timestamp.timeIntervalSince(track[start].timestamp)
+            if duration >= minimumDuration, mean(Array(speeds[start..<end])) <= maximumSpeed {
+                for index in start..<end { waiting[index] = true }
+                start = end
+            } else {
+                start += 1
+            }
+        }
+        return waiting
+    }
+}
+
 // MARK: - Portrait heat
 
 /// Time on the pitch as a portrait grid: row-major, row 0 the attacking end, busiest cell 1.
@@ -123,6 +171,18 @@ public enum PortraitHeat {
             cells[row * columns + column] += Float(seconds)
         }
         return normalized(cells)
+    }
+
+    /// A thumbnail laid on its side, attacking right, for spaces wider than they're tall.
+    public static func onItsSide(_ thumbnail: [Float]) -> HeatmapGrid? {
+        guard thumbnail.count == thumbnailColumns * thumbnailRows else { return nil }
+        var grid = HeatmapGrid(columns: thumbnailRows, rows: thumbnailColumns,
+                               cells: Array(repeating: 0, count: thumbnail.count))
+        for (index, value) in thumbnail.enumerated() {
+            let (row, column) = index.quotientAndRemainder(dividingBy: thumbnailColumns)
+            grid.cells[column * thumbnailRows + thumbnailRows - 1 - row] = Double(value)
+        }
+        return grid
     }
 
     static func thumbnail(_ heat: [Float]) -> [Float]? {

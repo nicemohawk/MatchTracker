@@ -121,7 +121,6 @@ private struct TeamPitch: View {
     private let features: [(symbol: String, title: String, detail: String)] = [
         ("person.3", "See the whole team", "Everyone’s average position on one pitch."),
         ("dot.radiowaves.left.and.right", "Follow matches live", "Watch the score, subs and distance from the sideline."),
-        ("bubble.left.and.bubble.right", "Talk it over", "A chat for every match."),
         ("rectangle.stack", "Play for more than one team", "Keep each squad’s matches separate.")
     ]
 

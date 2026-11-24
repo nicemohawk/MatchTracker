@@ -39,7 +39,9 @@ final class LiveMatchStore {
             if update.startsNewMatch(after: latest) {
                 endSession()
             } else if !update.follows(latest) {
-                // Out-of-order delivery (userInfo fallback racing sendMessage): keep the newest.
+                // Out-of-order delivery (userInfo fallback racing sendMessage): keep the newest, but
+                // what happened still happened.
+                if update.matchID == latest.matchID { take(update) }
                 return
             }
         }
@@ -47,14 +49,7 @@ final class LiveMatchStore {
         if state == nil { state = LiveMatchState(update) } else { state?.apply(update) }
         // When the watch said it, not when it got here: a queued update can arrive hours late.
         lastReceivedAt = min(update.timestamp, Date())
-        if !update.newEvents.isEmpty {
-            // By identity: the watch re-sends an event whose kind changed ("that goal was mine").
-            let updated = Set(update.newEvents.map(\.id))
-            events.removeAll { updated.contains($0.id) }
-            events.append(contentsOf: update.newEvents)
-            events.sort { $0.date < $1.date }
-            hasEnded = events.contains { $0.kind == .matchEnd }
-        }
+        take(update)
         if !update.latestPoints.isEmpty {
             for point in update.latestPoints { sprints.add(point) }
             sprintCount = sprints.count
@@ -64,6 +59,18 @@ final class LiveMatchStore {
             }
         }
         scheduleStalenessCheck()
+    }
+
+    private func take(_ update: LiveMatchUpdate) {
+        if !update.newEvents.isEmpty {
+            // By identity: the watch re-sends an event whose kind changed ("that goal was mine").
+            let updated = Set(update.newEvents.map(\.id))
+            events.removeAll { updated.contains($0.id) }
+            events.append(contentsOf: update.newEvents)
+            events.sort { $0.date < $1.date }
+            hasEnded = events.contains { $0.kind == .matchEnd }
+        }
+        if let removed = update.removedEventIDs { events.removeAll { removed.contains($0.id) } }
     }
 
     func endSession() {

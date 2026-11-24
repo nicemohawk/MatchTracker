@@ -13,12 +13,12 @@ import Foundation
 /// matches never reach.
 ///
 /// ## Definitions
-/// - **Sprint distance** — distance covered at sprint speed (**≥ 5.5 m/s**).
-/// - **High-speed running** — distance covered at running speed, **4.0…5.5 m/s**.
+/// - **Sprint distance** — distance covered at sprint speed (**≥ 5.5 m/s**) in sprints.
+/// - **High-speed running** — the rest of the distance covered in runs at running speed (**≥ 4.0 m/s**).
 /// - **Accelerations** — discrete efforts exceeding **+3.0 m/s²** sustained for **≥ 0.5 s**.
 /// - **Decelerations** — discrete efforts below **−3.0 m/s²** sustained for **≥ 0.5 s**.
 /// - **Distance per minute** — total on-pitch distance ÷ on-pitch minutes (0 with no on-pitch time).
-/// - **Top speed** — the best speed held for about a second (see `sustainedTopSpeed`).
+/// - **Top speed** — the fastest run's peak (see `topSpeed`).
 ///
 /// All distance and speed accumulation is restricted to `playingIntervals` (bench time excluded).
 /// An empty `playingIntervals` means "no substitution data" and is treated as the whole track being
@@ -73,47 +73,40 @@ public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
     private static let speedSmoothingHalfWindowSeconds = 0.5
 
     /// Computes the load metrics for a GPS track, restricting accumulation to `playingIntervals`.
-    /// An empty `playingIntervals` is treated as "whole track on-pitch".
-    public static func compute(track: [TrackPoint],
-                               playingIntervals: [DateInterval]) -> SoccerLoadMetrics {
-        // Sort, and drop fixes too loose to trust (one of the two teleport-outlier guards).
-        let points = track
-            .sorted { $0.timestamp < $1.timestamp }
-            .filter { $0.horizontalAccuracy <= TrackPoint.maximumUsableHorizontalAccuracy }
+    /// An empty `playingIntervals` is treated as "whole track on-pitch". `counted` is the match's
+    /// own runs and the filter they were detected with, over a time-ordered `track`; nil detects
+    /// them within `playingIntervals`.
+    public static func compute(track: [TrackPoint], playingIntervals: [DateInterval],
+                               counted: (runs: [RunSegment], isOnPitch: [Bool])? = nil) -> SoccerLoadMetrics {
+        let points = counted == nil ? track.sorted { $0.timestamp < $1.timestamp } : track
         guard points.count >= 2 else { return .zero }
 
         let timestamps = points.map(\.timestamp)
         let intervals = playingIntervals
         func onPitch(_ date: Date) -> Bool { intervals.isEmpty || isWithin(date, intervals: intervals) }
+        let isCounted = counted?.isOnPitch ?? timestamps.map(onPitch)
+        let runs = counted?.runs ?? RunDetector.detectRuns(in: points, isOnPitch: isCounted)
 
         // Per-point instantaneous speed with outliers rejected, then a ~1 s moving average used for
-        // band classification and acceleration.
+        // acceleration.
         let instantaneous = sanitizedSpeeds(points)
         let steps = trackStepDistances(points)
         let smoothed = movingAverage(instantaneous, timestamps: timestamps,
                                      halfWindow: speedSmoothingHalfWindowSeconds)
 
-        // Distance accumulation (on-pitch steps only), split into sprint / HSR bands.
-        var sprintDistance = 0.0
-        var highSpeedDistance = 0.0
         var totalDistance = 0.0
         for index in 0..<(points.count - 1) {
             guard onPitch(timestamps[index]), onPitch(timestamps[index + 1]) else { continue }
-            let stepDistance = steps[index + 1]
-            totalDistance += stepDistance
-            // A point's speed reflects the motion arriving at it (speed[i] ≈ dist(i-1,i)/dt), so the
-            // step ending at `index + 1` is classified by that point's smoothed speed.
-            let stepSpeed = smoothed[index + 1]
-            if stepSpeed >= sprintSpeedMetersPerSecond {
-                sprintDistance += stepDistance
-            } else if stepSpeed >= highSpeedRunningLowerMetersPerSecond {
-                highSpeedDistance += stepDistance
-            }
+            totalDistance += steps[index + 1]
         }
 
-        let onPitchFlags = timestamps.map(onPitch)
-        let topSpeed = sustainedTopSpeed(speeds: peakSpeeds(points), timestamps: timestamps,
-                                         in: points.indices, where: { onPitchFlags[$0] }) ?? 0
+        let speeds = peakSpeeds(points)
+        let runningDistance = runs.reduce(0) { total, run in
+            total + run.pointRange.dropFirst()
+                .filter { isCounted[$0] && speeds[$0] >= highSpeedRunningLowerMetersPerSecond }
+                .reduce(0) { $0 + steps[$1] }
+        }
+        let fastest = topSpeed(of: points, runs: runs, where: { isCounted[$0] }) ?? 0
 
         // Discrete, debounced accel/decel efforts from the smoothed speed signal.
         let accelerationCount = countEfforts(smoothed: smoothed, timestamps: timestamps,
@@ -128,12 +121,12 @@ public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
         let distancePerMinute = onPitchSeconds > 0 ? totalDistance / (onPitchSeconds / 60) : 0
 
         return SoccerLoadMetrics(
-            sprintDistanceMeters: sprintDistance,
-            highSpeedRunningMeters: highSpeedDistance,
+            sprintDistanceMeters: runs.sprintDistanceMeters,
+            highSpeedRunningMeters: max(0, runningDistance - runs.sprintDistanceMeters),
             accelerationCount: accelerationCount,
             decelerationCount: decelerationCount,
             distancePerMinuteMeters: distancePerMinute,
-            topSpeedMetersPerSecond: topSpeed)
+            topSpeedMetersPerSecond: fastest)
     }
 
     // MARK: - Speed derivation

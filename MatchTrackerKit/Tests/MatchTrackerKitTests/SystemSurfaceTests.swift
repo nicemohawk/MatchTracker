@@ -135,10 +135,11 @@ final class SystemSurfaceTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let grid = HeatmapGrid(columns: 60, rows: 40, cells: (0..<2400).map { Double($0) / 2400 })
-        var snapshot = WidgetSnapshot.make(from: [digest(0, us: 1, them: 0)], heat: grid, now: base)
-        XCTAssertEqual(snapshot.heat?.cells.count, 600)
-        XCTAssertEqual(snapshot.heat?.cells.max(), 1)
+        var latest = digest(0, us: 1, them: 0)
+        // Busiest at the attacking end, on the right as the player faces it.
+        latest.heat = (0..<(12 * 18)).map { $0 == 10 ? 1 : 0 }
+        var snapshot = WidgetSnapshot.make(from: [latest], now: base)
+        XCTAssertEqual(snapshot.heat?[17, 10], 1)
         XCTAssertTrue(try snapshot.save(to: directory))
         XCTAssertFalse(try snapshot.save(to: directory))
         XCTAssertEqual(WidgetSnapshot.load(from: directory)?.lastMatch, snapshot.lastMatch)

@@ -2,13 +2,11 @@
 // MatchTracker
 //
 // Photos <-> container IO for sideline footage: importing a picked movie (reading its creation
-// date + duration and copying it into the store) and exporting a single event-anchored clip back
-// out to the user's photo library (add-only) via AVAssetExportSession.
+// date + duration and copying it into the store) and cutting a single event-anchored clip out of it.
 
 import Foundation
 import AVFoundation
 import CoreTransferable
-import Photos
 import UniformTypeIdentifiers
 import MatchTrackerKit
 
@@ -44,86 +42,27 @@ enum SidelineVideoImporter {
     }
 }
 
-/// Errors surfaced by the clip exporter.
-enum SidelineExportError: LocalizedError {
-    case notAuthorized
-    case exportFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .notAuthorized:
-            return "MatchTracker needs permission to add the clip to your photo library. Enable it in Settings › Photos."
-        case .exportFailed(let reason):
-            return "Couldn't export the clip: \(reason)"
-        }
-    }
-}
-
-/// Trims a time range out of a source movie and saves it to the photo library (add-only).
+/// Cuts a range out of a movie, into a file of its own.
 enum SidelineClipExporter {
-    /// Export `range` (seconds) from `sourceURL` and save the trimmed clip to Photos. Requests
-    /// add-only authorization; throws `SidelineExportError` on denial or failure.
-    static func export(from sourceURL: URL,
-                       start: TimeInterval,
-                       end: TimeInterval) async throws {
-        let status = await requestAddOnlyAuthorization()
-        guard status == .authorized || status == .limited else {
-            throw SidelineExportError.notAuthorized
-        }
-
-        let asset = AVURLAsset(url: sourceURL)
-        let preset = AVAssetExportPresetHighestQuality
-        guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
-            throw SidelineExportError.exportFailed("unsupported format")
-        }
-
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sideline-clip-\(UUID().uuidString).mov")
-        try? FileManager.default.removeItem(at: outputURL)
-
-        let timescale: CMTimeScale = 600
-        let startTime = CMTime(seconds: max(0, start), preferredTimescale: timescale)
-        let endTime = CMTime(seconds: end, preferredTimescale: timescale)
-        session.outputURL = outputURL
-        session.outputFileType = .mov
-        session.timeRange = CMTimeRange(start: startTime, end: endTime)
-
-        try await runExport(session)
-
-        try await save(outputURL)
-        try? FileManager.default.removeItem(at: outputURL)
+    struct ExportFailed: LocalizedError {
+        let reason: String?
+        var errorDescription: String? { reason ?? "The clip couldn’t be cut from its video." }
     }
 
-    /// iOS 17-compatible export (the parameterless async `export()` is iOS 18+).
-    private static func runExport(_ session: AVAssetExportSession) async throws {
+    /// `start` and `end` are seconds into `source`.
+    static func trim(_ source: URL, from start: TimeInterval, to end: TimeInterval) async throws -> URL {
+        guard let session = AVAssetExportSession(asset: AVURLAsset(url: source), presetName: AVAssetExportPresetHighestQuality)
+        else { throw ExportFailed(reason: nil) }
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("clip-\(UUID().uuidString).mov")
+        session.outputURL = output
+        session.outputFileType = .mov
+        session.timeRange = CMTimeRange(start: CMTime(seconds: max(0, start), preferredTimescale: 600),
+                                        end: CMTime(seconds: end, preferredTimescale: 600))
+        // The async `export()` needs iOS 18.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             session.exportAsynchronously { continuation.resume() }
         }
-        guard session.status == .completed else {
-            let reason = session.error?.localizedDescription ?? "export incomplete"
-            throw SidelineExportError.exportFailed(reason)
-        }
-    }
-
-    private static func requestAddOnlyAuthorization() async -> PHAuthorizationStatus {
-        await withCheckedContinuation { continuation in
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                continuation.resume(returning: status)
-            }
-        }
-    }
-
-    private static func save(_ url: URL) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            PHPhotoLibrary.shared().performChanges {
-                PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: url)
-            } completionHandler: { success, error in
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: SidelineExportError.exportFailed(error?.localizedDescription ?? "save failed"))
-                }
-            }
-        }
+        guard session.status == .completed else { throw ExportFailed(reason: session.error?.localizedDescription) }
+        return output
     }
 }

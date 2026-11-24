@@ -108,12 +108,12 @@ private struct TeamPlayerNameSection: View {
     var body: some View {
         Section {
             LabeledContent("Your name") {
-                TextField("First and last", text: $name)
+                TextField("Name or initials", text: $name)
                     .textContentType(.name)
                     .multilineTextAlignment(.trailing)
             }
         } footer: {
-            Text("Teammates see this next to your matches. Use initials if you'd rather not share your full name.")
+            Text("Teammates see exactly this next to your matches.")
         }
     }
 }
