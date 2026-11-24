@@ -41,18 +41,17 @@ public enum KeyRunSelector {
     /// A run with more of its fixes past the lines than this isn't one to draw on a pitch.
     static let maximumShareOutside = 0.25
 
+    /// Whether a run was on the pitch, given whether each fix it indexes into was.
+    public static func isOnPitch(_ run: RunSegment, isInside: [Bool]) -> Bool {
+        let outside = isInside[run.pointRange].filter { !$0 }.count
+        // One stray fix can be a quarter of a short run.
+        return outside < 2 || Double(outside) <= maximumShareOutside * Double(run.pointRange.count)
+    }
+
     /// Deterministic, best category first; empty when no run is a sprint or 30 yards.
-    /// - Parameter isInside: Whether each fix the runs index into was between the lines; nil when all were.
-    public static func select(runs: [RunSegment], events: [MatchEvent], interval: DateInterval,
-                              isInside: [Bool]? = nil) -> [KeyRun] {
-        func isOnPitch(_ run: RunSegment) -> Bool {
-            guard let fixes = isInside?[run.pointRange] else { return true }
-            let outside = fixes.filter { !$0 }.count
-            // One stray fix can be a quarter of a short run.
-            return outside < 2 || Double(outside) <= maximumShareOutside * Double(fixes.count)
-        }
+    public static func select(runs: [RunSegment], events: [MatchEvent], interval: DateInterval) -> [KeyRun] {
         let candidates = runs
-            .filter { ($0.intensity == .sprint || $0.distanceMeters >= minimumDistanceMeters) && isOnPitch($0) }
+            .filter { $0.intensity == .sprint || $0.distanceMeters >= minimumDistanceMeters }
             .sorted { $0.interval.start < $1.interval.start }
         guard !candidates.isEmpty else { return [] }
 
