@@ -83,8 +83,8 @@ private struct ExportLink: View {
             Label {
                 if showsPurpose {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(format.title).foregroundStyle(.primary)
-                        Text(format.purpose).font(.footnote).foregroundStyle(.secondary)
+                        Text(format.title).foregroundStyle(Color.primary)
+                        Text(format.purpose).font(.footnote).foregroundStyle(Color.secondary)
                     }
                 } else {
                     Text(format.title)
@@ -114,7 +114,7 @@ struct ExportFile: Transferable, Sendable {
 
         var purpose: String {
             switch self {
-            case .fit: return "Strava, Garmin Connect and most training sites"
+            case .fit: return "Strava and most training sites"
             case .tcx: return "Training sites that don't take FIT"
             case .gpx: return "Maps"
             case .trackCSV, .eventsCSV: return "Spreadsheets"
@@ -194,6 +194,8 @@ extension ActivityExport {
             name: "Soccer match", startDate: detail.matchStart, endDate: detail.matchEnd, track: detail.track,
             heartRate: detail.heartRateSeries.map { HeartRateSample(date: $0.date, bpm: $0.bpm) },
             events: detail.events,
+            halftime: detail.analytics?.halftime,
+            distanceMeters: detail.analytics?.distanceMeters,
             activeEnergyKilocalories: summary.workout?.statistics(for: HKQuantityType(.activeEnergyBurned))?
                 .sumQuantity()?.doubleValue(for: .kilocalorie())
         )

@@ -2,8 +2,6 @@ import XCTest
 @testable import MatchTrackerKit
 
 final class PitchPictureTests: XCTestCase {
-    private let start = Date(timeIntervalSince1970: 1_700_000_000)
-
     private func heat(_ zones: [(across: Double, up: Double, seconds: Double)]) -> PitchHeat {
         PitchHeat(samples: zones.map { (PitchPoint(across: $0.across, up: $0.up), $0.seconds) })
     }
@@ -63,74 +61,15 @@ final class PitchPictureTests: XCTestCase {
         XCTAssertGreaterThan(heat.values[heat.columns - 1], 0)                 // far right corner
     }
 
-    func testLongAxisGridTurnsUpright() {
-        // One hot cell at the far end of the long axis, on its left.
-        var cells = [Double](repeating: 0, count: 6)
-        cells[2] = 1
-        let grid = HeatmapGrid(columns: 3, rows: 2, cells: cells)
-        XCTAssertEqual(PitchHeat(grid).values, [1, 0, 0, 0, 0, 0])
-        XCTAssertEqual(PitchHeat(grid, attacksTowardFarEnd: false).values, [0, 0, 0, 0, 0, 1])
-        XCTAssertEqual(PitchHeat(grid).turnedAround, PitchHeat(grid, attacksTowardFarEnd: false))
-        XCTAssertTrue(PitchHeat(HeatmapGrid(columns: 30, rows: 20, cells: [])).isEmpty)
-    }
-
-    // MARK: Attack direction
-
-    func testBothHalvesAttackUp() throws {
-        // A pitch running due north; the player sprints north before the break and south after.
-        let frame = ENUFrame(reference: Coordinate2D(latitude: 40, longitude: -83))
-        func coordinate(north: Double, east: Double) -> Coordinate2D { frame.unproject(CGPoint(x: east, y: north)) }
-        let rectangle = OrientedRectangle(
-            center: Coordinate2D(latitude: 40, longitude: -83), lengthMeters: 100, widthMeters: 60, headingDegrees: 0,
-            corners: [])
-        let projector = FieldProjector(rectangle: rectangle)
-        func point(_ seconds: Double, north: Double, east: Double) -> TrackPoint {
-            TrackPoint(coordinate: coordinate(north: north, east: east), timestamp: start.addingTimeInterval(seconds),
-                       speedMetersPerSecond: 7, courseDegrees: 0, horizontalAccuracy: 5)
-        }
-        let track = [point(100, north: -30, east: 20), point(106, north: 10, east: 20),
-                     point(3100, north: 30, east: -20), point(3106, north: -10, east: -20)]
-        func sprint(_ from: Double, _ range: Range<Int>) -> RunSegment {
-            RunSegment(interval: DateInterval(start: start.addingTimeInterval(from), duration: 6),
-                       distanceMeters: 40, peakSpeed: 7, averageSpeed: 6, intensity: .sprint, pointRange: range)
-        }
-        let attack = AttackFrame.infer(
-            track: track, runs: [sprint(100, 0..<2), sprint(3100, 2..<4)], projector: projector,
-            events: [MatchEvent(kind: .periodEnd, date: start.addingTimeInterval(2400)),
-                     MatchEvent(kind: .periodStart, date: start.addingTimeInterval(3000))],
-            matchStart: start, matchEnd: start.addingTimeInterval(5400))
-        XCTAssertTrue(attack.isKnown)
-        XCTAssertEqual(attack.periods.map(\.attacksTowardFarEnd), [true, false])
-        // East of a north-attacking player is their right; so is west of a south-attacking one.
-        for index in [0, 2] {
-            let placed = try XCTUnwrap(attack.point(for: track[index].coordinate, at: track[index].timestamp))
-            XCTAssertEqual(placed.across, 0.5 + 20.0 / 60, accuracy: 0.01)
-            XCTAssertEqual(placed.up, 0.2, accuracy: 0.01)
-        }
-    }
-
-    func testNoEvidenceIsNotKnown() {
-        let projector = FieldProjector(rectangle: OrientedRectangle(
-            center: Coordinate2D(latitude: 40, longitude: -83), lengthMeters: 100, widthMeters: 60,
-            headingDegrees: 0, corners: []))
-        let attack = AttackFrame.infer(track: [], runs: [], projector: projector, events: [],
-                                       matchStart: start, matchEnd: start.addingTimeInterval(5400))
-        XCTAssertFalse(attack.isKnown)
-    }
-
-    // MARK: Periods
-
-    func testPeriodsFromADetectedBreakAndFromTappedStarts() {
-        let end = start.addingTimeInterval(5400)
-        func event(_ kind: MatchEventKind, _ seconds: Double) -> MatchEvent {
-            MatchEvent(kind: kind, date: start.addingTimeInterval(seconds))
-        }
-        XCTAssertEqual(MatchPeriods.derive(events: [], matchStart: start, matchEnd: end).map(\.duration), [5400])
-        XCTAssertEqual(MatchPeriods.derive(events: [event(.periodEnd, 2400), event(.periodStart, 3000)],
-                                           matchStart: start, matchEnd: end).map(\.duration), [2400, 2400])
-        XCTAssertEqual(MatchPeriods.derive(events: [event(.periodStart, 300), event(.periodEnd, 2700),
-                                                    event(.periodStart, 3000), event(.periodEnd, 5300)],
-                                           matchStart: start, matchEnd: end).map(\.duration), [2400, 2300])
+    func testStoredHeatKeepsItsShape() {
+        var thumbnail = [Float](repeating: 0, count: 12 * 18)
+        thumbnail[0] = 1
+        let heat = PitchHeat(digestHeat: thumbnail)
+        XCTAssertEqual(heat.columns, 12)
+        XCTAssertEqual(heat.rows, 18)
+        XCTAssertEqual(heat.average?.across ?? 0, 0.5 / 12, accuracy: 0.0001)
+        XCTAssertEqual(heat.average?.up ?? 0, 1 - 0.5 / 18, accuracy: 0.0001)
+        XCTAssertTrue(PitchHeat(digestHeat: [1, 2, 3]).isEmpty, "an unexpected size is no heat, not a crash")
     }
 
     // MARK: Pitch size

@@ -14,8 +14,10 @@ public struct PitchPoint: Hashable, Codable, Sendable {
         self.up = up
     }
 
-    /// The same place seen by someone attacking the other way.
-    public var turnedAround: PitchPoint { PitchPoint(across: 1 - across, up: 1 - up) }
+    /// A point on the analysis's portrait pitch (x left to right, y 1 = attacking end).
+    public init(_ portrait: CGPoint) { self.init(across: Double(portrait.x), up: Double(portrait.y)) }
+
+    public init(_ sample: PitchSample) { self.init(across: sample.x, up: sample.y) }
 }
 
 /// The pitch's real dimensions, so markings are drawn to scale.
@@ -26,6 +28,10 @@ public struct PitchSize: Hashable, Codable, Sendable {
     public init(lengthMeters: Double, widthMeters: Double) {
         self.lengthMeters = lengthMeters
         self.widthMeters = widthMeters
+    }
+
+    public init(_ rectangle: OrientedRectangle) {
+        self.init(lengthMeters: rectangle.lengthMeters, widthMeters: rectangle.widthMeters)
     }
 
     public static let standard = PitchSize(lengthMeters: 105, widthMeters: 68)
@@ -41,127 +47,6 @@ public struct PitchSize: Hashable, Codable, Sendable {
     public var markingScale: Double {
         if lengthMeters >= 90, widthMeters >= 45 { return 1 }
         return min(1, max(0.25, min(lengthMeters / 105, widthMeters / 68)))
-    }
-}
-
-// MARK: - Periods
-
-public enum MatchPeriods {
-    /// The stretches of play between breaks, from period events. One period spanning the whole
-    /// match when none were logged or detected.
-    public static func derive(events: [MatchEvent], matchStart: Date, matchEnd: Date) -> [DateInterval] {
-        guard matchEnd > matchStart else { return [] }
-        let boundaries = events
-            .filter { $0.kind == .periodStart || $0.kind == .periodEnd }
-            .filter { $0.date >= matchStart && $0.date <= matchEnd }
-            .sorted { $0.date < $1.date }
-        // A detected half-time arrives as an end then a start, so play is already under way.
-        var openStart: Date? = boundaries.first?.kind == .periodStart ? nil : matchStart
-        var periods: [DateInterval] = []
-        for event in boundaries {
-            if event.kind == .periodStart {
-                if let start = openStart, event.date > start {
-                    periods.append(DateInterval(start: start, end: event.date))
-                }
-                openStart = event.date
-            } else if let start = openStart {
-                if event.date > start { periods.append(DateInterval(start: start, end: event.date)) }
-                openStart = nil
-            }
-        }
-        if let start = openStart, matchEnd > start {
-            periods.append(DateInterval(start: start, end: matchEnd))
-        }
-        // A few seconds between taps isn't a period.
-        let real = periods.filter { $0.duration >= 60 }
-        return real.isEmpty ? [DateInterval(start: matchStart, end: matchEnd)] : real
-    }
-}
-
-// MARK: - Attack direction
-
-/// Turns coordinates into `PitchPoint`s with the player always attacking up, swapping ends between
-/// periods. Nothing records which way a team kicked, so the direction is inferred from where the
-/// player scored and which way they sprinted; `isKnown` says whether that evidence was clear.
-public struct AttackFrame: Sendable {
-    public struct Period: Equatable, Sendable {
-        public var interval: DateInterval
-        /// Attacking toward the far end of the projector's long axis (normalized x = 1).
-        public var attacksTowardFarEnd: Bool
-
-        public init(interval: DateInterval, attacksTowardFarEnd: Bool) {
-            self.interval = interval
-            self.attacksTowardFarEnd = attacksTowardFarEnd
-        }
-    }
-
-    public let periods: [Period]
-    public let isKnown: Bool
-    private let projector: FieldProjector
-
-    public init(projector: FieldProjector, periods: [Period], isKnown: Bool) {
-        self.projector = projector
-        self.periods = periods
-        self.isKnown = isKnown
-    }
-
-    /// How far (as a share of the pitch's length) evidence has to lean one way to be believed.
-    private static let clearEvidence = 0.5
-
-    public static func infer(track: [TrackPoint], runs: [RunSegment], projector: FieldProjector,
-                             events: [MatchEvent], matchStart: Date, matchEnd: Date) -> AttackFrame {
-        let intervals = MatchPeriods.derive(events: events, matchStart: matchStart, matchEnd: matchEnd)
-
-        func normalizedX(at index: Int) -> Double? {
-            guard track.indices.contains(index) else { return nil }
-            return projector.normalizedPoint(for: track[index].coordinate).map { Double($0.x) }
-        }
-        func lean(in interval: DateInterval) -> Double {
-            let sprintTravel = runs
-                .filter { $0.intensity == .sprint && interval.contains($0.interval.start) }
-                .reduce(0.0) { total, run in
-                    guard let start = normalizedX(at: run.pointRange.lowerBound),
-                          let end = normalizedX(at: run.pointRange.upperBound - 1) else { return total }
-                    return total + (end - start)
-                }
-            // Scoring says far more about direction than any one sprint. Goals are tapped in late,
-            // so look at the half-minute before the tap.
-            let goalLean = events
-                .filter { ($0.kind == .goalMine || $0.kind == .assist) && interval.contains($0.date) }
-                .reduce(0.0) { total, event in
-                    let before = track
-                        .filter { $0.timestamp <= event.date && event.date.timeIntervalSince($0.timestamp) <= 30 }
-                        .compactMap { projector.normalizedPoint(for: $0.coordinate).map { Double($0.x) } }
-                    guard !before.isEmpty else { return total }
-                    return total + 2 * (before.reduce(0, +) / Double(before.count) - 0.5)
-                }
-            return sprintTravel + goalLean
-        }
-
-        let leans = intervals.map(lean)
-        // Two periods are two halves, and teams change ends: judge them together.
-        if intervals.count == 2 {
-            let together = leans[0] - leans[1]
-            return AttackFrame(projector: projector, periods: [
-                Period(interval: intervals[0], attacksTowardFarEnd: together >= 0),
-                Period(interval: intervals[1], attacksTowardFarEnd: together < 0)
-            ], isKnown: abs(together) >= clearEvidence)
-        }
-        return AttackFrame(
-            projector: projector,
-            periods: zip(intervals, leans).map { Period(interval: $0, attacksTowardFarEnd: $1 >= 0) },
-            isKnown: !leans.isEmpty && leans.allSatisfy { abs($0) >= clearEvidence }
-        )
-    }
-
-    /// Where on the pitch, clamped to the lines; nil when well outside them.
-    public func point(for coordinate: Coordinate2D, at date: Date) -> PitchPoint? {
-        guard let normalized = projector.normalizedPoint(for: coordinate) else { return nil }
-        let along = min(max(Double(normalized.x), 0), 1)
-        let side = min(max(Double(normalized.y), 0), 1)
-        let period = periods.last { $0.interval.start <= date } ?? periods.first
-        let point = PitchPoint(across: side, up: along)
-        return period?.attacksTowardFarEnd == false ? point.turnedAround : point
     }
 }
 
@@ -183,28 +68,29 @@ public struct PitchHeat: Hashable, Codable, Sendable {
 
     public static let empty = PitchHeat(columns: 1, rows: 1, values: [0])
 
-    /// Roughly two-meter cells on a full pitch.
+    /// Roughly two-meter cells on a full pitch, for heat built up a fix at a time.
     public static let defaultColumns = 34
     public static let defaultRows = 52
 
     public var isEmpty: Bool { !values.contains { $0 > 0 } }
 
-    /// Rotates a long-axis grid (columns along the pitch) to portrait.
-    public init(_ grid: HeatmapGrid, attacksTowardFarEnd: Bool = true) {
-        guard grid.columns > 0, grid.rows > 0, grid.cells.count == grid.columns * grid.rows else {
+    /// The analysis's own heat.
+    public init(_ analytics: MatchAnalytics) {
+        self.init(portrait: analytics.heat, columns: analytics.heatColumns, rows: analytics.heatRows)
+    }
+
+    /// The thumbnail stored with every match (`MatchDigest.heat`), or a season of them averaged.
+    public init(digestHeat: [Float]) {
+        self.init(portrait: digestHeat, columns: PortraitHeat.thumbnailColumns, rows: PortraitHeat.thumbnailRows)
+    }
+
+    /// Empty, rather than garbled, if the grid isn't the expected size.
+    private init(portrait: [Float], columns: Int, rows: Int) {
+        if portrait.count == columns * rows {
+            self.init(columns: columns, rows: rows, values: portrait)
+        } else {
             self = .empty
-            return
         }
-        var values = [Float](repeating: 0, count: grid.columns * grid.rows)
-        for row in 0..<grid.columns {
-            for column in 0..<grid.rows {
-                let value = attacksTowardFarEnd
-                    ? grid[grid.columns - 1 - row, column]
-                    : grid[row, grid.rows - 1 - column]
-                values[row * grid.rows + column] = Float(value)
-            }
-        }
-        self.init(columns: grid.rows, rows: grid.columns, values: values)
     }
 
     /// Time-weighted points.
@@ -244,10 +130,6 @@ public struct PitchHeat: Hashable, Codable, Sendable {
         }
 
         public var heat: PitchHeat { PitchHeat(columns: columns, rows: rows, values: values) }
-    }
-
-    public var turnedAround: PitchHeat {
-        PitchHeat(columns: columns, rows: rows, values: values.reversed())
     }
 
     /// The time-weighted middle of it all.

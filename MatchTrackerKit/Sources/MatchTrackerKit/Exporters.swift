@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - What gets exported
 
-/// One match, ready for any activity file format. Half-time is left out: each period becomes a lap
+/// One match, ready for any activity file format. Half-time is left out: each half becomes a lap
 /// (or a GPX track segment), and the gap between them stays a gap.
 public struct ActivityExport: Sendable {
     public var name: String
@@ -11,10 +11,15 @@ public struct ActivityExport: Sendable {
     public var track: [TrackPoint]
     public var heartRate: [HeartRateSample]
     public var events: [MatchEvent]
+    /// From the analysis. Nil exports the match as one lap.
+    public var halftime: DateInterval?
+    /// The match's one distance. The route's own measure is scaled to it.
+    public var distanceMeters: Double?
     public var activeEnergyKilocalories: Double?
 
     public init(name: String, startDate: Date, endDate: Date, track: [TrackPoint],
                 heartRate: [HeartRateSample] = [], events: [MatchEvent] = [],
+                halftime: DateInterval? = nil, distanceMeters: Double? = nil,
                 activeEnergyKilocalories: Double? = nil) {
         self.name = name
         self.startDate = startDate
@@ -22,6 +27,8 @@ public struct ActivityExport: Sendable {
         self.track = track.sorted { $0.timestamp < $1.timestamp }
         self.heartRate = heartRate.sorted { $0.date < $1.date }
         self.events = events
+        self.halftime = halftime
+        self.distanceMeters = distanceMeters
         self.activeEnergyKilocalories = activeEnergyKilocalories
     }
 
@@ -30,8 +37,6 @@ public struct ActivityExport: Sendable {
 
     /// A heart-rate reading further away than this says nothing about a fix.
     private static let heartRateTolerance: TimeInterval = 5
-    /// Steps faster than anyone runs are GPS jumping, not distance.
-    private static let fastestPlausibleSpeed = 12.0
 
     struct Sample {
         var date: Date
@@ -52,37 +57,43 @@ public struct ActivityExport: Sendable {
         var kilocalories: Double?
     }
 
+    private var periods: [DateInterval] {
+        let whole = DateInterval(start: startDate, end: max(startDate, endDate))
+        guard let halftime, whole.contains(halftime.start), whole.contains(halftime.end) else { return [whole] }
+        return [DateInterval(start: whole.start, end: halftime.start), DateInterval(start: halftime.end, end: whole.end)]
+    }
+
     var laps: [Lap] {
-        let periods = MatchPeriods.derive(events: events, matchStart: startDate, matchEnd: endDate)
+        let periods = periods
+        let steps = trackStepDistances(track)
+        let measured = steps.reduce(0, +)
+        let scale = measured > 0 ? (distanceMeters ?? measured) / measured : 1
         let playSeconds = periods.reduce(0) { $0 + $1.duration }
         var covered = 0.0
         return periods.map { period in
-            let points = track.filter { period.contains($0.timestamp) }
+            let indices = track.indices.filter { period.contains(track[$0].timestamp) }
             let readings = heartRate.filter { period.contains($0.date) }
             let startDistance = covered
             var samples: [Sample] = []
-            if points.isEmpty {
+            if indices.isEmpty {
                 // Indoors there is no route, but heart rate alone is still an activity.
                 samples = readings.map { Sample(date: $0.date, bpm: Int($0.bpm.rounded())) }
             }
-            for (index, point) in points.enumerated() {
-                if index > 0 {
-                    let previous = points[index - 1]
-                    let step = haversineMeters(previous.coordinate, point.coordinate)
-                    let elapsed = point.timestamp.timeIntervalSince(previous.timestamp)
-                    if elapsed > 0, step / elapsed <= Self.fastestPlausibleSpeed { covered += step }
-                }
+            for (position, index) in indices.enumerated() {
+                let point = track[index]
+                // The first step of a lap belongs to the break before it.
+                if position > 0 { covered += steps[index] * scale }
                 let speed = point.speedMetersPerSecond
                 samples.append(Sample(
                     date: point.timestamp, coordinate: point.coordinate,
-                    speed: (0...Self.fastestPlausibleSpeed).contains(speed) ? speed : nil,
+                    speed: (0...SpeedThresholds.plausibleMaximum).contains(speed) ? speed : nil,
                     bpm: beats(nearest: point.timestamp), distance: covered
                 ))
             }
             let bpms = readings.map(\.bpm)
             return Lap(
                 interval: period, samples: samples,
-                distance: points.isEmpty ? nil : covered - startDistance,
+                distance: indices.isEmpty ? nil : covered - startDistance,
                 averageBPM: bpms.isEmpty ? nil : Int((bpms.reduce(0, +) / Double(bpms.count)).rounded()),
                 maximumBPM: bpms.max().map { Int($0.rounded()) },
                 maximumSpeed: samples.compactMap(\.speed).max(),

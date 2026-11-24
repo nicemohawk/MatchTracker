@@ -9,10 +9,9 @@ import MatchTrackerKit
 
 /// Pick a picture of the match, or its replay, and send it somewhere.
 struct ShareMatchSheet: View {
-    private let load: () async -> (ShareMatch, ActivityExport?)
-    @State private var loaded: ShareMatch?
+    private let load: @MainActor () -> (ShareMatch, ActivityExport?)
+    @State private var match: ShareMatch?
     @State private var export: ActivityExport?
-    @State private var isTurnedAround = false
     @State private var showsExport = false
     @State private var kind = Kind.picture
     @AppStorage("shareShowsFieldName") private var showsFieldName = true
@@ -22,19 +21,14 @@ struct ShareMatchSheet: View {
 
     init(match: ShareMatch, export: ActivityExport? = nil) {
         load = { (match, export) }
-        _loaded = State(initialValue: match)
+        _match = State(initialValue: match)
         _export = State(initialValue: export)
     }
 
     /// - Parameter detail: Must have finished loading.
-    init(detail: MatchDetailModel, summary: MatchSummary, opponent: String? = nil, teamName: String? = nil) {
-        load = {
-            (await ShareMatch.make(detail: detail, summary: summary, opponent: opponent, teamName: teamName),
-             ActivityExport(detail: detail, summary: summary))
-        }
+    init(detail: MatchDetailModel, summary: MatchSummary, teamName: String? = nil) {
+        load = { (ShareMatch(detail: detail, teamName: teamName), ActivityExport(detail: detail, summary: summary)) }
     }
-
-    private var match: ShareMatch? { isTurnedAround ? loaded?.turnedAround : loaded }
 
     var body: some View {
         NavigationStack {
@@ -68,33 +62,22 @@ struct ShareMatchSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        if match?.pitch != nil {
-                            Button { isTurnedAround.toggle() } label: {
-                                Label("Attack the Other Way", systemImage: "arrow.up.arrow.down")
-                            }
-                        }
-                        if let export, !export.isEmpty {
-                            Button { showsExport = true } label: {
-                                Label("Export Data", systemImage: "arrow.up.doc")
-                            }
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
+                if let export, !export.isEmpty {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { showsExport = true } label: { Label("Export Data", systemImage: "arrow.up.doc") }
                     }
                 }
             }
         }
         .task {
-            guard loaded == nil else { return }
-            let result = await load()
+            guard match == nil else { return }
+            let result = load()
             if let pitch = result.0.pitch {
                 // Warm the heat so the first card draws in one go.
                 let key = HeatImage.Key(heat: pitch.heat, size: pitch.size, pixelWidth: 540)
                 _ = await Task.detached(priority: .userInitiated) { HeatImage.make(key) }.value
             }
-            loaded = result.0
+            match = result.0
             export = result.1
         }
     }

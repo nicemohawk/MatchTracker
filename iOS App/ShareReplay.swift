@@ -194,7 +194,8 @@ private final class ReplayScene {
         timeline = ReplayTimeline(periods: replay.periods, playing: replay.playing, moments: moments,
                                   duration: MatchReplayRenderer.duration)
         guard !timeline.chapters.isEmpty else { return nil }
-        heatReference = HeatImage.reference(for: pitch.heat, size: pitch.size)
+        heatReference = HeatImage.reference(
+            for: PitchHeat(samples: replay.samples.map { ($0.point, $0.seconds) }), size: pitch.size)
         path = Self.path(replay: replay, timeline: timeline)
         turf = Self.image(size: MatchReplayRenderer.size) { [artist] cg in artist.drawTurf(in: cg) }
     }
@@ -375,8 +376,13 @@ private final class ReplayScene {
         }
         guard accumulatedCount > 0 else { return nil }
         if let heatImage, heatImage.count == accumulatedCount, heatImage.cooling == cooling { return heatImage.image }
-        // Early on, judge heat against less than the full match so something shows; by the end it's
-        // exactly the picture on the card.
+        if accumulatedCount == samples.count, cooling == 0 {
+            // It ends on exactly the picture on the card.
+            guard let image = HeatImage.make(.init(heat: pitch.heat, size: pitch.size, pixelWidth: 540)) else { return nil }
+            heatImage = (accumulatedCount, cooling, image)
+            return image
+        }
+        // Early on, judge heat against less than the full match so something shows.
         let share = Float(accumulatedCount) / Float(samples.count)
         let reference = heatReference * (0.22 + 0.78 * share) * Float(1 + 2.2 * cooling)
         guard let image = HeatImage.render(accumulator.heat, size: pitch.size, pixelWidth: 300, reference: reference) else {
@@ -522,18 +528,14 @@ private final class ReplayScene {
     }
 
     private func running(_ final: ShareNumber, at date: Date) -> ShareNumber {
-        let sample = accumulatedCount > 0 && date > .distantPast ? replay.samples[accumulatedCount - 1] : nil
+        let runs = replay.runs.filter { $0.end <= date }
         switch final.label {
         case "Distance":
-            let total = replay.samples.last?.distance ?? 0
-            guard total > 0, replay.totalDistance > 0 else { return final }
-            return ShareNumber(units.distance((sample?.distance ?? 0) / total * replay.totalDistance), label: final.label)
+            return ShareNumber(units.distance(replay.distance(at: date)), label: final.label)
         case "Top speed":
-            guard let top = replay.topSpeed else { return final }
-            return ShareNumber(units.speed(min(sample?.topSpeed ?? 0, top)), label: final.label)
+            return ShareNumber(units.speed(min(runs.map(\.peakSpeed).max() ?? 0, replay.topSpeed ?? 0)), label: final.label)
         case "Sprint", "Sprints":
-            guard let total = Int(final.value) else { return final }
-            let count = min(total, replay.sprintEnds.filter { $0 <= date }.count)
+            let count = runs.filter(\.isSprint).count
             return ShareNumber(value: "\(count)", label: count == 1 ? "Sprint" : "Sprints")
         default:
             return final

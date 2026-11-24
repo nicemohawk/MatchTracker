@@ -19,8 +19,7 @@ final class ExporterTests: XCTestCase {
         return ActivityExport(
             name: "Match v Rovers & Sons", startDate: start, endDate: start.addingTimeInterval(300),
             track: track, heartRate: heartRate,
-            events: [MatchEvent(kind: .periodEnd, date: start.addingTimeInterval(120)),
-                     MatchEvent(kind: .periodStart, date: start.addingTimeInterval(180))],
+            halftime: DateInterval(start: start.addingTimeInterval(120), duration: 60),
             activeEnergyKilocalories: 80
         )
     }
@@ -35,9 +34,16 @@ final class ExporterTests: XCTestCase {
         XCTAssertFalse(laps.flatMap(\.samples).contains {
             (121..<180).contains($0.date.timeIntervalSince(start))
         })
-        // 0.0001 degrees of latitude every 10 s is 11.1 m.
+        // Fixes ten seconds apart are measured straight: 0.0001 degrees of latitude is 11.1 m.
         XCTAssertEqual(laps[0].distance ?? 0, 133.4, accuracy: 0.5)
         XCTAssertEqual(laps[1].samples.last?.distance ?? 0, 266.9, accuracy: 1)
+    }
+
+    func testDistanceIsTheMatchsOwn() {
+        var activity = match()
+        // The route measures 333.6 m in all, break included; the match's one distance is half that.
+        activity.distanceMeters = 166.8
+        XCTAssertEqual(activity.laps.compactMap(\.distance).reduce(0, +), 133.4, accuracy: 1)
     }
 
     func testHeartRateIsBoundOnlyWhenClose() {
@@ -51,7 +57,7 @@ final class ExporterTests: XCTestCase {
     func testTeleportsAreNotDistance() {
         let activity = ActivityExport(
             name: "Jump", startDate: start, endDate: start.addingTimeInterval(120),
-            track: [point(0, latitude: 40), point(1, latitude: 40.01), point(2, latitude: 40.01001)])
+            track: [point(0, latitude: 40), point(1, latitude: 40.01, speed: 1100), point(2, latitude: 40.01001, speed: 1.1)])
         XCTAssertEqual(activity.laps[0].distance ?? 0, 1.1, accuracy: 0.1)
     }
 
