@@ -237,6 +237,8 @@ struct ScoreSheet: View {
     }
 
     private var spells: [Spell] {
+        // Indoors they roll all night, and the stints are the better account of it.
+        guard detail.analytics?.stints == nil else { return [] }
         let subs = detail.events.filter { $0.kind == .subOut || $0.kind == .subIn }.sorted { $0.date < $1.date }
         return subs.indices.compactMap { index in
             guard subs[index].kind == .subOut else { return nil }
