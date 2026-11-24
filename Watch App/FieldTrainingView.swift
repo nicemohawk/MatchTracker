@@ -6,37 +6,24 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Modernized touchline-training flow: walk the perimeter of the pitch to define a field.
-/// Shows live distance, auto-finishes when the loop closes, then fits a rectangle and saves +
-/// shares the trained field.
-///
-/// This is a reskin only — every recording decision (sample accuracy gate, loop-close detection,
-/// rectangle fit, save + connectivity broadcast) lives in `FieldTrainer` and is untouched. The
-/// elapsed clock here is view-side presentation and never feeds the recorded outline.
+/// Teach the app a pitch by walking its lines. The outline draws itself as you go, so a walk that
+/// isn't landing is obvious at the field rather than at home.
 struct FieldTrainingView: View {
     @Environment(ConnectivityManager.self) private var connectivity
     @Environment(\.dismiss) private var dismiss
     @State private var trainer = FieldTrainer()
     @State private var name = "New Field"
-    /// When the current walk began, for the elapsed read-out. View-only; not part of recording.
-    @State private var walkStartedAt: Date?
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                switch trainer.state {
-                case .idle:
-                    idleContent
-                case .walking:
-                    walkingContent
-                case .finished:
-                    finishedContent
-                }
+        Group {
+            switch trainer.state {
+            case .idle: idleContent
+            case .walking: walkingContent
+            case .finished: finishedContent
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 2)
         }
         .navigationTitle("Train Field")
+        .navigationBarTitleDisplayMode(.inline)
         // If the player swipes back mid-walk, stop the location updates so no recording is left
         // running in the background.
         .onDisappear {
@@ -44,202 +31,102 @@ struct FieldTrainingView: View {
         }
     }
 
-    // MARK: - Idle: explain the walk, offer a prominent start
-
     private var idleContent: some View {
-        VStack(spacing: 12) {
-            VStack(spacing: 6) {
-                Image(systemName: "figure.walk.motion")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(WatchTheme.pace)
-                Text("Touchline Walk")
-                    .font(.headline)
-                Text("Map this pitch by walking its lines.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Start at a corner and walk the lines, all the way back to where you began.")
+                    .font(.body)
+                Button {
+                    WatchHaptics.click()
+                    trainer.start()
+                } label: {
+                    Label("Start Walking", systemImage: "figure.walk").font(.headline)
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 64, prominent: true))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 10)
-            .watchCard()
-
-            stepRow(number: "1", text: "Start at a corner flag")
-            stepRow(number: "2", text: "Walk the lines, steady pace")
-            stepRow(number: "3", text: "Return to start to finish")
-
-            Button {
-                WatchHaptics.click()
-                walkStartedAt = Date()
-                trainer.start()
-            } label: {
-                Label("Start Walking", systemImage: "figure.walk")
-                    .font(.headline)
-            }
-            .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.pace, minHeight: 54, prominent: true))
+            .scenePadding(.horizontal)
         }
     }
-
-    /// A numbered instruction line inside a quiet tile, so the three steps read as a checklist.
-    private func stepRow(number: String, text: String) -> some View {
-        HStack(spacing: 10) {
-            Text(number)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(WatchTheme.pace)
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(WatchTheme.chipFill(WatchTheme.pace)))
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .watchTile(tint: WatchTheme.pace)
-    }
-
-    // MARK: - Walking: live distance, elapsed, points, prominent stop
 
     private var walkingContent: some View {
-        VStack(spacing: 12) {
-            VStack(spacing: 4) {
-                Text("Walking Touchline")
-                    .watchCaptionLabel()
-                    .foregroundStyle(WatchTheme.pace)
-                Text(String(format: "%.0f", trainer.distanceWalked))
-                    .watchHeroNumeral()
-                    .foregroundStyle(WatchTheme.pace)
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: trainer.distanceWalked)
-                Text("meters walked")
-                    .watchCaptionLabel()
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .watchCard()
-
-            HStack(spacing: 8) {
-                // A per-second timeline ticks the elapsed clock without touching recording state.
-                TimelineView(.periodic(from: walkStartedAt ?? .now, by: 1)) { context in
-                    walkStat(value: elapsedString(from: walkStartedAt, now: context.date),
-                             caption: "Elapsed", tint: WatchTheme.signal)
+        VStack(spacing: 8) {
+            ZStack {
+                if trainer.sampleCount > 1 {
+                    WalkOutline(points: trainer.outlinePoints)
+                } else {
+                    VStack(spacing: 6) {
+                        ProgressView()
+                        Text("Finding GPS").font(.headline)
+                    }
                 }
-                walkStat(value: "\(trainer.sampleCount)", caption: "Points", tint: WatchTheme.turf)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Walked \(walked.spoken)")
 
-            // Live starvation warning: a walk that's collecting nothing must say so AT the
-            // field, not produce a garbage rectangle to discover at home.
             if trainer.gpsWeak {
-                Label("Weak GPS — points aren't landing", systemImage: "exclamationmark.triangle.fill")
+                Label("GPS is weak. Slow down.", systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
-                    .foregroundStyle(WatchTheme.cardYellow)
+                    .foregroundStyle(WatchTheme.sprint)
+            }
+            HStack(spacing: 8) {
+                Text(walked.text)
+                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
                     .frame(maxWidth: .infinity)
+                Button("Finish") {
+                    WatchHaptics.stop()
+                    trainer.finish()
+                }
+                .font(.headline)
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.sprint, minHeight: 48))
             }
-
-            Label("Return to your start to finish", systemImage: "arrow.uturn.backward")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-
-            Button {
-                WatchHaptics.stop()
-                trainer.finish()
-            } label: {
-                Label("Finish Now", systemImage: "stop.fill")
-                    .font(.headline)
-            }
-            .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.sprint, minHeight: 52))
         }
+        .scenePadding(.horizontal)
     }
 
-    /// A single live-walk stat tile (elapsed / points).
-    private func walkStat(value: String, caption: String, tint: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .watchStatNumeral()
-                .foregroundStyle(tint)
-            Text(caption)
-                .watchCaptionLabel()
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .watchTile(tint: tint)
-    }
-
-    // MARK: - Finished: success + name + save
+    private var walked: UnitSystem.Measure { UnitSystem.current.shortDistance(trainer.distanceWalked) }
 
     private var finishedContent: some View {
-        VStack(spacing: 12) {
-            VStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(WatchTheme.turf)
-                Text("Loop Complete")
-                    .font(.headline)
-                Text(String(format: "%.0f m walked", trainer.distanceWalked))
-                    .watchStatNumeral()
-                    .foregroundStyle(WatchTheme.turf)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .watchCard()
-
-            // A starved walk fits a guess, not a field — warn before the save, offer a redo.
-            if trainer.walkLooksSparse {
-                VStack(spacing: 6) {
-                    Label("Only \(trainer.sampleCount) GPS points landed", systemImage: "exclamationmark.triangle.fill")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                WalkOutline(points: trainer.outlinePoints)
+                    .frame(height: 90)
+                if let rectangle = trainer.makeField(named: name)?.rectangle {
+                    let length = UnitSystem.current.shortDistance(rectangle.lengthMeters)
+                    let width = UnitSystem.current.shortDistance(rectangle.widthMeters)
+                    Text("\(length.value) × \(width.text)")
+                        .font(.system(.title2, design: .rounded, weight: .semibold))
+                        .accessibilityLabel("\(length.spoken) by \(width.spoken)")
+                }
+                // A starved walk fits a guess, not a field — say so before the save.
+                if trainer.walkLooksSparse {
+                    Label("GPS missed much of this walk. Walking it again usually fixes that.",
+                          systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
-                        .foregroundStyle(WatchTheme.cardYellow)
-                    Text("The fitted field may be off. Walking again usually fixes it.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                        .foregroundStyle(WatchTheme.sprint)
                     Button {
                         WatchHaptics.click()
-                        walkStartedAt = Date()
                         trainer.start()
                     } label: {
-                        Label("Walk Again", systemImage: "arrow.counterclockwise")
+                        Text("Walk Again").font(.headline)
                     }
-                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.pace, minHeight: 44))
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.pace, minHeight: 52))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 8)
-                .watchTile(tint: WatchTheme.cardYellow)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Field name")
-                    .watchCaptionLabel()
-                    .foregroundStyle(.secondary)
                 TextField("Field name", text: $name)
-                    .textFieldStyle(.plain)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 10)
-                    .watchTile(tint: WatchTheme.bench)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button {
-                saveField()
-            } label: {
-                Label("Save Field", systemImage: "checkmark")
+                Button {
+                    saveField()
+                } label: {
+                    Text("Save Field").font(.headline)
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 52, prominent: true))
+                .disabled(trainer.makeField(named: name) == nil)
+                Button("Discard") { dismiss() }
                     .font(.headline)
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.bench, minHeight: 52))
             }
-            .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 50, prominent: true))
-            .disabled(trainer.makeField(named: name) == nil)
-
-            Button {
-                WatchHaptics.click()
-                dismiss()
-            } label: {
-                Label("Discard", systemImage: "xmark")
-            }
-            .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.bench, minHeight: 44))
+            .scenePadding(.horizontal)
         }
     }
 
@@ -251,11 +138,32 @@ struct FieldTrainingView: View {
         WatchHaptics.success()
         dismiss()
     }
+}
 
-    /// Formats elapsed seconds as m:ss between `start` and `now`. Zero when not walking yet.
-    private func elapsedString(from start: Date?, now: Date) -> String {
-        guard let start else { return "0:00" }
-        let seconds = max(0, Int(now.timeIntervalSince(start)))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+/// The walked line so far, fitted to the space, with the start marked as the place to return to.
+private struct WalkOutline: View {
+    let points: [CGPoint]   // meters east/north of the start
+
+    var body: some View {
+        Canvas { context, size in
+            let xs = points.map(\.x), ys = points.map(\.y)
+            guard let left = xs.min(), let right = xs.max(), let bottom = ys.min(), let top = ys.max() else { return }
+            let inset: CGFloat = 8
+            let scale = min((size.width - inset * 2) / max(right - left, 20),
+                            (size.height - inset * 2) / max(top - bottom, 20))
+            func place(_ point: CGPoint) -> CGPoint {
+                CGPoint(x: size.width / 2 + (point.x - (left + right) / 2) * scale,
+                        y: size.height / 2 - (point.y - (bottom + top) / 2) * scale)
+            }
+            var path = Path()
+            path.addLines(points.map(place))
+            context.stroke(path, with: .color(WatchTheme.turf),
+                           style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+            if let start = points.first {
+                let center = place(start)
+                context.fill(Path(ellipseIn: CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)),
+                             with: .color(.white))
+            }
+        }
     }
 }

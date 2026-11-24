@@ -27,6 +27,7 @@ final class ConnectivityManager: NSObject {
         static let fields = "fields"
         static let teamCode = "teamCode"
         static let playerName = "playerName"
+        static let units = "units"
     }
 
     enum TransferType {
@@ -153,7 +154,10 @@ final class ConnectivityManager: NSObject {
             .flatMap { try? MatchTrackerJSON.decoder().decode([FieldModel].self, from: $0) }
         let teamCode = context[ContextKey.teamCode] as? String
         let playerName = context[ContextKey.playerName] as? String
+        let units = context[ContextKey.units] as? String
         DispatchQueue.main.async {
+            // "automatic" (or anything unknown) means the region's own convention.
+            if let units { WatchSettings.unitOverride = UnitSystem(rawValue: units) }
             if let decodedFields {
                 self.replaceStoredFields(with: decodedFields)
             }
