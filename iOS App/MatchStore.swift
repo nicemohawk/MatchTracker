@@ -489,7 +489,7 @@ final class MatchStore: ObservableObject {
             needsAnotherDigestFill = true
             return
         }
-        digestFillTask = Task(priority: .background) { [weak self] in
+        digestFillTask = Task(priority: .utility) { [weak self] in
             await self?.runDigestFill()
             guard let self else { return }
             digestFillTask = nil
@@ -524,7 +524,8 @@ final class MatchStore: ObservableObject {
                 MatchLog.error("digests: \(summary.id) failed: \(error.localizedDescription)", category: "matchstore")
                 digestsTriedThisLaunch.insert(summary.id)
             }
-            if pending.count >= 12 {
+            // The newest is the one being waited for.
+            if pending.count >= 12 || summary.id == stale.first?.id {
                 store(stillTrue(pending))
                 pending = [:]
             }
@@ -552,7 +553,7 @@ final class MatchStore: ObservableObject {
         }.map(\.id))
         // Off the main actor: stamping a record encodes it.
         let records = candidates.map { (id: $0.id, record: $0.record) }
-        let staleIDs = await Task.detached(priority: .background) {
+        let staleIDs = await Task.detached(priority: .utility) {
             Set(records.filter { id, record in
                 guard cache.isCurrent(id, record: record, fields: fields) else { return true }
                 return awaitingRoute.contains(id)
@@ -577,7 +578,7 @@ final class MatchStore: ObservableObject {
             healthDistanceMeters: samples.distanceMeters,
             savedField: fields.store.resolve(recordFieldID: record?.fieldID, track: samples.track))
         let fields = fields.fields
-        return await Task.detached(priority: .background) {
+        return await Task.detached(priority: .utility) {
             let analytics = MatchAnalyzer.analyze(input)
             return DigestCache.Entry(
                 digest: MatchDigest(id: summary.id, interval: played, format: format, record: record, analytics: analytics),

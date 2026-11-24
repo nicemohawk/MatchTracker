@@ -18,7 +18,7 @@ final class HealthKitService {
             HKObjectType.workoutType(),
             HKSeriesType.workoutRoute()
         ]
-        let identifiers: [HKQuantityTypeIdentifier] = [.activeEnergyBurned, .basalEnergyBurned, .distanceWalkingRunning, .heartRate, .vo2Max]
+        let identifiers: [HKQuantityTypeIdentifier] = [.activeEnergyBurned, .distanceWalkingRunning, .heartRate]
         for identifier in identifiers {
             if let type = HKObjectType.quantityType(forIdentifier: identifier) { types.insert(type) }
         }

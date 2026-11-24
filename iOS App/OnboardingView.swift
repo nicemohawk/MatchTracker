@@ -205,13 +205,13 @@ private struct HealthPage: View {
                               detail: "Your matches are workouts in Apple Health. MatchTracker needs to see them to show them.")
             VStack(alignment: .leading, spacing: 20) {
                 OnboardingRow(symbol: "eye", title: "Reads your soccer",
-                              detail: "Workouts, routes, distance, energy, heart rate and cardio fitness.")
+                              detail: "Workouts, routes, distance, energy and heart rate.")
                 OnboardingRow(symbol: "square.and.arrow.down", title: "Saves your matches",
                               detail: "So the ones you record count in Health and Fitness.")
                 OnboardingRow(symbol: "switch.2", title: "Tap Turn On All",
                               detail: "On the next screen. Anything left off goes missing from your matches.")
             }
-            Text("Matches you record are also sent to the MatchTracker server, where your team can see them. You can delete them in Settings.")
+            Text("Your matches stay on your devices unless you join a team, which then sees the ones you record.")
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryLabel)
         }
