@@ -30,8 +30,6 @@ struct EditMatchView: View {
                 Section {
                     TextField("Opponent", text: $opponent)
                         .onSubmit { store.setOpponent(opponent, for: id) }
-                    scoreStepper("Us", kind: .goalForUs, count: detail.digest?.goalsUs ?? 0)
-                    scoreStepper("Them", kind: .goalAgainstUs, count: detail.digest?.goalsThem ?? 0)
                 }
                 Section("Moments") {
                     ForEach(moments) { event in
@@ -107,19 +105,6 @@ struct EditMatchView: View {
     private func commit() {
         if opponent != detail.record?.opponent ?? "" { store.setOpponent(opponent, for: id) }
         if notes != detail.record?.notes ?? "" { store.setNotes(notes, for: id) }
-    }
-
-    /// Goals can be counted without saying when: an added one lands at full time until it's moved.
-    private func scoreStepper(_ title: String, kind: MatchEventKind, count: Int) -> some View {
-        Stepper(value: Binding(get: { count }, set: { newValue in
-            if newValue > count {
-                _ = store.addEvent(kind, at: detail.matchEnd, note: nil, to: id)
-            } else if let last = detail.events.last(where: { $0.kind == kind || (kind == .goalForUs && $0.kind == .goalMine) }) {
-                delete(last)
-            }
-        }), in: 0...30) {
-            LabeledContent(title) { Text("\(count)").font(.system(.title2, design: .rounded, weight: .semibold)) }
-        }
     }
 
     private func delete(_ event: MatchEvent) {

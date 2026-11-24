@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var showingSettings = false
     @State private var selectedTerm: SeasonSummary.Term?
     @State private var selectedDay: Date?
+    @State private var scoring: ScoringMatch?
     @Namespace private var transition
 
     var body: some View {
@@ -49,6 +50,7 @@ struct HomeView: View {
                 }
             }
             .refreshable { await matches.refresh() }
+            .sheet(item: $scoring) { ScoreSheet(detail: $0.detail) }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .onChange(of: openedMatch, initial: true) { _, id in
                 guard let id else { return }
@@ -60,19 +62,41 @@ struct HomeView: View {
 
     private enum Destination: Hashable { case fields }
 
+    private struct ScoringMatch: Identifiable {
+        let detail: MatchDetailModel
+        var id: UUID { detail.matchIdentifier }
+    }
+
+    private func scorable(_ digest: MatchDigest) -> MatchDetailModel? {
+        matches.matches.first { $0.id == digest.id }.map(matches.detailModel(for:))
+    }
+
     private func content(last: MatchDigest) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
+                LastMatchCard(digest: last, headline: matches.headline(for: last.id))
+                    .zoomSource(id: last.id, in: transition)
+                    .onTapGesture { path.append(last.id) }
+                    .accessibilityAddTraits(.isButton)
+                if last.result == nil, let detail = scorable(last) {
+                    Button {
+                        scoring = ScoringMatch(detail: detail)
+                    } label: {
+                        Label("Add the Score", systemImage: "plus")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 32)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .buttonBorderShape(.capsule)
+                    .padding(.top, -16)
+                }
                 if NextMatchCard.hasContent {
                     NextMatchCard()
                         .padding(20)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
                 }
-                LastMatchCard(digest: last, headline: matches.headline(for: last.id))
-                    .zoomSource(id: last.id, in: transition)
-                    .onTapGesture { path.append(last.id) }
-                    .accessibilityAddTraits(.isButton)
                 season
                 bests
                 places
@@ -86,13 +110,13 @@ struct HomeView: View {
     // MARK: - Season
 
     private var terms: [SeasonSummary.Term] {
-        Array(Set(matches.digests.values.map { SeasonSummary.Term(containing: $0.startDate) })).sorted(by: >)
+        Array(Set(matches.playedDigests.map { SeasonSummary.Term(containing: $0.startDate) })).sorted(by: >)
     }
 
     private var term: SeasonSummary.Term? { selectedTerm ?? terms.first }
 
     private var termSummary: SeasonSummary {
-        SeasonSummary(matches.digests.values.filter { SeasonSummary.Term(containing: $0.startDate) == term })
+        SeasonSummary(matches.playedDigests.filter { SeasonSummary.Term(containing: $0.startDate) == term })
     }
 
     @ViewBuilder
@@ -129,7 +153,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private var bests: some View {
-        let all = SeasonSummary(Array(matches.digests.values))
+        let all = SeasonSummary(matches.playedDigests)
         let holders = PersonalBest.allCases.compactMap { best in all.holder(of: best).map { (best, $0.digest, $0.value) } }
         if !holders.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -166,45 +190,62 @@ struct HomeView: View {
 
 // MARK: - Last match
 
-/// The match just played, as a picture: the heat of it, the score over it.
+/// The match just played: the score and the numbers on the turf, beside the heat of it.
 struct LastMatchCard: View {
     let digest: MatchDigest
     let headline: String?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let heat = digest.heat {
-                HeatPitch(heat: PitchHeat(digestHeat: heat), directionIsKnown: digest.heatIsDirected ?? false)
-                    .frame(height: 320)
-                    .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(digest.scoreline ?? digest.format.title)
+                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                    .monospacedDigit()
+                Text(digest.subtitle)
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.75))
             }
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(digest.scoreline ?? digest.format.title)
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        .monospacedDigit()
-                    Text(digest.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+            if dynamicTypeSize.isAccessibilitySize || digest.heat == nil {
                 DigestNumbers(digest: digest)
-                if let headline {
-                    Text(headline).font(.body)
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    DigestNumbers(digest: digest, isStacked: true)
+                    Spacer(minLength: 0)
+                    pitch
                 }
             }
-            .padding(20)
+            if let headline {
+                Text(headline).font(.title3.weight(.medium))
+            }
         }
+        .foregroundStyle(.white)
+        .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(.rect(cornerRadius: 24))
-        .contentShape(.rect(cornerRadius: 24))
+        .background(LinearGradient(colors: [Color(red: 0.05, green: 0.20, blue: 0.14), Color(red: 0.02, green: 0.10, blue: 0.08)],
+                                   startPoint: .top, endPoint: .bottom))
+        .clipShape(.rect(cornerRadius: 28))
+        .contentShape(.rect(cornerRadius: 28))
+        .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var pitch: some View {
+        if let heat = digest.heat {
+            HeatPitch(heat: PitchHeat(digestHeat: heat), surface: .clear, insets: EdgeInsets(),
+                      directionIsKnown: digest.heatIsDirected ?? false)
+                .frame(width: 168, height: 168 / HeatPitch.aspectRatio(for: .standard))
+                .accessibilityHidden(true)
+        }
     }
 }
 
 /// The three numbers a match is remembered by. Fewer when fewer are known.
 struct DigestNumbers: View {
     let digest: MatchDigest
+    var isStacked = false
 
     private var numbers: [(value: String, unit: String?, spoken: String)] {
         let units = UnitSystem.current
@@ -225,15 +266,23 @@ struct DigestNumbers: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline) {
-                ForEach(numbers, id: \.spoken) { number in
-                    view(number).frame(maxWidth: .infinity, alignment: .leading)
+        if isStacked {
+            stack
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    ForEach(numbers, id: \.spoken) { number in
+                        view(number).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                stack
             }
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(numbers, id: \.spoken) { view($0) }
-            }
+        }
+    }
+
+    private var stack: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(numbers, id: \.spoken) { view($0) }
         }
     }
 
@@ -303,9 +352,8 @@ private struct SeasonChart: View {
 
     var body: some View {
         Chart(Array(matches.enumerated()), id: \.element.id) { index, digest in
-            BarMark(x: .value("Match", index),
-                    y: .value("Distance", distance(digest)),
-                    width: .ratio(0.7))
+            BarMark(x: .value("Match", String(index)),
+                    y: .value("Distance", distance(digest)))
                 .foregroundStyle(color(digest))
                 .cornerRadius(4)
                 .accessibilityLabel(digest.startDate.formatted(date: .abbreviated, time: .omitted))
@@ -313,6 +361,7 @@ private struct SeasonChart: View {
                     .compactMap { $0 }.joined(separator: ", "))
         }
         .chartXAxis(.hidden)
+        .chartYScale(domain: 0...max((matches.map(distance).max() ?? 1) * 1.1, 1))
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3))
         }
@@ -322,8 +371,8 @@ private struct SeasonChart: View {
                 Rectangle().fill(.clear).contentShape(Rectangle())
                     .onTapGesture { location in
                         guard let frame = proxy.plotFrame,
-                              let index: Int = proxy.value(atX: location.x - geometry[frame].origin.x),
-                              matches.indices.contains(index) else { return }
+                              let label: String = proxy.value(atX: location.x - geometry[frame].origin.x),
+                              let index = Int(label), matches.indices.contains(index) else { return }
                         onOpen(matches[index].id)
                     }
             }

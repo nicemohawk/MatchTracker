@@ -482,7 +482,10 @@ final class MatchStore: ObservableObject {
     }
 
     /// The most recent match, if any has been read yet.
-    var latestDigest: MatchDigest? { digests.values.max { $0.startDate < $1.startDate } }
+    var latestDigest: MatchDigest? { playedDigests.max { $0.startDate < $1.startDate } }
+
+    /// Matches worth counting: a recording of a minute or two is someone trying the app.
+    var playedDigests: [MatchDigest] { digests.values.filter { $0.secondsOnPitch >= 300 } }
 
     func headline(for id: UUID) -> String? {
         digests[id].flatMap { MatchHeadline.make(for: $0, among: Array(digests.values)) }

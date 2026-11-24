@@ -120,22 +120,31 @@ struct MatchList: View {
     let onDelete: (MatchSummary) -> Void
 
     var body: some View {
-        List(selection: selection ?? .constant(nil)) {
-            ForEach(sections) { section in
-                Section(section.title) {
-                    ForEach(section.items) { item in
-                        NavigationLink(value: item.id) { MatchRow(item: item) }
-                            .swipeActions {
-                                Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
-                            }
-                            .contextMenu {
-                                Button("Delete Match", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
-                            }
-                    }
-                }
+        // A selection binding on a list inside a stack swallows the taps its links need.
+        Group {
+            if let selection {
+                List(selection: selection) { rows }
+            } else {
+                List { rows }
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    private var rows: some View {
+        ForEach(sections) { section in
+            Section(section.title) {
+                ForEach(section.items) { item in
+                    NavigationLink(value: item.id) { MatchRow(item: item) }
+                        .swipeActions {
+                            Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
+                        }
+                        .contextMenu {
+                            Button("Delete Match", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
+                        }
+                }
+            }
+        }
     }
 }
 
