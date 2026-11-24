@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.nicemohawk.MatchTracker.refresh</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.nicemohawk.MatchTracker.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>matchtracker-join</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>MatchTracker reads the calendar you choose to find your next match and suggest the opponent afterwards. It never changes your calendar, and nothing in it leaves your device.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>MatchTracker records sideline video and cuts clips around the moments you logged.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MatchTracker records sound with your sideline video.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MatchTracker saves your match clips, pictures and replays to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>MatchTracker imports the match video you choose and cuts clips around the moments you logged.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+</dict>
+</plist>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1010"
+   LastUpgradeVersion = "1600"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
+               BlueprintIdentifier = "0A0000000000000000000030"
                BuildableName = "MatchTracker.app"
                BlueprintName = "MatchTracker"
                ReferencedContainer = "container:MatchTracker.xcodeproj">
@@ -32,34 +32,13 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B599D66C1FAAF00E006EAABC"
-               BuildableName = "MatchTrackerTests.xctest"
-               BlueprintName = "MatchTrackerTests"
-               ReferencedContainer = "container:MatchTracker.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B599D6771FAAF00E006EAABC"
-               BuildableName = "MatchTrackerUITests.xctest"
-               BlueprintName = "MatchTrackerUITests"
+               BlueprintIdentifier = "0C0000000000000000000101"
+               BuildableName = "MatchTracker UITests.xctest"
+               BlueprintName = "MatchTracker UITests"
                ReferencedContainer = "container:MatchTracker.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
-            BuildableName = "MatchTracker.app"
-            BlueprintName = "MatchTracker"
-            ReferencedContainer = "container:MatchTracker.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
-      <AdditionalOptions>
-      </AdditionalOptions>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -75,18 +54,12 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
+            BlueprintIdentifier = "0A0000000000000000000030"
             BuildableName = "MatchTracker.app"
             BlueprintName = "MatchTracker"
             ReferencedContainer = "container:MatchTracker.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <AdditionalOptions>
-      </AdditionalOptions>
-      <LocationScenarioReference
-         identifier = "com.apple.dt.IDEFoundation.CurrentLocationScenarioIdentifier"
-         referenceType = "1">
-      </LocationScenarioReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -98,7 +71,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "B599D6581FAAF00D006EAABC"
+            BlueprintIdentifier = "0A0000000000000000000030"
             BuildableName = "MatchTracker.app"
             BlueprintName = "MatchTracker"
             ReferencedContainer = "container:MatchTracker.xcodeproj">

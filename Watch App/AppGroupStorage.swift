@@ -1,0 +1,182 @@
+//
+//  AppGroupStorage.swift
+//  MatchTracker
+//
+
+import Foundation
+import MatchTrackerKit
+
+/// Shared app-group locations and lightweight persistence used across the watch app.
+///
+/// The app group container is the single source of truth for the offline field database
+/// (via `FieldStore`), the in-progress match record (crash safety), finished match records,
+/// and the small pieces of team/player metadata mirrored from the phone.
+enum AppGroupStorage {
+    static let identifier = MatchTrackerKit.AppGroup.identifier
+
+    /// App-group container directory. Falls back to the app's own documents directory when the
+    /// group container is unavailable (e.g. previews / unit hosts) so nothing crashes.
+    ///
+    /// Resolved once. `containerURL(forSecurityApplicationGroupIdentifier:)` is a containermanagerd
+    /// XPC round-trip, and this was being re-resolved on every access — including from the match
+    /// start/end paths on the main thread, where a slow daemon freezes the whole UI.
+    static let containerURL: URL = {
+        if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
+            return url
+        }
+        #if DEBUG
+        MatchLog.error("App group \(identifier) unavailable on watch — falling back to Documents. Field DB / match records won't be shared with the phone. Check the app group is enabled on the watch App ID and provisioning profile.", category: "appgroup")
+        #endif
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }()
+
+    static var inProgressMatchURL: URL {
+        containerURL.appendingPathComponent("inProgressMatch.json")
+    }
+
+    static var finishedMatchesDirectory: URL {
+        containerURL.appendingPathComponent("matches", isDirectory: true)
+    }
+
+    /// Shared preferences, opened once for the same reason as `containerURL`: `UserDefaults(
+    /// suiteName:)` talks to cfprefsd, and SwiftUI view bodies read these settings on every
+    /// render (referee mode, double-tap action, sport). Once open, reads are in-memory.
+    static let defaults: UserDefaults = {
+        if let defaults = UserDefaults(suiteName: identifier) {
+            return defaults
+        }
+        #if DEBUG
+        MatchLog.error("UserDefaults(suiteName: \(identifier)) is nil on watch — falling back to .standard; team/player metadata won't match the phone.", category: "appgroup")
+        #endif
+        return .standard
+    }()
+
+    enum DefaultsKey {
+        static let teamCode = "teamCode"
+        static let playerName = "playerName"
+    }
+
+    static var teamCode: String? {
+        get { defaults.string(forKey: DefaultsKey.teamCode) }
+        set { defaults.set(newValue, forKey: DefaultsKey.teamCode) }
+    }
+
+    static var playerName: String? {
+        get { defaults.string(forKey: DefaultsKey.playerName) }
+        set { defaults.set(newValue, forKey: DefaultsKey.playerName) }
+    }
+
+    /// A single shared field store bound to the app-group container. Loaded once on first use.
+    static let fieldStore: FieldStore = {
+        let store = FieldStore(directory: containerURL)
+        try? store.load()
+        return store
+    }()
+
+    // MARK: - Match record persistence
+
+    /// Overwrites the crash-safe in-progress record after every event.
+    static func persistInProgress(_ record: MatchRecord) {
+        guard let data = try? MatchTrackerJSON.encoder().encode(record) else { return }
+        try? data.write(to: inProgressMatchURL, options: .atomic)
+    }
+
+    /// Reads a previously persisted in-progress record (used during session recovery).
+    static func loadInProgress() -> MatchRecord? {
+        guard let data = try? Data(contentsOf: inProgressMatchURL) else { return nil }
+        return try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data)
+    }
+
+    /// When the in-progress match was last known to be recording.
+    static var inProgressTouched: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: inProgressMatchURL.path))?[.modificationDate] as? Date
+    }
+
+    static func touchInProgress() {
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: inProgressMatchURL.path)
+    }
+
+    static func hasFinished(id: UUID) -> Bool {
+        FileManager.default.fileExists(
+            atPath: finishedMatchesDirectory.appendingPathComponent("\(id.uuidString).json").path)
+    }
+
+    /// A finished record still on the watch for the match that kicked off around `start`.
+    static func finishedRecord(startingNear start: Date) -> MatchRecord? {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: finishedMatchesDirectory,
+                                                                 includingPropertiesForKeys: nil)) ?? []
+        return urls.lazy
+            .compactMap { try? Data(contentsOf: $0) }
+            .compactMap { try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: $0) }
+            .first { abs($0.startDate.timeIntervalSince(start)) < 180 }
+    }
+
+    static func clearInProgress() {
+        try? FileManager.default.removeItem(at: inProgressMatchURL)
+    }
+
+    /// Writes the final record for a finished match, keyed by workout UUID. Nil if it didn't land.
+    @discardableResult
+    static func persistFinished(_ record: MatchRecord) -> URL? {
+        let directory = finishedMatchesDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("\(record.id.uuidString).json")
+        guard let data = try? MatchTrackerJSON.encoder().encode(record),
+              (try? data.write(to: url, options: .atomic)) != nil else {
+            MatchLog.error("Finished record write failed", category: "workout")
+            return nil
+        }
+        return url
+    }
+
+    static func removeFinished(id: UUID) {
+        try? FileManager.default.removeItem(
+            at: finishedMatchesDirectory.appendingPathComponent("\(id.uuidString).json"))
+    }
+}
+
+/// One finished match's record on disk, and the result the wearer may give at any moment while it's
+/// being saved. One lock, so whichever copy ends up on disk has the result in it, and only one does.
+final class FinishedRecordFile: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: MatchRecord?
+    private var idOnDisk: UUID?
+    private var isFinal = false
+    private var givenScore: FinalScore?
+
+    var finalScore: FinalScore? {
+        lock.withLock { givenScore }
+    }
+
+    /// Write a record in place of the copy before it. Off the main thread: records are megabytes.
+    func write(_ record: MatchRecord, isFinal: Bool) -> (record: MatchRecord, saved: Bool) {
+        lock.withLock {
+            var record = record
+            record.finalScore = givenScore
+            latest = record
+            self.isFinal = isFinal
+            return (record, persist(record))
+        }
+    }
+
+    /// Add the result to the copy on disk. Returns the record to send again, or nil if the save
+    /// that will send it is still to come.
+    func setFinalScore(_ score: FinalScore) -> MatchRecord? {
+        lock.withLock {
+            givenScore = score
+            guard var record = latest else { return nil }
+            record.finalScore = score
+            latest = record
+            _ = persist(record)
+            return isFinal ? record : nil
+        }
+    }
+
+    private func persist(_ record: MatchRecord) -> Bool {
+        guard AppGroupStorage.persistFinished(record) != nil else { return false }
+        // At once: two copies on disk at the next launch would reach the phone as two matches.
+        if let idOnDisk, idOnDisk != record.id { AppGroupStorage.removeFinished(id: idOnDisk) }
+        idOnDisk = record.id
+        return true
+    }
+}
