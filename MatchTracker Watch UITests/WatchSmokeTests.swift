@@ -5,6 +5,7 @@
 // sheet if it appears, and verifies the start screen renders — capturing screenshots along the way.
 // Elements are located by visible label text / system queries only, no app-side identifiers.
 
+import CoreLocation
 import XCTest
 
 final class WatchSmokeTests: XCTestCase {
@@ -316,7 +317,7 @@ final class WatchSmokeTests: XCTestCase {
 
     /// The newest finished record in the app group. Simulators share one file system, and no paired
     /// phone has collected it.
-    private func assertSavedScore(us: Int, them: Int, line: UInt = #line) {
+    private func newestRecord() -> [String: Any]? {
         let groups = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("../../../Shared/AppGroup").standardizedFileURL
         let records = FileManager.default.enumerator(at: groups, includingPropertiesForKeys: [.contentModificationDateKey])?
@@ -326,9 +327,12 @@ final class WatchSmokeTests: XCTestCase {
             (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         }
         let newest = records.max { modified($0) < modified($1) }.flatMap { try? Data(contentsOf: $0) }
-        let record = newest.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
-        let score = record?["finalScore"] as? [String: Int]
-        XCTAssertEqual(score, ["us": us, "them": them, "mine": 0], "records found: \(records.count)", line: line)
+        return newest.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+    }
+
+    private func assertSavedScore(us: Int, them: Int, line: UInt = #line) {
+        let score = newestRecord()?["finalScore"] as? [String: Int]
+        XCTAssertEqual(score, ["us": us, "them": them, "mine": 0], line: line)
     }
 
     /// An unnoticed pause in the first seconds must not make the whole match look accidental.
@@ -358,6 +362,150 @@ final class WatchSmokeTests: XCTestCase {
         XCTAssertTrue(startButton.waitForExistence(timeout: 20))
         sleep(8)
         assertSavedScore(us: 0, them: 1)
+    }
+
+    private static let pitch = CLLocation(latitude: 40.02, longitude: -83.02)
+
+    /// Moves the watch about the pitch, or along a straight road away from it, a fix a second.
+    /// - Returns: How far along the road it ended up.
+    @discardableResult
+    private func move(for seconds: Int, from meters: Double = 0, speed: Double, until: () -> Bool = { false }) -> Double {
+        var meters = meters
+        let began = Date()
+        for second in 0..<seconds {
+            if until() { break }
+            let isOnTheRoad = abs(speed) >= 7
+            if isOnTheRoad { meters = max(0, meters + speed) }
+            let angle = Double(second) / 8
+            let north = isOnTheRoad ? 0 : 20 * sin(angle), east = isOnTheRoad ? meters : meters + 20 * cos(angle)
+            XCUIDevice.shared.location = XCUILocation(location: CLLocation(
+                coordinate: CLLocationCoordinate2D(
+                    latitude: Self.pitch.coordinate.latitude + north / 111_320,
+                    longitude: Self.pitch.coordinate.longitude + east / (111_320 * cos(Self.pitch.coordinate.latitude * .pi / 180))),
+                altitude: 200, horizontalAccuracy: 5, verticalAccuracy: 5, course: 90, speed: abs(speed), timestamp: Date()))
+            let wait = began.addingTimeInterval(Double(second + 1)).timeIntervalSinceNow
+            if wait > 0 { usleep(UInt32(wait * 1_000_000)) }
+        }
+        return meters
+    }
+
+    private func startMatchAtThePitch() -> XCUIApplication {
+        move(for: 2, speed: 2.6)
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 10)
+        handleWatchLocationPrompt(timeout: 5)
+        let startButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        XCTAssertTrue(startButton.waitForExistence(timeout: 40))
+        startButton.tap()
+        return app
+    }
+
+    /// Asked as soon as the watch drives off; ending from the question ends when play did.
+    func testDrivingOffEndsAtThePitch() throws {
+        let app = startMatchAtThePitch()
+        let kickoff = Date()
+        move(for: 330, speed: 2.6)
+        let left = Date()
+        let question = app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "You've left the pitch")).firstMatch
+        move(for: 200, speed: 12) { question.exists }
+        XCTAssertTrue(question.exists, "Driving off should ask at once")
+        sleep(2)
+        screenshot("70-left")
+        app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'End Match'")).firstMatch.tap()
+        sleep(40)
+        screenshot("71-left-summary")
+        try assertSavedMatch(endsWithin: 75, of: left, after: kickoff, farthestMeters: 300)
+        tapDone(app)
+    }
+
+    /// Nipping off mid-match asks once, forgets about it on the way back, and loses nothing. Ended
+    /// by hand on the way home, the match ends at the pitch.
+    func testDrivingAwayAndBackKeepsTheMatch() throws {
+        let app = startMatchAtThePitch()
+        let kickoff = Date()
+        let heartRate = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
+        let question = app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "You've left the pitch")).firstMatch
+        move(for: 100, speed: 2.6)
+        let away = move(for: 200, speed: 12) { question.exists }
+        XCTAssertTrue(question.exists, "Driving off should ask at once")
+        move(for: Int(away / 12) + 1, from: away, speed: -12)
+        move(for: 90, speed: 2.6) { heartRate.exists }
+        XCTAssertTrue(heartRate.exists, "Coming back should withdraw the question")
+        move(for: 180, speed: 2.6)
+        let left = Date()
+        move(for: 110, speed: 12)
+        XCTAssertFalse(question.exists, "Asked once already, minutes ago")
+        app.swipeDown()
+        endMatch(app)
+        sleep(40)
+        screenshot("72-left-by-hand")
+        try assertSavedMatch(endsWithin: 75, of: left, after: kickoff, farthestMeters: 10_000)
+        tapDone(app)
+    }
+
+    private func assertSavedMatch(endsWithin seconds: TimeInterval, of end: Date, after start: Date,
+                                  farthestMeters: Double, line: UInt = #line) throws {
+        let record = try XCTUnwrap(newestRecord(), line: line)
+        let dates = ISO8601DateFormatter()
+        let savedEnd = try XCTUnwrap((record["endDate"] as? String).flatMap(dates.date(from:)), line: line)
+        let savedStart = try XCTUnwrap((record["startDate"] as? String).flatMap(dates.date(from:)), line: line)
+        XCTAssertEqual(savedStart.timeIntervalSince(start), 0, accuracy: 15, line: line)
+        XCTAssertEqual(savedEnd.timeIntervalSince(end), 0, accuracy: seconds, line: line)
+        let track = try XCTUnwrap(record["track"] as? [[String: Any]], line: line)
+        let farthest = track.compactMap { $0["coordinate"] as? [String: Double] }
+            .compactMap { point in
+                point["latitude"].flatMap { latitude in
+                    point["longitude"].map { CLLocation(latitude: latitude, longitude: $0).distance(from: Self.pitch) }
+                }
+            }.max()
+        XCTAssertLessThan(try XCTUnwrap(farthest, line: line), farthestMeters, line: line)
+        XCTAssertGreaterThan(Double(track.count), 0.8 * savedEnd.timeIntervalSince(savedStart), "the route is whole", line: line)
+    }
+
+    /// Nobody counting: no score anywhere, and the wearer's own goals one tap away.
+    func testAMatchWithoutScore() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-formatsWithoutScore", "(match)"]
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 10)
+        handleWatchLocationPrompt(timeout: 5)
+        let startButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        let heartRate = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
+        XCTAssertTrue(startButton.waitForExistence(timeout: 40))
+        startButton.tap()
+        XCTAssertTrue(heartRate.waitForExistence(timeout: 20))
+        sleep(32)
+        app.swipeUp()
+        let scored = app.buttons.matching(NSPredicate(format: "label ==[c] 'I scored'")).firstMatch
+        XCTAssertTrue(scored.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Them'")).firstMatch.exists)
+        screenshot("73-no-score")
+        scored.tap()
+        usleep(500_000)
+        screenshot("74-no-score-goal")
+        sleep(3)
+        for _ in 0..<4 where !heartRate.exists { app.swipeDown(); usleep(700_000) }
+        screenshot("75-no-score-glance")
+        app.swipeDown()
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Sub Out'")).firstMatch.tap()
+        sleep(1)
+        app.swipeUp()
+        sleep(1)
+        app.swipeUp()
+        sleep(1)
+        screenshot("76-no-score-bench")
+        app.swipeDown()
+        sleep(1)
+        app.swipeDown()
+        sleep(1)
+        endMatch(app)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch.waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label ==[c] 'How did it end?'")).firstMatch.exists)
+        sleep(6)
+        screenshot("77-no-score-summary")
+        tapDone(app)
+        XCTAssertEqual(newestRecord()?["keepsScore"] as? Bool, false)
     }
 
     /// Captures every redesigned screen of a real match, for design review.

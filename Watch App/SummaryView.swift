@@ -19,12 +19,16 @@ struct SummaryView: View {
     @State private var hasSkippedScore = false
     @State private var field: FieldModel?
     @State private var hasNoHeat = false
+    /// What the heart rate says of a match GPS couldn't see.
+    @State private var indoor: MatchAnalytics?
 
     private var record: MatchRecord? { workoutManager.finishedRecord }
     private var track: [TrackPoint] { record?.track ?? workoutManager.track }
     private var format: MatchFormat { record?.format ?? workoutManager.matchFormat }
     private var isIndoor: Bool { format == .indoor }
-    private var asksForScore: Bool { score == nil && !hasSkippedScore && !WatchSettings.refereeMode }
+    private var asksForScore: Bool {
+        score == nil && !hasSkippedScore && workoutManager.keepsScore && !WatchSettings.refereeMode
+    }
 
     var body: some View {
         ScrollView {
@@ -56,6 +60,7 @@ struct SummaryView: View {
             field = AppGroupStorage.fieldStore.resolve(recordFieldID: workoutManager.fieldID, track: track)
             promptForFieldIfNeeded()
         }
+        .task(id: record?.id) { await analyzeIndoors() }
         // Field learning finishes after the record publishes, so the prompt waits for it. It also
         // waits for the score, rather than landing under a finger.
         .onChange(of: workoutManager.proposedField?.id) { _, _ in promptForFieldIfNeeded() }
@@ -71,7 +76,7 @@ struct SummaryView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(resultText ?? fieldName ?? format.startTitle)
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .lineLimit(2)
+                .lineLimit(resultText == nil ? 2 : 1)
                 .minimumScaleFactor(0.6)
                 .accessibilityAddTraits(.isHeader)
             saveState
@@ -94,7 +99,14 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var picture: some View {
-        if !isIndoor, track.count > 20 {
+        if isIndoor, indoor == nil ? workoutManager.heartRates.count >= 60 : indoor?.stints != nil {
+            EffortStripView(levels: indoor?.stints?.strip ?? [], axis: .horizontal)
+                .frame(height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityElement()
+                .accessibilityAddTraits(.isImage)
+                .accessibilityLabel(stripSentence)
+        } else if !isIndoor, track.count > 20 {
             if let field, !hasNoHeat {
                 MatchHeat(field: field, record: record) { hasNoHeat = true }
             } else {
@@ -114,10 +126,13 @@ struct SummaryView: View {
                 stat("Red cards", "\(count(of: .redCard))")
                 stat("Fouls", "\(count(of: .foul))")
             }
-            if !isIndoor {
+            if isIndoor {
+                indoorStats
                 stat("Distance", UnitSystem.current.distance(workoutManager.distanceMeters).text)
+            } else {
+                stat("Distance", UnitSystem.current.distance(workoutManager.distanceMeters).text)
+                if !WatchSettings.refereeMode { stat("Played", timeOnPitch ?? "—") }
             }
-            if !WatchSettings.refereeMode { stat("Played", timeOnPitch ?? "—") }
             let bpm = Int(workoutManager.summaryAverageHeartRate ?? 0)
             stat("Average heart rate", bpm > 0 ? "\(bpm) BPM" : "—", tint: WatchTheme.heart)
             stat("Match time", MatchTrackerFormat.hoursMinutesSeconds(workoutManager.elapsedAtPause))
@@ -126,6 +141,26 @@ struct SummaryView: View {
             }
             stat("Active calories", "\(Int(workoutManager.activeCalories)) CAL")
         }
+    }
+
+    @ViewBuilder
+    private var indoorStats: some View {
+        if !WatchSettings.refereeMode {
+            stat("Played", indoor.map { UnitSystem.minutes($0.workrate.timeOnPitch).text } ?? timeOnPitch ?? "—")
+            if let stints = indoor?.stints {
+                stat("Stints", "\(stints.playing.count)")
+                stat("Longest stint", UnitSystem.minutes(stints.longest).text)
+                if let recovery = stints.recovery, recovery >= 1 {
+                    stat("Recovery in a minute", "\(Int(recovery.rounded())) BPM", tint: WatchTheme.heart)
+                }
+            }
+        }
+    }
+
+    private var stripSentence: String {
+        guard let indoor, let stints = indoor.stints else { return "Playing time" }
+        let count = stints.playing.count == 1 ? "one stint" : "\(stints.playing.count) stints"
+        return "Played \(UnitSystem.minutes(indoor.workrate.timeOnPitch).spoken) in \(count)."
     }
 
     private func stat(_ title: String, _ value: String, tint: Color = .white) -> some View {
@@ -162,6 +197,11 @@ struct SummaryView: View {
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
         .minimumScaleFactor(0.7)
         .frame(minHeight: 24)
+        if let earlyEnd = workoutManager.earlyEnd {
+            Text("Ended at \(earlyEnd.date.formatted(date: .omitted, time: .shortened)), \(earlyEnd.hadLeft ? "before you left" : "when play stopped")")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
         if !isIndoor, track.isEmpty {
             Label("No GPS was recorded", systemImage: "location.slash.fill")
                 .font(.footnote)
@@ -183,6 +223,16 @@ struct SummaryView: View {
         guard workoutManager.proposedField != nil, !asksForScore, !hasPromptedForField else { return }
         hasPromptedForField = true
         showFieldPrompt = true
+    }
+
+    private func analyzeIndoors() async {
+        guard isIndoor, let record, let end = record.endDate else { return }
+        let heartRate = workoutManager.heartRates
+        indoor = await Task.detached(priority: .utility) {
+            MatchAnalyzer.analyze(MatchAnalysisInput(
+                record: record, interval: DateInterval(start: record.startDate, end: end), format: .indoor, track: [],
+                heartRate: heartRate, healthDistanceMeters: nil, savedField: nil))
+        }.value
     }
 
     /// Goals tapped in are an answer, whether or not Save was.

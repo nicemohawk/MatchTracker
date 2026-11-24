@@ -145,7 +145,8 @@ public enum TrimAdvisor {
     // MARK: Coming and going
 
     /// Faster than anyone runs for this long is a vehicle.
-    private static let vehicleSpeed = 7.0
+    static let vehicleSpeed = 7.0
+    private static let runningSpeeds = 2.2...6.5
     private static let vehicleDuration: TimeInterval = 20
     /// Farther from play than any bench, toilet or car park.
     private static let farMeters = 300.0
@@ -180,6 +181,22 @@ public enum TrimAdvisor {
         return now.timeIntervalSince(track[lastNear].timestamp) >= 60 && isJourney(away, from: place)
     }
 
+    /// How far past the pitch and what's around it the latest fix is. Nil when that isn't known.
+    static func metersFromPlay(track: [TrackPoint], field: OrientedRectangle?) -> Double? {
+        guard let last = track.last else { return nil }
+        return PlaceOfPlay(track: track, field: field)?.distance(to: last.coordinate)
+    }
+
+    /// Whether somebody who left has been running about one place since: another pitch, not a way home.
+    static func playsElsewhere(track: [TrackPoint], field: OrientedRectangle?) -> Bool {
+        guard let place = PlaceOfPlay(track: track, field: field),
+              let lastNear = track.lastIndex(where: { place.isNear($0.coordinate) }) else { return false }
+        let running = track[(lastNear + 1)...].filter { runningSpeeds.contains($0.speedMetersPerSecond) }.map(\.coordinate)
+        guard running.count >= 180 else { return false }
+        let middle = Coordinate2D(latitude: median(running.map(\.latitude)), longitude: median(running.map(\.longitude)))
+        return running.filter { haversineMeters($0, middle) <= 120 }.count >= 180
+    }
+
     private static func isJourney(_ points: ArraySlice<TrackPoint>, from place: PlaceOfPlay) -> Bool {
         if points.contains(where: { place.distance(to: $0.coordinate) > farMeters }) { return true }
         var began: Date?, previous: Date?
@@ -207,7 +224,7 @@ public enum TrimAdvisor {
                 radius = hypot(field.lengthMeters, field.widthMeters) / 2 + 100
                 return
             }
-            let running = track.filter { (2.2...6.5).contains($0.speedMetersPerSecond) }.map(\.coordinate)
+            let running = track.filter { runningSpeeds.contains($0.speedMetersPerSecond) }.map(\.coordinate)
             guard running.count >= 60 else { return nil }
             let latitudes = running.map(\.latitude).sorted(), longitudes = running.map(\.longitude).sorted()
             center = Coordinate2D(latitude: latitudes[running.count / 2], longitude: longitudes[running.count / 2])
