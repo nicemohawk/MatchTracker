@@ -129,7 +129,7 @@ struct ExportFile: Transferable, Sendable {
     let format: Format
 
     var fileName: String {
-        "Match \(export.startDate.formatted(.iso8601(timeZone: .current).year().month().day()))\(format.fileSuffix)"
+        "Match \(export.startDate.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day()))\(format.fileSuffix)"
     }
 
     private var contents: Data {

@@ -39,7 +39,7 @@ struct MatchReplayRenderer: Sendable {
     func render(progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("Match \(match.date.formatted(.iso8601(timeZone: .current).year().month().day())).mp4")
+        let url = directory.appendingPathComponent("Match \(match.date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())).mp4")
         do {
             try await render(to: url, progress: progress)
             return url
