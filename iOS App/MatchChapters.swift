@@ -12,6 +12,8 @@ import SwiftUI
 struct MomentsChapter: View {
     @ObservedObject var detail: MatchDetailModel
     let onEdit: () -> Void
+    /// Plays a moment on the pitch; nil when there is none to play it on.
+    var onShow: ((MatchEvent) -> Void)?
 
     @ObservedObject private var videos = SidelineVideoStore.shared
     @State private var clip: ClipSelection?
@@ -45,7 +47,8 @@ struct MomentsChapter: View {
                 VStack(spacing: 0) {
                     ForEach(moments) { event in
                         let footage = ClipSelection.of(event, in: detail)
-                        MomentRow(event: event, minute: detail.minute(of: event),
+                        MomentRow(event: event, minutes: detail.minutes,
+                                  onShow: onShow.map { onShow in { onShow(event) } },
                                   onPlay: footage.map { footage in { clip = footage } })
                     }
                     if let bench {
@@ -72,15 +75,42 @@ struct MomentsChapter: View {
 
 private struct MomentRow: View {
     let event: MatchEvent
-    let minute: Int
+    let minutes: MatchMinutes
+    var onShow: (() -> Void)?
     var onPlay: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 14) {
-            Text("\(minute)′")
+            if let onShow {
+                Button(action: onShow) { moment }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(spoken)
+                    .accessibilityHint("Plays it on the pitch")
+            } else {
+                moment
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(spoken)
+            }
+            if let onPlay {
+                Button("Play Video", systemImage: "play.circle.fill", action: onPlay)
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Play video, \(spoken)")
+            }
+        }
+    }
+
+    private var spoken: String {
+        [minutes.spoken(for: event.date), event.kind.momentTitle, event.note ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    private var moment: some View {
+        HStack(spacing: 14) {
+            Text(minutes.text(for: event.date))
                 .font(.system(.body, design: .rounded, weight: .semibold))
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(onShow == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
                 .frame(minWidth: 44, alignment: .leading)
             Image(systemName: event.kind.momentSymbol)
                 .font(.title3)
@@ -92,20 +122,9 @@ private struct MomentRow: View {
                     Text(note).font(.subheadline).foregroundStyle(.secondary)
                 }
             }
-            Spacer(minLength: 0)
-            if let onPlay {
-                Button("Play Video", systemImage: "play.circle.fill", action: onPlay)
-                    .labelStyle(.iconOnly)
-                    .font(.title2)
-                    .frame(width: 44, height: 44)
-            }
         }
-        .frame(minHeight: 48)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Minute \(minute), \([event.kind.momentTitle, event.note ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))")
-        .accessibilityActions {
-            if let onPlay { Button("Play Video", action: onPlay) }
-        }
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -159,6 +178,9 @@ extension MatchEventKind {
 
 struct BestRunsChapter: View {
     let runs: [KeyRun]
+    let minutes: MatchMinutes
+    /// Plays a run on the pitch.
+    let onShow: (KeyRun) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -166,33 +188,47 @@ struct BestRunsChapter: View {
             Text("Best runs").font(.title2.bold())
             VStack(spacing: 0) {
                 ForEach(runs) { run in
-                    let speed = UnitSystem.current.speed(run.peakSpeed)
-                    let distance = UnitSystem.current.shortDistance(run.distanceMeters)
-                    let layout = dynamicTypeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-                        : AnyLayout(HStackLayout(spacing: 14))
-                    layout {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(run.title).font(.body)
-                            Text(["\(Int(run.fromT / 60) + 1)′", run.detail].compactMap { $0 }.joined(separator: " · "))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
-                        VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 2) {
-                            Text(speed.text)
-                                .font(.system(.title3, design: .rounded, weight: .semibold))
-                                .monospacedDigit()
-                            Text(distance.text).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                    .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(run.title), \(speed.spoken) over \(distance.spoken), minute \(Int(run.fromT / 60) + 1)")
+                    Button { onShow(run) } label: { row(run) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(spoken(run))
+                        .accessibilityHint("Plays it on the pitch")
                 }
             }
         }
+    }
+
+    private func start(of run: KeyRun) -> Date { run.segment.interval.start }
+
+    private func spoken(_ run: KeyRun) -> String {
+        let units = UnitSystem.current
+        return [run.title, "\(units.speed(run.peakSpeed).spoken) over \(units.shortDistance(run.distanceMeters).spoken)",
+                minutes.spoken(for: start(of: run)), run.detail].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    private func row(_ run: KeyRun) -> some View {
+        let isLarge = dynamicTypeSize.isAccessibilitySize
+        let layout = isLarge ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 14))
+        return layout {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(run.title).font(.body)
+                (Text(minutes.text(for: start(of: run))).foregroundStyle(.tint)
+                    + Text(run.detail.map { " · \($0)" } ?? ""))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if !isLarge { Spacer(minLength: 8) }
+            VStack(alignment: isLarge ? .leading : .trailing, spacing: 2) {
+                Text(UnitSystem.current.speed(run.peakSpeed).text)
+                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                Text(UnitSystem.current.shortDistance(run.distanceMeters).text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(.vertical, isLarge ? 6 : 0)
+        .contentShape(Rectangle())
     }
 }
 
@@ -257,20 +293,30 @@ struct HeartRateChart: View {
     let halftime: DateInterval?
 
     @State private var selectedMinute: Double?
+    /// For "HT", above the plot.
+    @ScaledMetric(relativeTo: .footnote) private var headroom = 22.0
 
     private struct Point: Identifiable {
         let id: Int
+        let isSecondHalf: Bool
         let minute: Double
         let bpm: Double
     }
 
-    /// One point a minute: enough shape, and it draws instantly.
+    private var minutes: MatchMinutes { MatchMinutes(kickoff: start, halftime: halftime) }
+
+    /// One point a minute: enough shape, and it draws instantly. Half-time isn't a minute of anything.
     private var points: [Point] {
-        let byMinute = Dictionary(grouping: series) { Int($0.date.timeIntervalSince(start) / 60) }
-        return byMinute.keys.filter { $0 >= 0 }.sorted().map { minute in
-            let samples = byMinute[minute] ?? []
-            let total = samples.reduce(0.0) { $0 + $1.bpm }
-            return Point(id: minute, minute: Double(minute), bpm: total / Double(max(samples.count, 1)))
+        let minutes = minutes
+        let played = series.filter { $0.date >= start && !minutes.isHalftime($0.date) }
+            .map { (isSecondHalf: $0.date >= (halftime?.end ?? .distantFuture),
+                    minute: minutes.playedSeconds(at: $0.date) / 60, bpm: $0.bpm) }
+        // The minute half-time fell in has a point on either side of it.
+        let byMinute = Dictionary(grouping: played) { Int($0.minute) * 2 + ($0.isSecondHalf ? 1 : 0) }
+        return byMinute.sorted { $0.key < $1.key }.map { key, samples in
+            let count = Double(samples.count)
+            return Point(id: key, isSecondHalf: samples[0].isSecondHalf, minute: samples.reduce(0) { $0 + $1.minute } / count,
+                         bpm: samples.reduce(0) { $0 + $1.bpm } / count)
         }
     }
 
@@ -279,12 +325,14 @@ struct HeartRateChart: View {
         let selected = selectedMinute.flatMap { minute in
             points.min { abs($0.minute - minute) < abs($1.minute - minute) }
         }
+        let lowest = ((points.map(\.bpm).min() ?? 60) / 20).rounded(.down) * 20
+        let highest = max(((points.map(\.bpm).max() ?? 180) / 20).rounded(.up) * 20, lowest + 20)
         Chart {
-            if let halftime { halftimeBand(halftime) }
+            if let halftime { halftimeRule(halftime) }
             ForEach(points) { line($0) }
             if let selected { callout(selected) }
         }
-        .chartYScale(domain: .automatic(includesZero: false))
+        .chartYScale(domain: lowest...highest)
         .chartXSelection(value: $selectedMinute)
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 5)) { value in
@@ -292,19 +340,23 @@ struct HeartRateChart: View {
                 AxisValueLabel { if let minute = value.as(Double.self) { Text("\(Int(minute))′") } }
             }
         }
+        .padding(.top, halftime == nil ? 0 : headroom)
         .accessibilityLabel("Heart rate through the match")
     }
 
-    private func halftimeBand(_ halftime: DateInterval) -> some ChartContent {
-        let from = halftime.start.timeIntervalSince(start) / 60
-        let to = halftime.end.timeIntervalSince(start) / 60
-        return RectangleMark(xStart: .value("Half-time start", from), xEnd: .value("Half-time end", to))
-            .foregroundStyle(Color(.systemGray5))
+    private func halftimeRule(_ halftime: DateInterval) -> some ChartContent {
+        RuleMark(x: .value("Minute", minutes.playedSeconds(at: halftime.start) / 60))
+            .lineStyle(StrokeStyle(lineWidth: 1))
+            .foregroundStyle(Color(.systemGray3))
+            .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                Text("HT").font(.footnote).foregroundStyle(.secondary)
+            }
             .accessibilityLabel("Half-time")
     }
 
     private func line(_ point: Point) -> some ChartContent {
-        LineMark(x: .value("Minute", point.minute), y: .value("Heart rate", point.bpm))
+        LineMark(x: .value("Minute", point.minute), y: .value("Heart rate", point.bpm),
+                 series: .value("Half", point.isSecondHalf ? 2 : 1))
             .interpolationMethod(.monotone)
             .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
             .foregroundStyle(Color.pink)

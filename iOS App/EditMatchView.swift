@@ -38,7 +38,7 @@ struct EditMatchView: View {
                     ForEach(moments) { event in
                         Button { editing = event } label: {
                             LabeledContent {
-                                Text("\(minute(event.date))′").monospacedDigit()
+                                Text(detail.minutes.text(for: event.date)).monospacedDigit()
                             } label: {
                                 Label(event.kind.momentTitle, systemImage: event.kind.momentSymbol)
                             }
@@ -128,8 +128,6 @@ struct EditMatchView: View {
         undoManager?.setActionName("Delete Moment")
     }
 
-    private func minute(_ date: Date) -> Int { max(1, Int(date.timeIntervalSince(detail.matchStart) / 60) + 1) }
-
     private var kickoff: Binding<Date> {
         Binding(get: { detail.matchStart }, set: { store.trim(id, start: $0, end: detail.record?.trimmedEnd) })
     }
@@ -154,7 +152,7 @@ private struct MomentEditor: View {
     private let kinds: [MatchEventKind] = [.goalForUs, .goalMine, .assist, .goalAgainstUs, .subOut, .subIn,
                                            .flag, .yellowCard, .redCard, .foul]
 
-    private var lastMinute: Int { max(1, Int(detail.playedInterval.duration / 60) + 1) }
+    private var lastMinute: Int { detail.minutes.minute(of: detail.matchEnd) }
 
     var body: some View {
         NavigationStack {
@@ -183,14 +181,14 @@ private struct MomentEditor: View {
         .presentationDetents([.medium, .large])
         .onAppear {
             kind = event?.kind ?? .goalForUs
-            minute = event.map { max(1, Int($0.date.timeIntervalSince(detail.matchStart) / 60) + 1) } ?? lastMinute / 2
+            minute = event.map(detail.minute) ?? max(1, lastMinute / 2)
             loadedMinute = minute
             note = event?.note ?? ""
         }
     }
 
     private func save() {
-        let date = detail.matchStart.addingTimeInterval(Double(minute - 1) * 60 + 30)
+        let date = detail.minutes.date(ofMinute: minute)
         if let event {
             store.setEvent(event.id, in: detail.matchIdentifier, kind: kind,
                            date: minute == loadedMinute ? nil : date, note: note)

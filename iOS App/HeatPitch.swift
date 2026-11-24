@@ -13,12 +13,18 @@ struct PitchMark: Hashable, Sendable {
     enum Kind: Hashable, Sendable { case goal, assist }
     var kind: Kind
     var point: PitchPoint
+    var scale: Double = 1
 }
 
 /// A run drawn as a tapering line toward where it finished.
 struct PitchRun: Hashable, Sendable {
     var points: [PitchPoint]
     var isBest = false
+    /// Written where it finished.
+    var label: String?
+    /// How much of it has been run, 0...1.
+    var progress: Double = 1
+    var opacity: Double = 1
 }
 
 struct HeatPitch: View {
@@ -29,12 +35,17 @@ struct HeatPitch: View {
     }
 
     var heat: PitchHeat
+    /// The fully-hot level for heat still building up; nil for heat that's its own measure.
+    var heatReference: Float?
+    var heatOpacity: Double = 1
     var size: PitchSize = .standard
     var marks: [PitchMark] = []
     var runs: [PitchRun] = []
     var averagePosition: PitchPoint?
     /// Where the player is right now, when scrubbing a replay.
     var currentPosition: PitchPoint?
+    /// Where they've just been, oldest first.
+    var trail: [PitchPoint] = []
     var surface: Surface = .turf
     /// Space kept around the lines; the turf still fills the whole view. Nil fits a natural run-off.
     var insets: EdgeInsets?
@@ -44,21 +55,19 @@ struct HeatPitch: View {
     /// which get one pass.
     var rendersImmediately = false
 
-    @State private var rendered: RenderedHeat?
-
-    private struct RenderedHeat {
-        var key: HeatImage.Key
-        var image: CGImage
-    }
+    @State private var renderer = HeatRenderer()
 
     /// The shape to give this view so the turf hugs the pitch.
     static func aspectRatio(for size: PitchSize) -> CGFloat { PitchArtist.naturalAspectRatio(for: size) }
 
     var body: some View {
         GeometryReader { proxy in
-            let key = HeatImage.Key(heat: heat, size: size, pixelWidth: proxy.size.width > 90 ? 540 : 120)
-            let image = HeatImage.cached(key) ?? (rendered?.key == key ? rendered?.image : nil)
-                ?? (rendersImmediately ? HeatImage.make(key) : nil)
+            let fullWidth = heatReference == nil ? 540 : 300
+            let key = HeatImage.Key(heat: heat, size: size, pixelWidth: proxy.size.width > 90 ? fullWidth : 120,
+                                    reference: heatReference)
+            // Until it's ready, what was there before: a picture that blinks is worse than a late one.
+            let image = HeatImage.cached(key) ?? (rendersImmediately ? HeatImage.make(key) : nil) ?? renderer.image
+            let isShown = image != nil && !heat.isEmpty
             let insets = insets
             ZStack {
                 Canvas { context, canvasSize in
@@ -71,18 +80,22 @@ struct HeatPitch: View {
                         if let image { artist(canvasSize, insets).drawHeat(image, in: cg) }
                     }
                 }
-                .opacity(image == nil ? 0 : 1)
-                .animation(rendersImmediately ? nil : .easeOut(duration: 0.35), value: image == nil)
+                .opacity(isShown ? heatOpacity : 0)
+                .animation(rendersImmediately ? nil : .easeOut(duration: 0.35), value: isShown)
+                .animation(rendersImmediately ? nil : .easeOut(duration: 0.35), value: heatOpacity)
+                Canvas { context, canvasSize in
+                    context.withCGContext { cg in
+                        artist(canvasSize, insets).drawMarkings(in: cg, opacity: surface == .turf ? 0.5 : 0.75)
+                    }
+                }
+                if !runs.isEmpty {
+                    PitchRuns(runs: runs, artist: artist(proxy.size, insets), drawsOn: !rendersImmediately)
+                }
                 Canvas { context, canvasSize in
                     context.withCGContext { cg in drawOverlays(artist(canvasSize, insets), in: cg) }
                 }
             }
-            .task(id: key) {
-                guard image == nil else { return }
-                let made = await Task.detached(priority: .userInitiated) { HeatImage.make(key) }.value
-                guard !Task.isCancelled, let made else { return }
-                rendered = RenderedHeat(key: key, image: made)
-            }
+            .onChange(of: key, initial: true) { if !rendersImmediately { renderer.show(key) } }
         }
         .accessibilityElement()
         .accessibilityAddTraits(.isImage)
@@ -97,17 +110,111 @@ struct HeatPitch: View {
     }
 
     private func drawOverlays(_ artist: PitchArtist, in cg: CGContext) {
-        artist.drawMarkings(in: cg, opacity: surface == .turf ? 0.5 : 0.75)
         guard !artist.isThumbnail else { return }
-        for run in runs where !run.isBest { artist.drawRun(run, in: cg) }
-        for run in runs where run.isBest { artist.drawRun(run, in: cg) }
         if let averagePosition { artist.drawAverage(averagePosition, in: cg) }
-        for mark in marks { artist.drawMark(mark, in: cg) }
+        for mark in marks { artist.drawMark(mark, in: cg, scale: mark.scale) }
+        artist.drawTrail(trail, in: cg)
         if let currentPosition { artist.drawPlayer(currentPosition, in: cg) }
     }
 }
 
+// MARK: - Runs
+
+/// The runs, drawn one after another when they first appear.
+private struct PitchRuns: View {
+    let runs: [PitchRun]
+    let artist: PitchArtist
+    let drawsOn: Bool
+
+    @State private var seconds = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Between one run starting and the next.
+    fileprivate static let stagger = 0.15
+    fileprivate static let drawing = 0.45
+
+    var body: some View {
+        let total = Self.drawing + Self.stagger * Double(runs.count)
+        let isDrawnOn = drawsOn && !reduceMotion
+        PitchRunsCanvas(runs: runs, artist: artist, seconds: isDrawnOn ? seconds : total)
+            .onAppear { withAnimation(.linear(duration: total)) { seconds = total } }
+    }
+}
+
+private struct PitchRunsCanvas: View, Animatable {
+    let runs: [PitchRun]
+    let artist: PitchArtist
+    var seconds: Double
+
+    var animatableData: Double {
+        get { seconds }
+        set { seconds = newValue }
+    }
+
+    var body: some View {
+        Canvas { context, canvasSize in
+            guard !artist.isThumbnail else { return }
+            let best = runs.filter(\.isBest), others = runs.filter { !$0.isBest }
+            for (position, run) in (best + others).enumerated().reversed() {
+                let drawn = min((seconds - Double(position) * PitchRuns.stagger) / PitchRuns.drawing, run.progress)
+                context.withCGContext { cg in
+                    artist.drawRun(run, in: cg, opacity: run.opacity, progress: drawn)
+                }
+                guard drawn >= 1, let label = run.label, let tip = run.points.last else { continue }
+                let text = context.resolve(Text(label).font(.footnote.weight(.semibold)).foregroundStyle(.white))
+                let size = text.measure(in: canvasSize)
+                context.draw(text, in: place(size, beside: artist.place(tip), in: canvasSize))
+            }
+        }
+    }
+
+    /// Beside the tip, wherever it covers least of any run.
+    private func place(_ size: CGSize, beside tip: CGPoint, in canvas: CGSize) -> CGRect {
+        let reach = artist.pitch.width * 0.065
+        let bounds = CGRect(origin: .zero, size: canvas).insetBy(dx: 8, dy: 8)
+        let lines = runs.flatMap { $0.points.map(artist.place) }
+        let spots = [CGPoint(x: tip.x + reach, y: tip.y - size.height / 2),
+                     CGPoint(x: tip.x - reach - size.width, y: tip.y - size.height / 2),
+                     CGPoint(x: tip.x - size.width / 2, y: tip.y - reach - size.height),
+                     CGPoint(x: tip.x - size.width / 2, y: tip.y + reach)]
+            .map { CGRect(origin: $0, size: size) }
+        let open = spots.filter { bounds.contains($0) }
+        return (open.isEmpty ? spots : open).min { first, second in
+            lines.filter(first.contains).count < lines.filter(second.contains).count
+        } ?? spots[0]
+    }
+}
+
 // MARK: - Heat image
+
+/// Renders the latest heat asked for, off the main thread, and holds the last one it finished. Heat
+/// that changes faster than it can be drawn skips frames rather than never arriving.
+@MainActor
+@Observable
+private final class HeatRenderer {
+    private(set) var image: CGImage?
+    @ObservationIgnored private var wanted: HeatImage.Key?
+    @ObservationIgnored private var work: Task<Void, Never>?
+
+    func show(_ key: HeatImage.Key) {
+        if let cached = HeatImage.cached(key) {
+            wanted = nil
+            image = cached
+            return
+        }
+        wanted = key
+        guard work == nil else { return }
+        work = Task {
+            while let key = wanted {
+                wanted = nil
+                if let made = await Task.detached(priority: .userInitiated, operation: { HeatImage.make(key) }).value {
+                    image = made
+                }
+            }
+            work = nil
+        }
+    }
+}
 
 /// Turns a coarse grid into a smooth, transparent-to-bright image. Pure; safe off the main actor.
 enum HeatImage {
@@ -115,6 +222,8 @@ enum HeatImage {
         var heat: PitchHeat
         var size: PitchSize
         var pixelWidth: Int
+        /// The fully-hot level, or nil to use this heat's own.
+        var reference: Float?
     }
 
     private final class Box {
@@ -136,11 +245,15 @@ enum HeatImage {
         return cache
     }()
 
-    static func cached(_ key: Key) -> CGImage? { cache.object(forKey: BoxedKey(key))?.image }
+    static func cached(_ key: Key) -> CGImage? {
+        key.reference == nil ? cache.object(forKey: BoxedKey(key))?.image : nil
+    }
 
     static func make(_ key: Key) -> CGImage? {
         if let image = cached(key) { return image }
-        guard let image = render(key.heat, size: key.size, pixelWidth: key.pixelWidth, reference: nil) else { return nil }
+        guard let image = render(key.heat, size: key.size, pixelWidth: key.pixelWidth, reference: key.reference) else { return nil }
+        // A frame of something playing won't be asked for again.
+        guard key.reference == nil else { return image }
         cache.setObject(Box(image), forKey: BoxedKey(key), cost: image.bytesPerRow * image.height)
         return image
     }
@@ -494,11 +607,11 @@ struct PitchArtist: Sendable {
         let count = Int((CGFloat(path.count) * min(max(progress, 0), 1)).rounded())
         guard count >= 2 else { return }
         let visible = Array(path.prefix(count))
-        let width = pitch.width * (run.isBest ? 0.014 : 0.007)
+        let width = pitch.width * (run.isBest ? 0.014 : 0.00875)
         // Faded as one thing, so the head and line don't show through each other.
         cg.saveGState()
         defer { cg.restoreGState() }
-        cg.setAlpha((run.isBest ? 1 : 0.5) * opacity)
+        cg.setAlpha(opacity)
         cg.beginTransparencyLayer(auxiliaryInfo: nil)
         defer { cg.endTransparencyLayer() }
         if run.isBest {
@@ -522,6 +635,13 @@ struct PitchArtist: Sendable {
         cg.setFillColor(white(1))
         cg.fillPath()
         cg.restoreGState()
+    }
+
+    /// The comet behind a moving player.
+    func drawTrail(_ points: [PitchPoint], in cg: CGContext) {
+        let trail = points.map(place)
+        drawTapered(trail, in: cg, width: pitch.width * 0.029, color: (0.30, 0.93, 0.48), opacity: 0.2)
+        drawTapered(trail, in: cg, width: pitch.width * 0.011, color: (0.93, 1, 0.94), opacity: 0.95)
     }
 
     /// A line that fades and thins toward its oldest end.

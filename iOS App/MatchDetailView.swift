@@ -13,7 +13,12 @@ struct MatchDetailView: View {
     @StateObject private var model = DetailLoader()
     @State private var sheet: Sheet?
     @State private var confirmingDelete = false
+    @State private var clock = StageClock()
+    /// What the scroll view has to show things in, and how much of it comes before the picture.
+    @State private var visibleSize: CGSize = .zero
+    @State private var answerHeight: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     enum Sheet: String, Identifiable {
@@ -45,6 +50,8 @@ struct MatchDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        .onChange(of: sheet) { clock.pause() }
+        .onDisappear { clock.pause() }
         .sheet(item: $sheet) { sheet in
             if let detail = model.detail { content(of: sheet, detail) }
         }
@@ -68,25 +75,68 @@ struct MatchDetailView: View {
 
     @ViewBuilder
     private func story(_ detail: MatchDetailModel) -> some View {
-        ScrollView {
-            if horizontalSizeClass == .regular {
-                HStack(alignment: .top, spacing: 32) {
-                    picture(detail).frame(maxWidth: 460)
-                    VStack(alignment: .leading, spacing: 32) {
-                        scoreline(detail)
-                        chapters(detail)
+        ScrollViewReader { scroller in
+            ScrollView {
+                if isWide {
+                    HStack(alignment: .top, spacing: 32) {
+                        picture(detail).frame(maxWidth: 460)
+                        VStack(alignment: .leading, spacing: 32) {
+                            answer(detail)
+                            chapters(detail, scroller)
+                        }
                     }
+                    .padding(32)
+                } else {
+                    VStack(spacing: 28) {
+                        VStack(spacing: Self.answerSpacing) {
+                            answer(detail)
+                                .padding(.horizontal)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { answerHeight = $0 }
+                            picture(detail)
+                        }
+                        chapters(detail, scroller).padding(.horizontal)
+                    }
+                    .padding(.bottom, 32)
                 }
-                .padding(32)
-            } else {
-                VStack(spacing: 28) {
-                    scoreline(detail).padding(.horizontal)
-                    picture(detail)
-                    chapters(detail).padding(.horizontal)
-                }
-                .padding(.bottom, 32)
             }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { visibleSize = $0 }
+            // Any touch, on anything.
+            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in clock.endOpening() },
+                                 including: clock.isOpening ? .all : .subviews)
         }
+        .onChange(of: detail.analyticsRevision, initial: true) {
+            guard let analytics = detail.analytics, analytics.hasRoute else { return }
+            clock.load(analytics, events: detail.events)
+            clock.playOpening(of: detail.matchIdentifier)
+        }
+    }
+
+    private static let answerSpacing: CGFloat = 16
+    private static let stage = "stage"
+
+    /// How it went, before any picture.
+    private func answer(_ detail: MatchDetailModel) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            scoreline(detail)
+            if let digest = detail.digest { DigestNumbers(digest: digest) }
+            if let headline = detail.headline { Text(headline).font(.title3) }
+        }
+    }
+
+    /// Room for the picture and the words side by side. Beside a sidebar there often isn't.
+    private var isWide: Bool { horizontalSizeClass == .regular && visibleSize.width >= 700 }
+
+    /// What's left of the first screen, so the whole pitch is on it. Big type keeps a pitch worth
+    /// looking at and scrolls to it.
+    private var stageHeight: CGFloat {
+        // Beside the answer, what it shares the height with is its own margins and picker.
+        let taken = isWide ? 112 : answerHeight + 2 * Self.answerSpacing
+        return min(max(visibleSize.height - taken, 340), 620)
+    }
+
+    private func show(on scroller: ScrollViewProxy, _ play: () -> Void) {
+        withAnimation(reduceMotion ? nil : .snappy) { scroller.scrollTo(Self.stage, anchor: .top) }
+        play()
     }
 
     private func scoreline(_ detail: MatchDetailModel) -> some View {
@@ -98,8 +148,10 @@ struct MatchDetailView: View {
     @ViewBuilder
     private func picture(_ detail: MatchDetailModel) -> some View {
         if let analytics = detail.analytics, analytics.hasRoute {
-            MatchStage(analytics: analytics, events: detail.events, matchStart: detail.matchStart,
-                       seasonHeat: store.season(SeasonSummary.Term(containing: detail.matchStart)).heat)
+            MatchStage(clock: clock, analytics: analytics, events: detail.events,
+                       seasonHeat: store.season(SeasonSummary.Term(containing: detail.matchStart)).heat,
+                       height: stageHeight)
+                .id(Self.stage)
         } else if !detail.heartRateSeries.isEmpty {
             HeartRateHero(series: detail.heartRateSeries, start: detail.matchStart)
                 .padding(.horizontal)
@@ -107,22 +159,15 @@ struct MatchDetailView: View {
     }
 
     @ViewBuilder
-    private func chapters(_ detail: MatchDetailModel) -> some View {
+    private func chapters(_ detail: MatchDetailModel, _ scroller: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 32) {
-            if let digest = detail.digest {
-                VStack(alignment: .leading, spacing: 14) {
-                    DigestNumbers(digest: digest)
-                    if let headline = detail.headline {
-                        Text(headline).font(.title3)
-                    }
-                }
-            }
             if let end = detail.suggestedTrimEnd {
                 TrimSuggestion(end: end) { store.trim(detail.matchIdentifier, start: nil, end: end) }
             }
-            MomentsChapter(detail: detail, onEdit: { sheet = .edit })
+            MomentsChapter(detail: detail, onEdit: { sheet = .edit },
+                           onShow: detail.analytics?.hasRoute == true ? { moment in show(on: scroller) { clock.show(moment) } } : nil)
             if let runs = detail.analytics?.keyRuns, !runs.isEmpty {
-                BestRunsChapter(runs: runs)
+                BestRunsChapter(runs: runs, minutes: detail.minutes) { run in show(on: scroller) { clock.show(run) } }
             }
             if let analytics = detail.analytics {
                 EffortChapter(detail: detail, analytics: analytics)
