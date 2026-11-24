@@ -200,6 +200,28 @@ final class DesignCapture: XCTestCase {
         if app.buttons["Replay"].exists { app.buttons["Replay"].tap(); sleep(8); screenshot("61-share-replay") }
     }
 
+    /// Changes the kit and changes it back, so run it where that doesn't matter.
+    func testKit() {
+        app.launchArguments += ["-hasOnboarded", "YES", "-asksAfterMatches", "NO", "-serverURLOverride", "http://127.0.0.1:9"]
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(4)
+        XCTAssertTrue(openSettings(app: app))
+        app.buttons.matching(NSPredicate(format: "label CONTAINS 'Team Color'")).firstMatch.tap()
+        sleep(2)
+        screenshot("70-kit")
+        app.buttons["Claret"].tap()
+        sleep(2)
+        screenshot("71-kit-claret")
+        app.swipeUp()
+        sleep(1)
+        screenshot("72-kit-icon")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        closeSettings(app: app)
+        sleep(2)
+        screenshot("73-kit-summary")
+    }
+
     func testEffort() {
         for pass in 1...2 {
             app.launch()
