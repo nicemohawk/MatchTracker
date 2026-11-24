@@ -330,8 +330,8 @@ final class RoadmapBackendTests: XCTestCase {
     func testGPXGolden() {
         let expected = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <gpx version="1.1" creator="MatchTracker" xmlns="http://www.topografix.com/GPX/1/1">
-        <metadata><time>2023-11-14T22:13:20Z</time></metadata>
+        <gpx version="1.1" creator="MatchTracker" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+        <metadata><name>Match</name><time>2023-11-14T22:13:20Z</time></metadata>
         <wpt lat="40.000000" lon="-83.000000">
         <time>2023-11-14T22:13:25Z</time>
         <name>flag</name>
@@ -342,6 +342,8 @@ final class RoadmapBackendTests: XCTestCase {
         <name>goalFor</name>
         </wpt>
         <trk>
+        <name>Match</name>
+        <type>soccer</type>
         <trkseg>
         <trkpt lat="40.000000" lon="-83.000000">
         <time>2023-11-14T22:13:20Z</time>
@@ -355,7 +357,9 @@ final class RoadmapBackendTests: XCTestCase {
 
         """
         let start = Date(timeIntervalSince1970: 1_700_000_000)
-        XCTAssertEqual(MatchExporter.gpx(track: goldenTrack(), events: goldenEvents(), startDate: start), expected)
+        let activity = ActivityExport(name: "Match", startDate: start, endDate: start.addingTimeInterval(10),
+                                      track: goldenTrack(), events: goldenEvents())
+        XCTAssertEqual(MatchExporter.gpx(activity), expected)
     }
 
     // MARK: - APIClient V2 endpoints
