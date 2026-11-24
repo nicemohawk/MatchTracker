@@ -254,6 +254,7 @@ public enum PlayIntervalDeriver {
     public static func playingIntervals(track: [TrackPoint],
                                         field: OrientedRectangle,
                                         events: [MatchEvent] = [],
+                                        motion: MotionTrace? = nil,
                                         matchStart: Date,
                                         matchEnd: Date,
                                         marginMeters: Double) -> [DateInterval] {
@@ -268,6 +269,7 @@ public enum PlayIntervalDeriver {
             track: track,
             projector: projector,
             existingEvents: manualSubs,
+            motion: motion,
             configuration: configuration
         )
         return SubstitutionTracker.playingIntervals(events: manualSubs + transitions, matchStart: matchStart, matchEnd: matchEnd)

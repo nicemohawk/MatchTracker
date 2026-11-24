@@ -82,9 +82,10 @@ public extension MatchRecord {
         stripped.headings = nil
         stripped.track = nil
         stripped.notes = nil
+        stripped.motion = nil
         let encoder = MatchTrackerJSON.encoder()
         encoder.outputFormatting = .sortedKeys
-        return "\(track?.count ?? 0)-" + stableHash((try? encoder.encode(stripped)) ?? Data())
+        return "\(track?.count ?? 0)\(motion == nil ? "" : "m")-" + stableHash((try? encoder.encode(stripped)) ?? Data())
     }
 }
 

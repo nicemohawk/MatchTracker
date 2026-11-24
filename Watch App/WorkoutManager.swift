@@ -159,6 +159,7 @@ final class WorkoutManager: NSObject {
     /// this match (no field → no boundary to reason about → detection disabled, everything else
     /// works as before).
     @ObservationIgnored private var autoSubDetector: AutoSubDetector?
+    @ObservationIgnored private let motionRecorder = MotionRecorder()
 
     /// Sensor-fusion heading samples and live sideline streaming, both active only during a match.
     @ObservationIgnored private let liveStreamer = LiveStreamer()
@@ -296,6 +297,7 @@ final class WorkoutManager: NSObject {
         } else {
             routeRecorder.coolDown()
         }
+        motionRecorder.start(at: start)
         startWorkoutSession()
         log(.matchStart, haptic: false)
         startHeartbeat()
@@ -503,6 +505,7 @@ final class WorkoutManager: NSObject {
         let endingBuilder = builder
         _ = routeRecorder.finish()
         routeRecorder.removeJournal(matchID: abandonedID)
+        motionRecorder.reset()
         liveStreamer.stop()
         clearInProgress(matchID: abandonedID)
         reset()
@@ -651,8 +654,10 @@ final class WorkoutManager: NSObject {
     /// Called with every fix and heart-rate sample: both keep arriving in the background.
     private func askIfStillPlaying(now: Date = Date()) {
         guard phase == .active, !askingStillPlaying else { return }
+        if motionRecorder.trace?.isActive(at: now) == true { lastMovingDate = now }
         let stillSince = lastMovingDate ?? matchStartDate
-        let looksOver = (usesGPS && now.timeIntervalSince(stillSince) > stillnessBeforeAsking)
+        let canTell = usesGPS || motionRecorder.trace?.reading(at: now) != nil
+        let looksOver = (canTell && now.timeIntervalSince(stillSince) > stillnessBeforeAsking)
             || now.timeIntervalSince(matchStartDate) > durationBeforeAsking
         let askedRecently = lastAskedStillPlaying.map { now.timeIntervalSince($0) < 30 * 60 } ?? false
         guard looksOver, !askedRecently else { return }
@@ -703,6 +708,7 @@ final class WorkoutManager: NSObject {
         let fieldID: UUID?
         let events: [MatchEvent]
         let fixes: [RouteFix]
+        let motion: MotionTrace?
         let context: MatchContext
         let session: HKWorkoutSession?
         let builder: HKLiveWorkoutBuilder?
@@ -717,6 +723,7 @@ final class WorkoutManager: NSObject {
         func record(id: UUID, events: [MatchEvent]) -> MatchRecord {
             var record = MatchRecord(id: id, startDate: start, endDate: end, fieldID: fieldID, events: events,
                                      teamCode: teamCode, sportID: sportID)
+            record.motion = motion
             // Set explicitly so a formal match records `.match` rather than relying on nil.
             record.format = format
             // The full-resolution track travels with the record too, so the phone can analyze the
@@ -752,10 +759,11 @@ final class WorkoutManager: NSObject {
         elapsedAtPause = elapsed
         // Built while the match is still live, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
+        motionRecorder.stop()
         let match = FinishingMatch(
             id: matchID, start: matchStartDate, end: end, format: matchFormat, fieldID: fieldID,
             events: events, fixes: isIndoor ? [] : routeRecorder.finish().filter { $0.point.timestamp <= end },
-            context: matchContext,
+            motion: motionRecorder.trace, context: matchContext,
             session: session, builder: builder, elapsed: elapsed,
             distanceMeters: distanceMeters, score: score,
             sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode)
@@ -1289,6 +1297,7 @@ final class WorkoutManager: NSObject {
             routeRecorder.beginRecording(matchID: matchID, start: matchStartDate, resuming: true)
             track = routeRecorder.fixes.map(\.point)
         }
+        motionRecorder.start(at: matchStartDate)
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
         phase = .active
         startHeartbeat()
@@ -1425,10 +1434,11 @@ extension WorkoutManager {
     private func runAutoSubDetection(on points: [TrackPoint]) {
         guard let detector = autoSubDetector else { return }
         let latestHeartRate = heartRate > 0 ? heartRate : nil
+        let motion = motionRecorder.trace?.reading(at: Date())
         for point in points {
-            guard let event = detector.process(point: point, heartRate: latestHeartRate) else { continue }
+            guard let event = detector.process(point: point, heartRate: latestHeartRate, motion: motion) else { continue }
             let elapsed = Int(point.timestamp.timeIntervalSince(matchStartDate))
-            MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count))",
+            MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count), motion \(motion.map { "\($0)" } ?? "unknown"))",
                           category: "autosub")
             append(event, haptic: false)
             onPitch = event.kind != .subOut

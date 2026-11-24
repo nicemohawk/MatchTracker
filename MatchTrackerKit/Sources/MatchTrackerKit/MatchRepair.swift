@@ -55,6 +55,7 @@ public extension MatchRecord {
         merged.finalScore = existing.finalScore ?? finalScore
         merged.track = track ?? existing.track
         merged.headings = headings ?? existing.headings
+        merged.motion = motion ?? existing.motion
         merged.endDate = endDate ?? existing.endDate
         merged.startedOnPhone = existing.startedOnPhone == true ? startedOnPhone : nil
         if existing.detection != nil, existing.startedOnPhone != true {
@@ -79,7 +80,7 @@ public extension MatchRecord {
         }
         if !events.contains(where: { $0.kind == .subIn || $0.kind == .subOut }) {
             events += AutoSubDetector.detectEvents(track: track, projector: projector,
-                                                   existingEvents: events, halftime: halftime)
+                                                   existingEvents: events, halftime: halftime, motion: motion)
         }
         if let halftime, !events.contains(where: { $0.kind == .periodStart || $0.kind == .periodEnd }) {
             events += [MatchEvent(kind: .periodEnd, date: halftime.start, source: .automatic),

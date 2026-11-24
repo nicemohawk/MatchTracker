@@ -16,6 +16,7 @@ public struct MatchAnalysisInput: Sendable {
     public var flipsAttack: Bool?
     public var track: [TrackPoint]
     public var heartRate: [HeartRateSample]
+    public var motion: MotionTrace?
     /// Distance HealthKit measured inside `interval`.
     public var healthDistanceMeters: Double?
     /// The saved field the match was played on, from `FieldStore.resolve`; nil infers one.
@@ -42,6 +43,7 @@ public struct MatchAnalysisInput: Sendable {
                   reportedPositions: record?.reportedPositions, flipsAttack: record?.flipsAttack,
                   track: track, heartRate: heartRate, healthDistanceMeters: healthDistanceMeters,
                   savedField: savedField)
+        motion = record?.motion
     }
 }
 
@@ -137,7 +139,7 @@ public enum MatchAnalyzer {
         let halftime = input.format == .match
             ? PeriodDetector.halftime(track: track, events: input.events, interval: interval) : nil
         let derivedIntervals = PlayIntervalDeriver.playingIntervals(
-            track: track, field: field.rectangle, events: input.events,
+            track: track, field: field.rectangle, events: input.events, motion: input.motion,
             matchStart: interval.start, matchEnd: interval.end, marginMeters: onFieldMarginMeters)
         // Nobody was playing after the last movement, however long the recording ran on.
         let forgotten = TrimAdvisor.suggestedEnd(recorded: interval, track: track, heartRate: heartRate,

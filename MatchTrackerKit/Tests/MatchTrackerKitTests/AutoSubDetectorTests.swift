@@ -237,4 +237,63 @@ final class AutoSubDetectorTests: XCTestCase {
     func testTrackMostlyOffThePitchIsOnTheWrongPitch() {
         XCTAssertEqual(detected([(10, true), (30, false), (10, true)]), [])
     }
+
+    // MARK: - Motion
+
+    private func trace(_ levels: [(seconds: Int, level: Double)]) -> MotionTrace {
+        var trace = MotionTrace(start: point(inside, t: 0).timestamp)
+        var t = 0
+        for stretch in levels {
+            for _ in 0..<(stretch.seconds / 5) {
+                trace.append(stretch.level, at: trace.start.addingTimeInterval(Double(t)))
+                t += 5
+            }
+        }
+        return trace
+    }
+
+    private var inside: Coordinate2D { place(x: 0.5, y: 0.5) }
+
+    private func events(_ spots: [(seconds: Int, place: Coordinate2D)], motion: MotionTrace?) -> [MatchEvent] {
+        var t = 0.0
+        let track = spots.flatMap { spot in
+            (0..<spot.seconds).map { _ in
+                defer { t += 1 }
+                return point(spot.place, t: t)
+            }
+        }
+        return AutoSubDetector.transitions(track: track, projector: projector, existingEvents: [], motion: motion,
+                                           configuration: .init())
+    }
+
+    func testSittingStillBesideTheLineIsTheBench() {
+        // Two meters out: inside what GPS alone can call.
+        let spots = [(seconds: 300, place: inside), (300, outside(meters: 2))]
+        XCTAssertTrue(events(spots, motion: nil).isEmpty)
+        let subs = events(spots, motion: trace([(300, 0.6), (300, 0.04)]))
+        XCTAssertEqual(subs.map(\.kind), [.subOut])
+    }
+
+    func testRunningBesideTheLineIsNot() {
+        let spots = [(seconds: 300, place: inside), (400, outside(meters: 8))]
+        XCTAssertEqual(events(spots, motion: nil).map(\.kind), [.subOut])
+        XCTAssertTrue(events(spots, motion: trace([(700, 0.8)])).isEmpty)
+        XCTAssertEqual(events(spots, motion: trace([(700, 0.3)])).map(\.kind), [.subOut], "walking settles nothing")
+    }
+
+    func testBenchInsideTheOutlineIsNotComingOn() {
+        let spots = [(seconds: 300, place: inside), (300, outside(meters: 8)), (300, inside)]
+        let benched = trace([(300, 0.6), (600, 0.05)])
+        XCTAssertEqual(events(spots, motion: benched).map(\.kind), [.subOut])
+        XCTAssertEqual(events(spots, motion: trace([(300, 0.6), (300, 0.05), (300, 0.7)])).map(\.kind), [.subOut, .subIn])
+    }
+
+    func testMotionTraceGapsAreUnknown() throws {
+        var trace = MotionTrace(start: Date(timeIntervalSinceReferenceDate: 0))
+        trace.append(0.05, at: trace.start)
+        trace.append(0.7, at: trace.start.addingTimeInterval(600))
+        XCTAssertNil(trace.reading(at: trace.start.addingTimeInterval(605)), "one sample in a minute says nothing")
+        XCTAssertTrue(trace.levels(inLast: 60, before: trace.start.addingTimeInterval(300)).isEmpty)
+        XCTAssertEqual(try JSONDecoder().decode(MotionTrace.self, from: JSONEncoder().encode(trace)), trace)
+    }
 }

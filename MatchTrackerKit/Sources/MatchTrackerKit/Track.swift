@@ -133,6 +133,8 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     public var detection: Int?
     /// The result as the wearer gave it. Goals are often known without being logged as they happen.
     public var finalScore: FinalScore?
+    /// How hard the wrist was moving (see `MotionTrace`).
+    public var motion: MotionTrace?
     /// The phone made this for a workout whose record hasn't come from the watch, if it ever will.
     public var startedOnPhone: Bool?
 

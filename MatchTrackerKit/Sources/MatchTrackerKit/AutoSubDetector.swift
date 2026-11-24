@@ -17,6 +17,9 @@ public struct AutoSubDetectorConfiguration: Sendable {
     /// a drink, or a wandering fix. Events are still dated at the crossing.
     public var exitDwell: TimeInterval            // default 150
     public var enterDwell: TimeInterval           // default 120
+    /// The same two when the wrist agrees: still for a minute off the pitch, or running on it.
+    public var stillExitDwell: TimeInterval       // default 75
+    public var playingEnterDwell: TimeInterval    // default 60
     /// Share of contrary samples a pending transition survives; GPS strays at the touchline.
     public var contradictionTolerance: Double     // default 0.2
     public var maximumFixAccuracy: Double         // ignore worse fixes for boundary calls, default 20
@@ -26,6 +29,8 @@ public struct AutoSubDetectorConfiguration: Sendable {
         exitDistanceMeters = 5.0
         exitDwell = 150
         enterDwell = 120
+        stillExitDwell = 75
+        playingEnterDwell = 60
         contradictionTolerance = 0.2
         maximumFixAccuracy = 20
         manualOverrideCooldown = 60
@@ -69,7 +74,8 @@ public final class AutoSubDetector {
 
     /// Feed one live sample; returns a confirmed auto sub event (dated at the transition moment,
     /// not the detection moment) or nil. `heartRate` is optional and used only for tiebreaks.
-    public func process(point: TrackPoint, heartRate: Double?) -> MatchEvent? {
+    /// `motion` is the wrist's last minute: nobody playing hard is benched, nobody sitting still is on.
+    public func process(point: TrackPoint, heartRate: Double?, motion: MotionReading? = nil) -> MatchEvent? {
         // Blind fix: too inaccurate to make a boundary call. Don't change state and don't reset a
         // pending candidate — an uncertain sample must neither confirm nor contradict geometry.
         guard point.horizontalAccuracy <= configuration.maximumFixAccuracy else { return nil }
@@ -86,7 +92,8 @@ public final class AutoSubDetector {
 
         switch state {
         case .onPitch:
-            if isClearlyOff { begin(.candidateOff(since: point.timestamp)) }
+            // A bench is often nearer the line than GPS can tell; sitting still settles it.
+            if isClearlyOff || (isAmbiguous && motion == .still) { begin(.candidateOff(since: point.timestamp)) }
             return nil
 
         case .candidateOff(let since):
@@ -94,10 +101,17 @@ public final class AutoSubDetector {
                 state = .onPitch                       // stepped back in before the dwell elapsed
                 return nil
             }
+            // Running hard beside the pitch: the outline is off, or a substitute is warming up.
+            if motion == .playing {
+                state = .candidateOff(since: point.timestamp)
+                return nil
+            }
             // A clearly-off sample always counts toward the dwell; an ambiguous sample counts only
-            // when HR is clearly falling. Ambiguous-neutral samples hold the candidate open.
-            let countsTowardExit = isClearlyOff || (isAmbiguous && heartRateFalling)
-            if countsTowardExit, point.timestamp.timeIntervalSince(since) >= configuration.exitDwell {
+            // when HR is clearly falling or the wrist is still. Ambiguous-neutral samples hold the
+            // candidate open.
+            let countsTowardExit = isClearlyOff || (isAmbiguous && (heartRateFalling || motion == .still))
+            let dwell = motion == .still ? configuration.stillExitDwell : configuration.exitDwell
+            if countsTowardExit, point.timestamp.timeIntervalSince(since) >= dwell {
                 state = .offPitch
                 return emit(.subOut, at: since, detectedAt: point.timestamp)
             }
@@ -112,7 +126,13 @@ public final class AutoSubDetector {
                 state = .offPitch
                 return nil
             }
-            if isInside, point.timestamp.timeIntervalSince(since) >= configuration.enterDwell {
+            // Sitting by the touchline with GPS a few meters out.
+            if motion == .still {
+                state = .candidateOn(since: point.timestamp)
+                return nil
+            }
+            let dwell = motion == .playing ? configuration.playingEnterDwell : configuration.enterDwell
+            if isInside, point.timestamp.timeIntervalSince(since) >= dwell {
                 state = .onPitch
                 return emit(.subIn, at: since, detectedAt: point.timestamp)
             }
@@ -147,6 +167,7 @@ public final class AutoSubDetector {
     /// Every transition in a complete track: a replay through a fresh instance, respecting any
     /// existing manual sub events (their state + cooldown window). Sorted by date.
     static func transitions(track: [TrackPoint], projector: FieldProjector, existingEvents: [MatchEvent],
+                            motion: MotionTrace? = nil,
                             configuration: AutoSubDetectorConfiguration) -> [MatchEvent] {
         let orderedTrack = track.sorted { $0.timestamp < $1.timestamp }
         let manualSubs = existingEvents
@@ -168,7 +189,8 @@ public final class AutoSubDetector {
                 detector.recordManualEvent(manualSubs[manualIndex])
                 manualIndex += 1
             }
-            if let event = detector.process(point: point, heartRate: nil) {
+            if let event = detector.process(point: point, heartRate: nil,
+                                            motion: motion?.reading(at: point.timestamp)) {
                 newEvents.append(event)
             }
         }
@@ -180,6 +202,7 @@ public final class AutoSubDetector {
     /// is mostly off the pitch is on the wrong pitch.
     public static func detectEvents(track: [TrackPoint], projector: FieldProjector,
                                     existingEvents: [MatchEvent], halftime: DateInterval? = nil,
+                                    motion: MotionTrace? = nil,
                                     configuration: AutoSubDetectorConfiguration = .init()) -> [MatchEvent] {
         let accurate = track.filter { $0.horizontalAccuracy <= configuration.maximumFixAccuracy }
         let inside = accurate.filter {
@@ -189,7 +212,7 @@ public final class AutoSubDetector {
               inside.count * 2 >= accurate.count else { return [] }
 
         let events = transitions(track: track, projector: projector,
-                                 existingEvents: existingEvents, configuration: configuration)
+                                 existingEvents: existingEvents, motion: motion, configuration: configuration)
         var kept: [MatchEvent] = []
         var index = 0
         while index < events.count {
