@@ -66,34 +66,37 @@ struct StartView: View {
             WatchHaptics.click()
             workoutManager.beginCountdown(field: fieldDetector.matchedField, format: format)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: format.symbolName)
-                    .font(prominent ? .title : .title3)
-                    .frame(width: 42)
+                    .font(.title3)
+                    .frame(width: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(format.startTitle)
                         .font(prominent ? .title3.weight(.bold) : .headline)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    if prominent, let detail = readiness(for: format) {
-                        Text(detail)
-                            .font(.footnote.weight(.medium))
-                            .lineLimit(2)
+                    if prominent {
+                        ForEach(readiness(for: format), id: \.self) { detail in
+                            Text(detail)
+                                .font(.footnote.weight(.medium))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 6)
         }
         .buttonStyle(WatchTileButtonStyle(tint: prominent ? WatchTheme.turf : WatchTheme.bench,
                                           minHeight: prominent ? 88 : 52, prominent: prominent))
         .accessibilityLabel("Start \(format.startTitle)")
-        .accessibilityValue(prominent ? readiness(for: format) ?? "" : "")
+        .accessibilityValue(prominent ? readiness(for: format).joined(separator: ", ") : "")
     }
 
     /// Where, and whether GPS is ready — what's worth knowing before tapping.
-    private func readiness(for format: MatchFormat) -> String? {
-        guard format != .indoor else { return nil }
+    private func readiness(for format: MatchFormat) -> [String] {
+        guard format != .indoor else { return [] }
         let gps: String?
         switch workoutManager.routeRecorder.signal {
         case .good: gps = "GPS ready"
@@ -102,7 +105,7 @@ struct StartView: View {
         case .imprecise: gps = "Precise Location is off"
         case .off: gps = nil
         }
-        return [fieldDetector.matchedField?.name, gps].compactMap { $0 }.joined(separator: " · ")
+        return [fieldDetector.matchedField?.name, gps].compactMap { $0 }
     }
 
     /// A failed start bounces back here — without a reason it reads as "the countdown just never
@@ -144,9 +147,8 @@ struct StartView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .background {
-            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-            shape.fill(WatchTheme.chipFill(WatchTheme.cardYellow))
-            shape.strokeBorder(WatchTheme.chipStroke(WatchTheme.cardYellow), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(WatchTheme.chipFill(WatchTheme.cardYellow))
         }
         .transition(.scale(scale: 0.95).combined(with: .opacity))
     }
@@ -193,8 +195,8 @@ final class StartFieldDetector: NSObject, CLLocationManagerDelegate {
     }
 }
 
-/// Start-screen presentation for the match-format quick pick.
-private extension MatchFormat {
+/// Presentation for the match-format quick pick.
+extension MatchFormat {
     var startTitle: String {
         switch self {
         case .match: return "Match"
@@ -206,7 +208,7 @@ private extension MatchFormat {
     var symbolName: String {
         switch self {
         case .match: return "sportscourt"
-        case .smallSided: return "figure.cooldown"
+        case .smallSided: return "figure.soccer"
         case .indoor: return "house"
         }
     }

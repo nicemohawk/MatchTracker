@@ -49,8 +49,6 @@ enum WatchTheme {
 
     /// Tint-on-translucent fill: the hue at a low alpha. The house style for every tinted surface.
     static func chipFill(_ color: Color) -> Color { color.opacity(0.22) }
-    /// Hairline stroke to match `chipFill` — same hue, a touch stronger.
-    static func chipStroke(_ color: Color) -> Color { color.opacity(0.45) }
 
     // MARK: - Signature gradients
 
@@ -82,8 +80,7 @@ enum WatchHaptics {
 
 // MARK: - Button styles
 
-/// Fat-finger event/control tile: a tinted translucent fill with a hairline tinted stroke and a
-/// short spring press-scale. Semantic tint tells the player what they tapped without reading.
+/// Fat-finger event/control tile: a tinted translucent fill and a short spring press-scale. Semantic tint tells the player what they tapped without reading.
 struct WatchTileButtonStyle: ButtonStyle {
     var tint: Color
     var minHeight: CGFloat = 56
@@ -92,16 +89,14 @@ struct WatchTileButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(prominent ? Color.black : tint)
+            .padding(.horizontal, 4)
             .frame(maxWidth: .infinity, minHeight: minHeight)
             .background {
                 let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-                ZStack {
-                    if prominent {
-                        shape.fill(tint.gradient)
-                    } else {
-                        shape.fill(WatchTheme.chipFill(tint))
-                        shape.strokeBorder(WatchTheme.chipStroke(tint), lineWidth: 1)
-                    }
+                if prominent {
+                    shape.fill(tint.gradient)
+                } else {
+                    shape.fill(WatchTheme.chipFill(tint))
                 }
             }
             .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
