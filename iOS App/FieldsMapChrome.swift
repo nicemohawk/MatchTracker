@@ -6,56 +6,9 @@ import MapKit
 import CoreLocation
 import MatchTrackerKit
 
-/// Shared layout constants and floating chrome for the Fields map (`FieldsView`). Every floating
-/// element is a standard control on glass — no custom drawer — so the map stays the hero and the
-/// tab bar below stays visible and tappable.
-enum FieldsChrome {
-    /// On iOS 26 the floating Liquid Glass tab bar does NOT contribute a bottom safe-area inset
-    /// (content flows beneath it), so bottom-anchored chrome lifts itself clear of the pills
-    /// explicitly. Pre-26 the tab bar insets normally and the safe area already covers it.
-    static var tabBarAllowance: CGFloat {
-        if #available(iOS 26.0, *) { return 70 } else { return 0 }
-    }
-
-    /// What a bottom-anchored floating control pads to clear the tab bar plus a small breathing gap.
-    static var bottomClearance: CGFloat { tabBarAllowance + 14 }
-}
-
-// MARK: - Glass surfaces
-
-/// Liquid Glass circle on iOS 26; `.ultraThinMaterial` fallback earlier. Used by the trailing map
-/// control column so each button matches the app's glass language.
-struct MapControlGlass: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            content
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
-        }
-    }
-}
-
-/// Liquid Glass capsule on iOS 26; material fallback earlier. Used by the floating list pill and the
-/// secondary Scan action so they read clearly in both light and dark over satellite imagery.
-struct MapCapsuleGlass: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
-        } else {
-            content
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
-        }
-    }
-}
-
 // MARK: - One-shot location
 
-/// A tiny one-shot location provider so the trailing "locate" control can recenter the camera on the
-/// user, requesting when-in-use access the first time if needed. Mirrors `NearbyFieldSeeder`'s
-/// delegate pattern without reaching into it, so the two never fight over a single manager.
+/// Finds the player once, when they ask, requesting when-in-use access the first time.
 @MainActor
 @Observable
 final class MapLocationProvider: NSObject, CLLocationManagerDelegate {
@@ -63,26 +16,27 @@ final class MapLocationProvider: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private var continuation: CheckedContinuation<CLLocationCoordinate2D?, Never>?
     @ObservationIgnored private var wantsLocation = false
 
+    private(set) var authorizationStatus: CLAuthorizationStatus
+
     override init() {
+        authorizationStatus = manager.authorizationStatus
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
-    var authorizationStatus: CLAuthorizationStatus { manager.authorizationStatus }
-
-    /// Request when-in-use access if it hasn't been decided yet (so the map's user-location dot and
-    /// the locate control have something to work with).
-    func requestAuthorizationIfNeeded() {
-        if manager.authorizationStatus == .notDetermined {
-            manager.requestWhenInUseAuthorization()
-        }
+    var isAuthorized: Bool {
+        authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways
     }
 
-    /// Resolve the current coordinate once, requesting authorization first if undecided. Returns nil
-    /// if access is denied or the fix fails.
+    var isDenied: Bool {
+        authorizationStatus == .denied || authorizationStatus == .restricted
+    }
+
+    /// Nil if access is denied or no fix arrives.
     func requestCurrentLocation() async -> CLLocationCoordinate2D? {
-        await withCheckedContinuation { continuation in
+        resume(nil)
+        return await withCheckedContinuation { continuation in
             self.continuation = continuation
             switch manager.authorizationStatus {
             case .authorizedWhenInUse, .authorizedAlways:
@@ -103,11 +57,12 @@ final class MapLocationProvider: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
+            authorizationStatus = self.manager.authorizationStatus
             guard wantsLocation else { return }
-            switch manager.authorizationStatus {
+            switch authorizationStatus {
             case .authorizedWhenInUse, .authorizedAlways:
                 wantsLocation = false
-                manager.requestLocation()
+                self.manager.requestLocation()
             case .notDetermined:
                 break
             default:
@@ -127,124 +82,101 @@ final class MapLocationProvider: NSObject, CLLocationManagerDelegate {
     }
 }
 
-// MARK: - Scan result banner
+// MARK: - Satellite picture of a field
 
-/// The outcome of a satellite scan, surfaced as a top banner so a scan is never silent.
-enum ScanBanner: Equatable {
-    case success(Int)
-    case failure
+/// A still satellite picture of a field, turned so its long side runs left to right, with the
+/// outline drawn on. A snapshot rather than a live map: lists can hold dozens.
+struct FieldSatelliteImage: View {
+    let rectangle: OrientedRectangle
+    /// Dash the outline when it's a guess.
+    var isGuess = false
 
-    var isSuccess: Bool { if case .success = self { return true }; return false }
-}
-
-/// A glass banner that slides down from the top after a scan. Success invites a review tap; failure
-/// explains the fix. Auto-dismissed by the caller (~4s); the whole banner is tappable on success.
-struct ScanResultBanner: View {
-    let banner: ScanBanner
-    let onTap: () -> Void
-
-    private var tint: Color {
-        banner.isSuccess ? FieldSource.satellite.color : Theme.bench
-    }
+    @Environment(\.displayScale) private var displayScale
+    @State private var image: UIImage?
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                Image(systemName: banner.isSuccess ? "sparkle.magnifyingglass" : "magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    // A LocalizedStringKey (not a String) so the `^[…](inflect:)` grammar agreement
-                    // is parsed — passing a String would render the markup verbatim.
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                if banner.isSuccess {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+        GeometryReader { geometry in
+            ZStack {
+                Theme.pitchGradient
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
                 }
             }
-            .multilineTextAlignment(.leading)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .modifier(MapCapsuleGlass())
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+            .task(id: request(for: geometry.size)) {
+                let request = request(for: geometry.size)
+                guard request.size.width > 1, request.size.height > 1 else { return }
+                if let rendered = await FieldSnapshotter.image(for: request) { image = rendered }
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(!banner.isSuccess)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
+        .accessibilityElement()
+        .accessibilityLabel("Satellite picture of the field")
     }
 
-    private var title: LocalizedStringKey {
-        switch banner {
-        case .success(let count):
-            return "^[\(count) possible pitch](inflect: true) found"
-        case .failure:
-            return "No pitches found in this view"
-        }
-    }
-
-    private var subtitle: LocalizedStringKey {
-        switch banner {
-        case .success:
-            return "Tap to review and add them."
-        case .failure:
-            return "Zoom so one field fills the screen, or add it manually."
-        }
-    }
-
-    private var accessibilityText: String {
-        switch banner {
-        case .success(let count):
-            let noun = count == 1 ? "pitch" : "pitches"
-            return "\(count) possible \(noun) found. Tap to review and add them."
-        case .failure:
-            return "No pitches found in this view. Zoom so one field fills the screen, or add it manually."
-        }
+    private func request(for size: CGSize) -> FieldSnapshotter.Request {
+        FieldSnapshotter.Request(rectangle: rectangle, size: size, scale: displayScale, isDashed: isGuess)
     }
 }
 
-// MARK: - Empty state hint
+@MainActor
+enum FieldSnapshotter {
+    struct Request: Equatable {
+        let rectangle: OrientedRectangle
+        let size: CGSize
+        let scale: CGFloat
+        let isDashed: Bool
 
-/// A single compact invite floating above the action buttons when there are no fields yet. One card,
-/// no nesting, dismissible — the caller remembers the dismissal via `@AppStorage`.
-struct EmptyFieldsHint: View {
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "figure.walk.motion")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.turf)
-                .frame(width: 26)
-            Text("Walk a touchline or scan this view to add your first pitch.")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss hint")
+        var cacheKey: NSString {
+            let corners = rectangle.corners.map { "\($0.latitude),\($0.longitude)" }.joined(separator: ";")
+            return "\(corners)|\(Int(size.width))x\(Int(size.height))@\(scale)|\(isDashed)" as NSString
         }
-        .padding(.vertical, 12)
-        .padding(.leading, 16)
-        .padding(.trailing, 8)
-        .modifier(MapCapsuleGlass())
+    }
+
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func image(for request: Request) async -> UIImage? {
+        if let cached = cache.object(forKey: request.cacheKey) { return cached }
+
+        let options = MKMapSnapshotter.Options()
+        options.size = request.size
+        options.traitCollection = UITraitCollection(displayScale: request.scale)
+        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .flat)
+        options.camera = camera(for: request)
+        guard let snapshot = try? await MKMapSnapshotter(options: options).start() else { return nil }
+
+        let outline = UIBezierPath()
+        for (index, corner) in request.rectangle.coordinateRing.enumerated() {
+            let point = snapshot.point(for: corner)
+            if index == 0 { outline.move(to: point) } else { outline.addLine(to: point) }
+        }
+        outline.close()
+        outline.lineWidth = request.size.width > 120 ? 3 : 2
+        outline.lineJoinStyle = .round
+        if request.isDashed { outline.setLineDash([6, 4], count: 2, phase: 0) }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = request.scale
+        let rendered = UIGraphicsImageRenderer(size: request.size, format: format).image { _ in
+            snapshot.image.draw(at: .zero)
+            UIColor(red: 0.19, green: 0.82, blue: 0.35, alpha: 1).setStroke()
+            outline.stroke()
+        }
+        cache.setObject(rendered, forKey: request.cacheKey)
+        return rendered
+    }
+
+    /// Straight down, long side across, with a margin around the field.
+    private static func camera(for request: Request) -> MKMapCamera {
+        let rectangle = request.rectangle
+        let margin = 1.35
+        let aspect = Double(request.size.width / max(request.size.height, 1))
+        let visibleHeight = max(rectangle.lengthMeters * margin / aspect, rectangle.widthMeters * margin)
+        // Of the two ways to lay the field flat, the one closer to north-up.
+        let heading = rectangle.headingDegrees - 90
+        // MapKit's camera sees 30° top to bottom.
+        let distance = visibleHeight / 2 / tan(15 * Double.pi / 180)
+        return MKMapCamera(lookingAtCenter: rectangle.center.clCoordinate, fromDistance: distance,
+                           pitch: 0, heading: heading < 0 ? heading + 360 : heading)
     }
 }

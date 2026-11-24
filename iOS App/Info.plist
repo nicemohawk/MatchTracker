@@ -15,12 +15,12 @@
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>MatchTracker reads the calendar you choose to find your next match and suggest the opponent afterwards. It never changes your calendar, and nothing in it leaves your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Import sideline footage of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
+	<string>MatchTracker imports the match video you choose and cuts clips around the moments you logged.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save your match clips, pictures and replays to your photo library.</string>
+	<string>MatchTracker saves your match clips, pictures and replays to your photo library.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Record sideline video of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
+	<string>MatchTracker records sideline video and cuts clips around the moments you logged.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Capture match audio with your sideline video.</string>
+	<string>MatchTracker records sound with your sideline video.</string>
 </dict>
 </plist>

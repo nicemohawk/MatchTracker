@@ -35,6 +35,16 @@ final class ConnectivityManager: NSObject, ObservableObject {
         #endif
     }
 
+    /// Whether a paired watch has the app, or nil when that can't be known yet.
+    var isWatchAppInstalled: Bool? {
+        #if canImport(WatchConnectivity)
+        guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return nil }
+        return WCSession.default.isPaired && WCSession.default.isWatchAppInstalled
+        #else
+        return nil
+        #endif
+    }
+
     /// Push the current field list + team/player settings so the watch can auto-detect fields offline.
     ///
     /// Guarded on `isPaired && isWatchAppInstalled`: without a paired watch running the counterpart
@@ -51,7 +61,9 @@ final class ConnectivityManager: NSObject, ObservableObject {
         Task { @MainActor in
             var context: [String: Any] = [
                 "teamCode": settings.teamCode,
-                "playerName": settings.playerName
+                "playerName": settings.playerName,
+                // "automatic", "imperial" or "metric".
+                "units": settings.units.rawValue
             ]
             if let data = fields.encodedFields() {
                 context["fields"] = data

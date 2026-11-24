@@ -2,255 +2,145 @@
 // MatchTracker
 
 import SwiftUI
-import CoreLocation
 import MatchTrackerKit
 
-/// Identifiable wrapper so a detected rectangle can drive `sheet(item:)`.
-struct IdentifiedRectangle: Identifiable {
-    let id = UUID()
-    let rectangle: OrientedRectangle
-}
+/// Your fields, most played first, with anything just detected above them.
+struct FieldsList: View {
+    @Bindable var model: FieldsMapModel
+    let detected: [DetectedField]
+    let onSelect: (FieldModel) -> Void
+    let onReview: (DetectedField) -> Void
+    let onDetect: () -> Void
 
-/// The Fields list, presented as a standard dismissible `.sheet` (detents `[.medium, .large]`) from
-/// the map's bottom-leading pill — replacing the old custom drawer. It lists saved fields as
-/// AllTrails-style place cards (source badge, confidence, distance from the map center) and, when a
-/// scan has surfaced candidates, a "Detected" section to accept or dismiss them. Tapping a row
-/// focuses the map and dismisses; the row's detail button opens `FieldDetailSheet`; accepting a
-/// proposal opens `AcceptProposalSheet`. Both are presented as nested sheets so the flow is
-/// self-contained.
-struct FieldsListSheet: View {
-    let fields: [FieldModel]
-    let proposals: [OrientedRectangle]
-    let mapCenter: CLLocationCoordinate2D?
-    let onSelectField: (FieldModel) -> Void
-    let onDismissProposals: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    /// Re-injected into the nested detail / accept sheets so they always have the model, regardless
-    /// of how SwiftUI propagates environment objects across sheet boundaries.
-    @EnvironmentObject private var fieldsModel: FieldsModel
-
-    /// Fields with fewer than this many confirming observations render as "unconfirmed" — the dashed
-    /// motif shared with the map polygons and the detail sheet.
-    private let confirmedThreshold = 3
-    /// Below this distance from the map center a field reads as "here" rather than "0 m".
-    private let hereThresholdMeters: CLLocationDistance = 30
-
-    @State private var detailField: FieldModel?
-    @State private var pendingProposal: IdentifiedRectangle?
+    @EnvironmentObject private var fields: FieldsModel
+    @EnvironmentObject private var matches: MatchStore
+    @EnvironmentObject private var settings: SettingsStore
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if !proposals.isEmpty { detectedSection }
-                    if fields.isEmpty && proposals.isEmpty {
-                        emptyState
-                    } else if !fields.isEmpty {
-                        fieldSection
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 28)
-                .readableWidth()
+        List {
+            if fields.fields.isEmpty, detected.isEmpty {
+                // A row rather than an overlay, so it scrolls at large text sizes.
+                emptyState.listRowBackground(Color.clear)
             }
-            .background(Theme.background.ignoresSafeArea())
-            .navigationTitle("Fields")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .font(.body.weight(.semibold))
-                }
-            }
-        }
-        .sheet(item: $detailField) { field in
-            FieldDetailSheet(field: field)
-                .environmentObject(fieldsModel)
-        }
-        .sheet(item: $pendingProposal) { proposal in
-            AcceptProposalSheet(rectangle: proposal.rectangle)
-                .environmentObject(fieldsModel)
-        }
-    }
-
-    // MARK: - Detected proposals
-
-    private var detectedSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                SectionHeaderBar(title: "Detected", tint: FieldSource.satellite.color)
-                Spacer()
-                Button {
-                    Haptics.selection()
-                    onDismissProposals()
-                } label: {
-                    Text("Dismiss")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Dismiss all detected proposals")
-            }
-            ForEach(Array(proposals.enumerated()), id: \.offset) { _, proposal in
-                proposalCard(proposal)
-            }
-        }
-    }
-
-    private func proposalCard(_ proposal: OrientedRectangle) -> some View {
-        let satellite = FieldSource.satellite.color
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                FieldSourceTile(source: .satellite)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Possible pitch")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    HStack(spacing: 6) {
-                        FieldSourceBadge(source: .satellite)
-                        Text("\(Int(proposal.lengthMeters)) × \(Int(proposal.widthMeters)) m")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer(minLength: 8)
-            }
-            Button {
-                Haptics.selection()
-                pendingProposal = IdentifiedRectangle(rectangle: proposal)
-            } label: {
-                Text("Review & Accept")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.turf)
-            .clipShape(Capsule())
-        }
-        .padding(14)
-        .background(Theme.tintWash(satellite, dark: 0.14, light: 0.10),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Theme.chipStroke(satellite),
-                              style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-        )
-    }
-
-    // MARK: - Fields
-
-    private var fieldSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionHeaderBar(title: "Fields", tint: Theme.turf)
-            ForEach(sortedFields) { field in
-                fieldRow(field)
-            }
-        }
-    }
-
-    private func fieldRow(_ field: FieldModel) -> some View {
-        let tint = field.source.color
-        return HStack(spacing: 12) {
-            // Tapping the body focuses the map and dismisses.
-            Button {
-                Haptics.selection()
-                onSelectField(field)
-            } label: {
-                HStack(spacing: 12) {
-                    FieldSourceTile(source: field.source)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(field.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        HStack(spacing: 6) {
-                            FieldSourceBadge(source: field.source)
-                            FieldConfidenceBadge(observationCount: field.observationCount,
-                                                 confirmedThreshold: confirmedThreshold)
+            if !detected.isEmpty {
+                Section("Found in this view") {
+                    ForEach(detected) { candidate in
+                        Button { onReview(candidate) } label: {
+                            FieldRow(title: "Possible field", rectangle: candidate.rectangle, isGuess: true)
                         }
-                        Text("\(Int(field.rectangle.lengthMeters)) × \(Int(field.rectangle.widthMeters)) m")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 8)
-                    if let distanceText = distanceText(for: field) {
-                        Text(distanceText)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .swipeActions {
+                            Button("Dismiss", role: .destructive) { model.dismissed.insert(candidate.id) }
+                        }
                     }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-
-            // A clear, separate detail affordance opens the field's detail sheet.
-            Button {
-                Haptics.selection()
-                detailField = field
-            } label: {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 34, height: 34)
-                    .contentShape(Rectangle())
+            if !fields.fields.isEmpty {
+                Section {
+                    ForEach(sortedFields, id: \.field.id) { entry in
+                        Button { onSelect(entry.field) } label: {
+                            FieldRow(title: entry.field.name.isEmpty ? "Unnamed field" : entry.field.name,
+                                     rectangle: entry.field.rectangle,
+                                     matchCount: entry.matchCount,
+                                     isGuess: entry.field.needsOutlineCheck,
+                                     needsCheck: entry.field.needsOutlineCheck)
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(field.name) details")
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Theme.surface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
+        .listStyle(.insetGrouped)
+        .contentMargins(.top, 8, for: .scrollContent)
     }
-
-    // MARK: - Empty state (proposals + fields both empty)
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "map")
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(Theme.turf)
-            Text("No fields yet")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            Text("Close this and walk a touchline or scan the map to add your first pitch.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+        ContentUnavailableView {
+            Label("No Fields Yet", systemImage: "sportscourt")
+        } description: {
+            Text("Play a match with GPS and its field appears here. You can also add one now.")
+        } actions: {
+            Button("Draw Corners") { model.isDrawing = true }
+                .buttonStyle(.borderless)
+                .frame(minHeight: 44)
+            Button("Detect in This View", action: onDetect)
+                .buttonStyle(.borderless)
+                .frame(minHeight: 44)
+                .disabled(model.isDetecting)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .padding(.horizontal, 20)
     }
 
-    // MARK: - Distance sorting
+    private var sortedFields: [(field: FieldModel, matchCount: Int)] {
+        fields.fields
+            .map { ($0, matches.matchCount(at: $0)) }
+            .sorted { ($0.1, $1.0.name) > ($1.1, $0.0.name) }
+    }
+}
 
-    private var sortedFields: [FieldModel] {
-        guard let center = mapCenter else { return fields }
-        return fields.sorted { distance($0, from: center) < distance($1, from: center) }
+/// One field: what it looks like, its name, how big it is and how often you've played there.
+private struct FieldRow: View {
+    let title: String
+    let rectangle: OrientedRectangle
+    var matchCount = 0
+    var isGuess = false
+    var needsCheck = false
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 14))
+        layout {
+            FieldSatelliteImage(rectangle: rectangle, isGuess: isGuess)
+                .frame(width: 84, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                if dynamicTypeSize.isAccessibilitySize {
+                    Text(size).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
+                    if matchCount > 0 {
+                        Text(Self.matches(matchCount)).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
+                    }
+                } else {
+                    Text(matchCount > 0 ? "\(size) · \(Self.matches(matchCount))" : size)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryLabel)
+                }
+                if needsCheck {
+                    Label("Check outline", systemImage: "exclamationmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryLabel)
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
 
-    private func distance(_ field: FieldModel, from center: CLLocationCoordinate2D) -> CLLocationDistance {
-        let origin = CLLocation(latitude: center.latitude, longitude: center.longitude)
-        let point = CLLocation(latitude: field.rectangle.center.latitude,
-                               longitude: field.rectangle.center.longitude)
-        return point.distance(from: origin)
+    private var size: String { MatchFormat.fieldSize(rectangle) }
+
+    private var spoken: String {
+        [title, MatchFormat.spokenFieldSize(rectangle),
+         matchCount > 0 ? Self.matches(matchCount) : nil,
+         needsCheck ? "Check outline" : nil]
+            .compactMap { $0 }.joined(separator: ", ")
     }
 
-    private func distanceText(for field: FieldModel) -> String? {
-        guard let center = mapCenter else { return nil }
-        let meters = distance(field, from: center)
-        if meters < hereThresholdMeters { return "here" }
-        return MatchFormat.distance(meters)
+    private static func matches(_ count: Int) -> String {
+        count == 1 ? "1 match" : "\(count) matches"
+    }
+}
+
+extension MatchStore {
+    /// How many matches were played on a field.
+    func matchCount(at field: FieldModel) -> Int {
+        playedDigests.filter { $0.fieldID == field.id }.count
     }
 }

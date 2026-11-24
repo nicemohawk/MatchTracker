@@ -1,350 +1,200 @@
 // BacklogImportView.swift
 // MatchTracker
 //
-// The batch-import sheet. Three states: an intro that explains what import does and gates the CTA
-// behind the Team entitlement, a live progress state that scrubs through history, and a completion
-// summary. Presented from the Matches teaser card and the Settings entry row.
+// Bring in soccer workouts already in Health. Free. Three states: what's there to import, progress,
+// and what came in.
 
 import SwiftUI
 import MatchTrackerKit
 
 struct BacklogImportView: View {
     @Environment(BacklogImporter.self) private var importer
-    @Environment(EntitlementStore.self) private var entitlements
     @Environment(\.dismiss) private var dismiss
-
-    @State private var includeDisguisedRuns = false
-    @State private var showingPaywall = false
-    @State private var displayedCount = 0
-    @State private var sealShown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @State private var includeRunsAndWalks = false
+    @State private var importFailed = false
+    @State private var hasScanned = false
+
+    private var isFinished: Bool { importer.summary != nil && !importer.isImporting }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let summary = importer.summary, !importer.isImporting {
-                        completionState(summary)
-                    } else if importer.isImporting {
-                        progressState
-                    } else {
-                        introState
-                    }
+            Form {
+                if importer.isImporting {
+                    progressSection
+                } else if let summary = importer.summary {
+                    summarySections(summary)
+                } else {
+                    introSections
                 }
-                .padding()
             }
-            .background(Theme.background.ignoresSafeArea())
+            .animation(reduceMotion ? nil : .default, value: importer.isImporting)
             .navigationTitle("Import History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(importer.isImporting ? "Hide" : "Close") { dismiss() }
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .tint(.primary)
                 }
             }
-            .sheet(isPresented: $showingPaywall) {
-                PaywallView(entitlements: entitlements)
-            }
+            .bottomActionBar { bottomAction }
+        }
+        .tint(Theme.turf)
+        .task {
+            await importer.scan()
+            hasScanned = true
+        }
+        .sensoryFeedback(.success, trigger: isFinished) { _, finished in
+            finished && importer.summary?.cancelled == false
+        }
+        .alert("Couldn’t Read Health", isPresented: $importFailed) {
+            Button("Try Again") { startImport() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Nothing was imported. Make sure MatchTracker can read your workouts in the Health app.")
         }
     }
 
-    // MARK: - Intro
+    // MARK: Intro
 
-    private var introState: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            hero
-
-            VStack(spacing: 10) {
-                explainer("map", Theme.turf, "Build your fields",
-                          "Every past match refines a map of the pitches you play on.")
-                explainer("chart.line.uptrend.xyaxis", Theme.pace, "Season trends",
-                          "Priming your history unlocks season-average heatmaps and workrate baselines.")
-                explainer("heart.text.square", Theme.heart, "Heart-rate effort",
-                          "Matches without GPS still import, scored from heart rate.")
-            }
-
-            coverageCard
-
-            Toggle(isOn: $includeDisguisedRuns) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Also scan runs & walks that look like matches")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Recovers matches you recorded as an Outdoor Run or Walk. Slower — it reads each route.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .tint(Theme.turf)
-            .padding(14)
-            .themedCard(cornerRadius: 16)
-
-            cta
-
-            Text("Solo match tracking and analysis are always free.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-        }
-    }
-
-    private var hero: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 40))
-                .foregroundStyle(.black)
-            Group {
+    @ViewBuilder
+    private var introSections: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
                 if importer.pendingCount > 0 {
-                    Text("\(displayedCount) past matches")
-                        .contentTransition(.numericText())
-                        .monospacedDigit()
-                } else {
-                    Text("Import your history")
-                }
-            }
-            .font(.system(size: 28, weight: .bold, design: .rounded))
-            .foregroundStyle(.black)
-
-            Text("Priming your backlog builds your fields and unlocks season trends.")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.black.opacity(0.75))
-                .multilineTextAlignment(.center)
-
-            if let span = spanText {
-                Text(span)
-                    .font(.footnote)
-                    .foregroundStyle(.black.opacity(0.6))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .padding(.horizontal, 16)
-        .background(Theme.turfFlow, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: Theme.turf.opacity(0.35), radius: 18, x: 0, y: 8)
-        .onAppear {
-            guard displayedCount == 0 else { return }
-            if reduceMotion {
-                displayedCount = importer.pendingCount
-            } else {
-                withAnimation(.easeOut(duration: 0.7)) { displayedCount = importer.pendingCount }
-            }
-        }
-    }
-
-    /// Honest route coverage: native soccer workouts have no GPS route, so most of the backlog
-    /// imports on heart-rate effort alone.
-    @ViewBuilder
-    private var coverageCard: some View {
-        if importer.pendingCount > 0 {
-            HStack(spacing: 14) {
-                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
-                    .font(.title3)
-                    .foregroundStyle(Theme.signal)
-                    .frame(width: 30)
-                Text(coverageText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .padding(14)
-            .themedCard(cornerRadius: 16)
-        }
-    }
-
-    private var coverageText: String {
-        let approx = importer.routeCountIsApproximate ? "about " : ""
-        if importer.withRouteCount == 0 {
-            return "None have GPS routes — they'll import with heart-rate effort scores."
-        }
-        return "\(approx)\(importer.withRouteCount) with GPS routes; the rest import with heart-rate effort scores."
-    }
-
-    @ViewBuilder
-    private var cta: some View {
-        if entitlements.entitledToTeam {
-            Button {
-                Haptics.impact()
-                Task { await importer.importAll(includeDisguisedRuns: includeDisguisedRuns) }
-            } label: {
-                ctaLabel("Import All", enabled: importer.pendingCount > 0 || includeDisguisedRuns)
-            }
-            .buttonStyle(.plain)
-            .disabled(importer.pendingCount == 0 && !includeDisguisedRuns)
-        } else {
-            Button {
-                Haptics.impact()
-                showingPaywall = true
-            } label: {
-                ctaLabel("Unlock with Team", enabled: true)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func ctaLabel(_ title: String, enabled: Bool) -> some View {
-        Text(title)
-            .font(.system(.headline, design: .rounded))
-            .foregroundStyle(.black)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-            .background(Theme.turfFlow, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .opacity(enabled ? 1 : 0.4)
-    }
-
-    // MARK: - Progress
-
-    private var progressState: some View {
-        VStack(spacing: 24) {
-            Text("Importing your history")
-                .font(.system(.title3, design: .rounded).weight(.bold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack(spacing: 14) {
-                ProgressView(value: Double(importer.completed),
-                             total: Double(max(importer.total, 1)))
-                    .tint(Theme.turf)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.9), value: importer.completed)
-
-                HStack {
-                    Text("\(importer.completed) of \(importer.total)")
-                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: importer.completed)
-                    Spacer()
-                    if let date = importer.currentDate {
-                        Text(date, format: .dateTime.month(.abbreviated).day().year())
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .contentTransition(.numericText())
-                            .animation(.spring(response: 0.4, dampingFraction: 0.9), value: date)
+                    Text(importer.pendingCount.formatted()).heroNumeral()
+                    Text(importer.pendingCount == 1 ? "soccer workout in Health" : "soccer workouts in Health")
+                        .font(.title3)
+                    if let earliest = importer.earliestDate {
+                        Text("Since \(earliest.formatted(.dateTime.month(.wide).year()))")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryLabel)
                     }
-                }
-            }
-            .padding(18)
-            .themedCard()
-
-            Button(role: .destructive) {
-                importer.cancel()
-            } label: {
-                Text("Cancel")
-                    .font(.system(.headline, design: .rounded))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.loss)
-            .padding(.vertical, 2)
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.chipStroke(Theme.loss), lineWidth: 1))
-        }
-    }
-
-    // MARK: - Completion
-
-    private func completionState(_ summary: BacklogImporter.Summary) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(spacing: 10) {
-                Image(systemName: summary.cancelled ? "pause.circle.fill" : "checkmark.seal.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(Theme.turf)
-                    .glow(Theme.turf, radius: sealShown ? 16 : 0)
-                    .scaleEffect(sealShown ? 1 : 0.5)
-                    .opacity(sealShown ? 1 : 0)
-                Text(summary.cancelled ? "Import paused" : "\(summary.totalMatches) matches imported")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center)
-                if let span = summarySpan(summary) {
-                    Text(span).font(.subheadline).foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
-            .onAppear {
-                let notCancelled = !summary.cancelled
-                if reduceMotion {
-                    sealShown = true
+                } else if hasScanned {
+                    Text("Nothing new to import").font(.title2.bold())
+                    Text("Every soccer workout MatchTracker can see in Health is already here.")
+                        .foregroundStyle(Theme.secondaryLabel)
                 } else {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.55)) { sealShown = true }
-                }
-                if notCancelled {
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    ProgressView("Looking in Health…").frame(maxWidth: .infinity)
                 }
             }
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        } footer: {
+            if importer.pendingCount > 0 { Text(coverage) }
+        }
 
-            VStack(spacing: 10) {
-                if summary.routelessImported > 0 {
-                    statRow(Theme.heart, "heart.fill", "\(summary.routelessImported) scored from heart rate", nil)
-                }
-                if summary.recoveredFromRuns > 0 {
-                    statRow(Theme.pace, "figure.run", "\(summary.recoveredFromRuns) recovered from runs & walks", nil)
-                }
-                if summary.fieldsCreated > 0 {
-                    statRow(Theme.signal, "map.fill", "\(summary.fieldsCreated) new fields mapped", nil)
-                }
-                if summary.fieldsRefined > 0 {
-                    statRow(Theme.sprint, "scope", "\(summary.fieldsRefined) fields refined", nil)
-                }
-            }
-
-            Button {
-                Haptics.selection()
-                dismiss()
-            } label: {
-                Text("Done")
-                    .font(.system(.headline, design: .rounded))
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(Theme.turfFlow, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.plain)
+        Section {
+            Toggle("Include runs and walks", isOn: $includeRunsAndWalks)
+        } footer: {
+            Text("Finds matches you recorded as an outdoor run or walk, when the route stays on one field. Takes longer.")
         }
     }
 
-    // MARK: - Building blocks
-
-    private func explainer(_ symbol: String, _ tint: Color, _ title: String, _ subtitle: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(tint)
-                .frame(width: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
+    private var coverage: String {
+        let routes = importer.withRouteCount
+        if routes == 0 {
+            return "None of them has a GPS route, so you’ll get time and heart rate but no heat map."
         }
-        .padding(14)
-        .themedCard(cornerRadius: 16)
+        if routes == importer.pendingCount { return "All of them have a GPS route." }
+        let count = (importer.routeCountIsApproximate ? "About " : "") + routes.formatted()
+        return "\(count) with a GPS route. The rest have time and heart rate but no heat map."
     }
 
-    private func statRow(_ tint: Color, _ symbol: String, _ title: String, _ subtitle: String?) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(tint)
-                .frame(width: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium))
-                if let subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+    // MARK: Progress
+
+    private var progressSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                ProgressView(value: Double(importer.completed), total: Double(max(importer.total, 1)))
+                    .tint(Theme.turf)
+                Text("\(importer.completed) of \(importer.total)")
+                    .font(.headline)
+                    .monospacedDigit()
+                if let date = importer.currentDate {
+                    Text(date, format: .dateTime.month(.wide).day().year())
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryLabel)
                 }
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+        } header: {
+            Text("Importing")
+        } footer: {
+            Text("You can close this. The import keeps going while MatchTracker is open.")
         }
-        .padding(14)
-        .themedCard(cornerRadius: 16)
     }
 
-    private var spanText: String? {
-        guard let earliest = importer.earliestDate else { return nil }
-        return "since \(earliest.formatted(.dateTime.month(.wide).year()))"
+    // MARK: Summary
+
+    @ViewBuilder
+    private func summarySections(_ summary: BacklogImporter.Summary) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(summary.totalMatches.formatted()).heroNumeral()
+                Text(summary.totalMatches == 1 ? "match imported" : "matches imported").font(.title3)
+                if let span = span(of: summary) {
+                    Text(span).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
+                }
+            }
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+        } footer: {
+            if summary.cancelled { Text("You stopped early. Import again to bring in the rest.") }
+        }
+        Section {
+            if summary.fieldsCreated > 0 {
+                LabeledContent("New fields", value: summary.fieldsCreated.formatted())
+            }
+            if summary.recoveredFromRuns > 0 {
+                LabeledContent("From runs and walks", value: summary.recoveredFromRuns.formatted())
+            }
+            if summary.routelessImported > 0 {
+                LabeledContent("Without a GPS route", value: summary.routelessImported.formatted())
+            }
+        }
     }
 
-    private func summarySpan(_ summary: BacklogImporter.Summary) -> String? {
+    private func span(of summary: BacklogImporter.Summary) -> String? {
         guard let earliest = summary.earliest, let latest = summary.latest else { return nil }
-        let earliestText = earliest.formatted(.dateTime.month().year())
-        let latestText = latest.formatted(.dateTime.month().year())
-        return earliestText == latestText ? earliestText : "\(earliestText) – \(latestText)"
+        let first = earliest.formatted(.dateTime.month(.wide).year())
+        let last = latest.formatted(.dateTime.month(.wide).year())
+        return first == last ? first : "\(first) to \(last)"
+    }
+
+    // MARK: Action
+
+    private var bottomAction: some View {
+        Group {
+            if importer.isImporting {
+                Button("Stop Importing", role: .destructive) { importer.cancel() }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            } else if isFinished {
+                Button("Done") { dismiss() }.buttonStyle(.primaryAction)
+            } else {
+                Button(importTitle, action: startImport)
+                    .buttonStyle(.primaryAction)
+                    .disabled(importer.pendingCount == 0 && !includeRunsAndWalks)
+            }
+        }
+    }
+
+    private var importTitle: String {
+        switch importer.pendingCount {
+        case 0: return includeRunsAndWalks ? "Look for Matches" : "Import"
+        case 1: return "Import 1 Match"
+        default: return "Import \(importer.pendingCount) Matches"
+        }
+    }
+
+    private func startImport() {
+        Task {
+            await importer.importAll(includeDisguisedRuns: includeRunsAndWalks)
+            importFailed = importer.summary == nil
+        }
     }
 }

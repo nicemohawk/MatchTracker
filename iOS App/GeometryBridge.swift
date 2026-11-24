@@ -37,33 +37,51 @@ extension OrientedRectangle {
     }
 }
 
-extension FieldSource {
-    /// Overlay color coding per the UX contract.
-    var color: Color {
-        switch self {
-        case .trained: return .blue
-        case .inferred: return .orange
-        case .satellite: return .purple
-        case .community: return .teal
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .trained: return "Trained"
-        case .inferred: return "Inferred"
-        case .satellite: return "Satellite"
-        case .community: return "Community"
-        }
+extension FieldModel {
+    /// The one state a field can be in. An outline nobody drew or corrected, seen in fewer than
+    /// three matches, is a guess worth a look.
+    var needsOutlineCheck: Bool {
+        source != .trained && observationCount < 3
     }
 }
 
+extension UnitSystem {
+    /// "115 × 74 yd"
+    func fieldSize(length: Double, width: Double) -> String {
+        "\(shortDistance(length).value) × \(shortDistance(width).text)"
+    }
+
+    /// "115 by 74 yards"
+    func spokenFieldSize(length: Double, width: Double) -> String {
+        "\(shortDistance(length).value) by \(shortDistance(width).spoken)"
+    }
+}
+
+/// Display strings in the player's units. Storage and analysis stay metric.
 enum MatchFormat {
+    /// Match-scale distance ("4.62 mi"), dropping to yards or meters for anything run-sized.
     static func distance(_ meters: Double) -> String {
-        if meters >= 1000 {
-            return String(format: "%.2f km", meters / 1000)
-        }
-        return String(format: "%.0f m", meters)
+        measure(meters).text
+    }
+
+    /// `distance` with its unit kept apart, for styling and VoiceOver.
+    static func measure(_ meters: Double) -> UnitSystem.Measure {
+        let units = UnitSystem.current
+        let shortThreshold = units == .metric ? 1000.0 : 402.336
+        return meters < shortThreshold ? units.shortDistance(meters) : units.distance(meters)
+    }
+
+    static func speed(_ metersPerSecond: Double) -> String {
+        UnitSystem.current.speed(metersPerSecond).text
+    }
+
+    /// A field's size, e.g. "115 × 74 yd".
+    static func fieldSize(_ rectangle: OrientedRectangle) -> String {
+        UnitSystem.current.fieldSize(length: rectangle.lengthMeters, width: rectangle.widthMeters)
+    }
+
+    static func spokenFieldSize(_ rectangle: OrientedRectangle) -> String {
+        UnitSystem.current.spokenFieldSize(length: rectangle.lengthMeters, width: rectangle.widthMeters)
     }
 
     static func duration(_ seconds: TimeInterval) -> String {
@@ -73,9 +91,5 @@ enum MatchFormat {
     static func shortDuration(_ seconds: TimeInterval) -> String {
         let minutes = Int((seconds / 60).rounded())
         return "\(minutes) min"
-    }
-
-    static func speed(_ metersPerSecond: Double) -> String {
-        String(format: "%.1f km/h", metersPerSecond * 3.6)
     }
 }

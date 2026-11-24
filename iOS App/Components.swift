@@ -4,131 +4,6 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Shared metric chip: big rounded numeral over an uppercase label, on a tinted metric tile.
-/// Used in header stat rows across the app.
-struct StatTile: View {
-    let title: String
-    let value: String
-    var systemImage: String?
-    var tint: Color = Theme.turf
-
-    var body: some View {
-        VStack(spacing: 5) {
-            if let systemImage {
-                Image(systemName: systemImage).font(.caption).foregroundStyle(tint)
-            }
-            Text(value).statNumeral().foregroundStyle(.primary)
-            Text(title).captionLabel()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .metricTile(tint: tint)
-    }
-}
-
-/// Rounded summary chip (e.g. "12 runs").
-struct SummaryChip: View {
-    let value: String
-    let label: String
-    var tint: Color = Theme.turf
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(value).statNumeral().foregroundStyle(tint)
-            Text(label).captionLabel()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .metricTile(tint: tint)
-    }
-}
-
-/// Abbreviated position badge ("LM", "CF", "GK") derived from role + side.
-struct PositionBadge: View {
-    let role: PositionRole
-    let side: PositionSide
-    var confidence: Double?
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(role.tint)
-                .frame(width: 6, height: 6)
-            Text(Self.abbreviation(role: role, side: side))
-                .font(.system(.caption, design: .rounded).weight(.bold))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(Theme.surfaceElevated, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
-        .opacity(confidenceOpacity)
-    }
-
-    private var confidenceOpacity: Double {
-        guard let confidence else { return 1 }
-        return 0.45 + 0.55 * min(1, max(0, confidence))
-    }
-
-    static func abbreviation(role: PositionRole, side: PositionSide) -> String {
-        if role == .goalkeeper { return "GK" }
-        let sideLetter: String
-        switch side {
-        case .left: sideLetter = "L"
-        case .center: sideLetter = "C"
-        case .right: sideLetter = "R"
-        }
-        let roleLetter: String
-        switch role {
-        case .defender: roleLetter = "B"
-        case .midfielder: roleLetter = "M"
-        case .forward: roleLetter = side == .center ? "F" : "W"
-        case .goalkeeper: roleLetter = "K"
-        }
-        return sideLetter + roleLetter
-    }
-
-    static func fullName(role: PositionRole, side: PositionSide) -> String {
-        if role == .goalkeeper { return "Goalkeeper" }
-        let sideName: String
-        switch side {
-        case .left: sideName = "Left"
-        case .center: sideName = "Central"
-        case .right: sideName = "Right"
-        }
-        let roleName: String
-        switch role {
-        case .defender: roleName = "Defender"
-        case .midfielder: roleName = "Midfielder"
-        case .forward: roleName = "Forward"
-        case .goalkeeper: roleName = "Goalkeeper"
-        }
-        return "\(sideName) \(roleName)"
-    }
-}
-
-extension PositionRole {
-    var tint: Color {
-        switch self {
-        case .goalkeeper: return Theme.bench
-        case .defender: return Theme.pace
-        case .midfielder: return Theme.turf
-        case .forward: return Theme.sprint
-        }
-    }
-}
-
-extension RunIntensity {
-    var color: Color {
-        switch self {
-        case .jog: return Theme.turf
-        case .run: return Theme.sprint
-        case .sprint: return Theme.heart
-        }
-    }
-    var label: String { rawValue.capitalized }
-}
-
 extension MatchEventKind {
     var systemImage: String {
         switch self {
@@ -172,11 +47,9 @@ extension MatchEventKind {
     var tint: Color {
         switch self {
         case .goalForUs, .goalMine: return Theme.goal
-        case .goalAgainstUs: return Theme.heart
-        case .assist: return Theme.signal
-        case .flag: return Theme.sprint
+        case .goalAgainstUs, .redCard: return Theme.loss
+        case .assist: return Theme.goal
         case .yellowCard: return Theme.cardYellow
-        case .redCard: return Theme.heart
         default: return .secondary
         }
     }

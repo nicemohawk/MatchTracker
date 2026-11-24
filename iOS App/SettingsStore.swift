@@ -5,6 +5,21 @@ import Foundation
 import Combine
 import MatchTrackerKit
 
+/// Which units the player sees. `automatic` follows the region.
+enum UnitsPreference: String, CaseIterable, Identifiable {
+    case automatic, imperial, metric
+
+    var id: String { rawValue }
+
+    var system: UnitSystem? {
+        switch self {
+        case .automatic: return nil
+        case .imperial: return .imperial
+        case .metric: return .metric
+        }
+    }
+}
+
 /// User-facing settings persisted to the app-group `UserDefaults` so the watch can read them too.
 final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
@@ -19,10 +34,12 @@ final class SettingsStore: ObservableObject {
         static let consentGuardianName = "consentGuardianName"
         static let consentAcknowledgedAt = "consentAcknowledgedAt"
         static let contributeDetectedFields = "contributeDetectedFields"
+        static let units = "units"
     }
 
     init(defaults: UserDefaults? = nil) {
         self.defaults = defaults ?? UserDefaults(suiteName: AppGroup.identifier) ?? .standard
+        UnitSystem.override = units.system
     }
 
     @Published var didChange = 0
@@ -40,6 +57,16 @@ final class SettingsStore: ObservableObject {
     var serverURLOverride: String {
         get { defaults.string(forKey: Key.serverURLOverride) ?? "" }
         set { defaults.set(newValue, forKey: Key.serverURLOverride); bump() }
+    }
+
+    /// Miles and yards, or kilometers and meters. Applied app-wide through `UnitSystem.override`.
+    var units: UnitsPreference {
+        get { defaults.string(forKey: Key.units).flatMap(UnitsPreference.init) ?? .automatic }
+        set {
+            defaults.set(newValue.rawValue, forKey: Key.units)
+            UnitSystem.override = newValue.system
+            bump()
+        }
     }
 
     /// Effective backend base URL: override if valid, otherwise the Kit default.
