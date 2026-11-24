@@ -14,6 +14,7 @@ struct FieldDetailView: View {
     @EnvironmentObject private var fields: FieldsModel
     @EnvironmentObject private var matches: MatchStore
     @State private var name = ""
+    @FocusState private var isNaming: Bool
     @State private var isAdjusting = false
     @State private var confirmingDelete = false
 
@@ -36,11 +37,20 @@ struct FieldDetailView: View {
                 }
             }
             Section {
-                TextField("Field name", text: $name)
+                TextField("Field name", text: $name, axis: .vertical)
                     .font(.title2.bold())
                     .textInputAutocapitalization(.words)
                     .submitLabel(.done)
-                    .onSubmit { rename(field) }
+                    .focused($isNaming)
+                    // A field that wraps takes Return as a new line; here it means done.
+                    .onChange(of: name) { _, typed in
+                        guard typed.contains(where: \.isNewline) else { return }
+                        name = typed.filter { !$0.isNewline }
+                        isNaming = false
+                    }
+                    .onChange(of: isNaming) { _, naming in
+                        if !naming { rename(field) }
+                    }
                     .accessibilityHint("Edits the field’s name")
                 LabeledContent("Size", value: MatchFormat.fieldSize(field.rectangle))
                     .accessibilityValue(MatchFormat.spokenFieldSize(field.rectangle))

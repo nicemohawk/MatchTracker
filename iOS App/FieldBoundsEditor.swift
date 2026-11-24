@@ -185,6 +185,12 @@ struct FieldOutlineEditor: View {
         return FieldSizeCheck.problem(with: rectangle, corners: corners)
     }
 
+    /// What will be saved, or the corners as they are while that isn't possible.
+    private var outline: [CLLocationCoordinate2D] {
+        guard let rectangle, problem == nil else { return isPlacing ? corners : ring }
+        return rectangle.coordinateRing
+    }
+
     /// Fixed, not adaptive: imagery is the same in light and dark.
     private static let good = Color(red: 0.19, green: 0.82, blue: 0.35)
     private static let bad = Color(red: 1.0, green: 0.27, blue: 0.23)
@@ -235,22 +241,6 @@ struct FieldOutlineEditor: View {
                         .stroke(.white.opacity(0.7),
                                 style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 }
-                if isPlacing, corners.count >= 2 {
-                    MapPolyline(coordinates: corners)
-                        .stroke(Self.good, lineWidth: 3)
-                }
-                if let rectangle, problem == nil {
-                    MapPolygon(coordinates: rectangle.coordinateRing)
-                        .foregroundStyle(Self.good.opacity(0.18))
-                        .stroke(Self.good, lineWidth: 3)
-                    MapPolyline(coordinates: halfwayLine(of: rectangle))
-                        .stroke(Self.good.opacity(0.7), lineWidth: 1.5)
-                } else if !isPlacing {
-                    // Nothing savable yet, so show the corners as they are.
-                    MapPolygon(coordinates: ring)
-                        .foregroundStyle(Self.bad.opacity(0.18))
-                        .stroke(Self.bad, lineWidth: 3)
-                }
             }
             .mapStyle(.imagery)
             .mapControls { MapCompass() }
@@ -266,7 +256,10 @@ struct FieldOutlineEditor: View {
             .accessibilityLabel("Satellite map")
             // A sibling overlay (not annotations), so a handle drag never fights the map's pan.
             .overlay {
-                OutlineOverlay(camera: camera, corners: corners, grabbed: $grabbed,
+                OutlineOverlay(camera: camera, corners: corners, outline: outline,
+                               halfway: problem == nil ? rectangle.map(halfwayLine) ?? [] : [],
+                               color: problem == nil ? Self.good : Self.bad,
+                               grabbed: $grabbed,
                                proxy: proxy, space: Self.mapSpace,
                                spokenSize: rectangle.map(MatchFormat.spokenFieldSize) ?? "",
                                onDragBegan: pushUndo,
@@ -401,10 +394,14 @@ private enum OutlineHandle: Hashable {
     case middle
 }
 
-/// Corner handles, edge lengths and the loupe, positioned from the map camera every frame.
+/// The outline, its handles, edge lengths and the loupe, positioned from the map camera every frame.
+/// The outline is drawn here rather than as map content, which trails the finger during a drag.
 private struct OutlineOverlay: View {
     @ObservedObject var camera: OutlineCamera
     let corners: [CLLocationCoordinate2D]
+    let outline: [CLLocationCoordinate2D]
+    let halfway: [CLLocationCoordinate2D]
+    let color: Color
     @Binding var grabbed: OutlineHandle?
     let proxy: MapProxy
     let space: String
@@ -422,6 +419,7 @@ private struct OutlineOverlay: View {
             let _ = camera.tick
             let points = corners.map { proxy.convert($0, to: .local) }
             ZStack {
+                outlineShape
                 if corners.count == 4 {
                     edgeLabels(points: points)
                     middleHandle(points: points)
@@ -435,6 +433,26 @@ private struct OutlineOverlay: View {
                     loupe(points: points, in: geometry.size)
                 }
             }
+        }
+    }
+
+    // MARK: Outline
+
+    private var outlineShape: some View {
+        let line = path(through: outline, closed: corners.count == 4)
+        return ZStack {
+            if corners.count == 4 { line.fill(color.opacity(0.18)) }
+            line.stroke(color, style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+            path(through: halfway, closed: false).stroke(color.opacity(0.7), lineWidth: 1.5)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func path(through coordinates: [CLLocationCoordinate2D], closed: Bool) -> Path {
+        Path { path in
+            path.addLines(coordinates.compactMap { proxy.convert($0, to: .local) })
+            if closed { path.closeSubpath() }
         }
     }
 
@@ -590,15 +608,13 @@ private struct OutlineOverlay: View {
         let coordinate = corners[index ?? 0]
         return Map(position: .constant(.camera(MapCamera(centerCoordinate: coordinate, distance: 75,
                                                          heading: camera.heading))),
-                   interactionModes: []) {
-            MapPolyline(coordinates: closedRing)
-                .stroke(.white, lineWidth: 2)
-        }
+                   interactionModes: []) { }
         .mapStyle(.imagery)
         .mapControls { }
         // Oversized, so the map's own badge falls outside the circle. The full map shows it.
         .frame(width: diameter * 1.5, height: diameter * 1.5)
         .frame(width: diameter, height: diameter)
+        .overlay { loupeEdges(index: index, points: points, radius: diameter / 2) }
         .overlay {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .thin))
@@ -612,9 +628,20 @@ private struct OutlineOverlay: View {
         .accessibilityHidden(true)
     }
 
-    private var closedRing: [CLLocationCoordinate2D] {
-        let ring = FieldRing.order(of: corners).map { corners[$0] }
-        return ring + ring.prefix(1)
+    /// The two edges meeting at the grabbed corner, leaving the crosshair the way they leave the corner.
+    private func loupeEdges(index: Int?, points: [CGPoint?], radius: CGFloat) -> some View {
+        Path { path in
+            let order = FieldRing.order(of: corners)
+            guard let index, let corner = points[index], let place = order.firstIndex(of: index) else { return }
+            for neighbor in [order[(place + 1) % 4], order[(place + 3) % 4]] {
+                guard let other = points[neighbor] else { continue }
+                let length = max(hypot(other.x - corner.x, other.y - corner.y), 1)
+                path.move(to: CGPoint(x: radius, y: radius))
+                path.addLine(to: CGPoint(x: radius + (other.x - corner.x) / length * radius,
+                                         y: radius + (other.y - corner.y) / length * radius))
+            }
+        }
+        .stroke(color, lineWidth: 2)
     }
 }
 

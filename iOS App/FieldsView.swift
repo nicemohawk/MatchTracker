@@ -22,7 +22,6 @@ struct FieldsView: View {
 
     @State private var model = FieldsMapModel()
     @State private var showingSheet = false
-    @State private var detent: PresentationDetent = .medium
     @State private var containerHeight: CGFloat = 800
     @ScaledMetric(relativeTo: .title3) private var peekHeight: CGFloat = 92
 
@@ -75,7 +74,7 @@ struct FieldsView: View {
         NavigationStack {
             map
                 // Frame and center fields in the part of the map the sheet leaves visible.
-                .safeAreaPadding(.bottom, detent == .height(peekHeight) ? peekHeight : containerHeight * 0.5)
+                .safeAreaPadding(.bottom, model.detent == .height(peekHeight) ? peekHeight : containerHeight * 0.5)
                 .background {
                     GeometryReader { geometry in
                         Color.clear.onChange(of: geometry.size.height, initial: true) { _, height in
@@ -98,10 +97,7 @@ struct FieldsView: View {
         .onAppear { showingSheet = true }
         .sheet(isPresented: $showingSheet) {
             panel(showsClose: true)
-                .presentationDetents([.height(peekHeight), .medium, .large], selection: $detent)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .presentationDragIndicator(.visible)
-                .interactiveDismissDisabled()
+                .modifier(FieldsSheetDetents(model: model, peekHeight: peekHeight))
         }
     }
 
@@ -112,6 +108,7 @@ struct FieldsView: View {
                 list.frame(maxHeight: .infinity)
             }
             .toolbar { ToolbarItem(placement: .topBarLeading) { locateButton } }
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .modifier(FieldsPanelChrome(model: model, showsClose: false, showsPicture: true,
                                         onClose: {}, onDetect: detect))
         }
@@ -191,7 +188,7 @@ struct FieldsView: View {
     }
 
     private func focus(on rectangle: OrientedRectangle) {
-        if detent == .height(peekHeight) { detent = .medium }
+        if model.detent == .height(peekHeight) { model.raiseSheet() }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) {
             model.camera = .region(rectangle.mapRegion)
         }
@@ -297,6 +294,20 @@ final class FieldsMapModel {
     var dismissed: Set<String> = []
     var isDetecting = false
     var isDrawing = false
+    /// How far up the list sheet is, on iPhone.
+    var detent: PresentationDetent = .medium
+    var isRaisingSheet = false
+
+    /// Setting the selection alone leaves the sheet where it is (iOS 26.5), so for a moment half
+    /// height is the only height on offer.
+    func raiseSheet() {
+        isRaisingSheet = true
+        detent = .medium
+        Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            isRaisingSheet = false
+        }
+    }
     var notice: FieldsNotice?
     let location = MapLocationProvider()
 
@@ -313,6 +324,21 @@ final class FieldsMapModel {
 }
 
 // MARK: - Chrome shared by the three layouts
+
+/// The persistent sheet.
+private struct FieldsSheetDetents: ViewModifier {
+    @Bindable var model: FieldsMapModel
+    let peekHeight: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .presentationDetents(model.isRaisingSheet ? [.medium] : [.height(peekHeight), .medium, .large],
+                                 selection: $model.detent)
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            .presentationDragIndicator(.visible)
+            .interactiveDismissDisabled()
+    }
+}
 
 /// Title, the one add menu, destinations and the alerts. Attached inside whichever container is
 /// frontmost, so presentations never start from a view that is already covered.
