@@ -36,9 +36,9 @@ private struct PitchGlance: View {
             let height = proxy.size.height
             VStack(alignment: .leading, spacing: 0) {
                 ElapsedTimeText(size: height * 0.36).frame(height: height * 0.32)
-                heartRate(size: height * 0.32).frame(height: height * 0.28)
-                distance(size: height * 0.32).frame(height: height * 0.28)
-                LiveStatusLine().frame(height: height * 0.12)
+                heartRate(size: height * 0.29).frame(height: height * 0.25)
+                distance(size: height * 0.29).frame(height: height * 0.25)
+                LiveStatusLine(height: height * 0.18).frame(height: height * 0.18)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -50,8 +50,8 @@ private struct PitchGlance: View {
         let bpm = Int(workoutManager.heartRate)
         return GlanceMetric(value: bpm > 0 ? "\(bpm)" : "--", unit: "BPM", size: size,
                             tint: WatchTheme.heart.opacity(isLuminanceReduced ? 0.65 : 1)) {
-            BeatingHeart(bpm: workoutManager.heartRate, animates: !isLuminanceReduced,
-                         tint: WatchTheme.heart.opacity(isLuminanceReduced ? 0.65 : 1))
+            Image(systemName: "heart.fill")
+                .foregroundStyle(WatchTheme.heart.opacity(isLuminanceReduced ? 0.65 : 1))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Heart rate")
@@ -130,31 +130,86 @@ private struct ElapsedTimeText: View {
     }
 }
 
-/// The single most useful thing to say right now, most urgent first: something is wrong, else the
-/// score, else nothing.
+/// The score, and whatever is wrong. A problem is put in words when it's news; after that its icon
+/// keeps watch beside the score.
 private struct LiveStatusLine: View {
+    let height: CGFloat
+
     @Environment(WorkoutManager.self) private var workoutManager
+    @State private var latestWarning: String?
+    @State private var spelledOut: String?
+
+    private struct Warning {
+        let text: String
+        let systemImage: String
+        var isAlwaysSpelledOut = false
+    }
 
     var body: some View {
-        Group {
-            if workoutManager.sessionState == .paused {
-                Label("Paused", systemImage: "pause.fill").foregroundStyle(WatchTheme.sprint)
-            } else if workoutManager.usesGPS, let problem = gpsProblem {
-                Label(problem, systemImage: "location.slash.fill").foregroundStyle(WatchTheme.sprint)
-            } else if workoutManager.healthCollectionStalled {
-                Label("No heart rate", systemImage: "heart.slash.fill").foregroundStyle(WatchTheme.sprint)
-            } else if workoutManager.score.us + workoutManager.score.them > 0 {
-                Text("\(workoutManager.score.us) – \(workoutManager.score.them)")
-                    .monospacedDigit()
-                    .accessibilityLabel("Score, us \(workoutManager.score.us), them \(workoutManager.score.them)")
-            } else {
-                // Holds the line's height so the numerals above never shift.
-                Text(" ").accessibilityHidden(true)
+        let warning = warning
+        ViewThatFits(in: .horizontal) {
+            if hasScore, let warning, isSpelledOut(warning) {
+                line { score; Spacer(minLength: 8); label(warning) }
+            }
+            if let warning, isSpelledOut(warning) {
+                line { label(warning); Spacer(minLength: 0) }
+            }
+            line {
+                if hasScore { score }
+                Spacer(minLength: 0)
+                if let warning { label(warning).labelStyle(.iconOnly) }
             }
         }
-        .font(.headline)
         .lineLimit(1)
-        .minimumScaleFactor(0.8)
+        .task(id: warning?.text) {
+            // Coming back to this page isn't news.
+            let text = warning?.text
+            guard text != latestWarning else { return }
+            latestWarning = text
+            spelledOut = text
+            try? await Task.sleep(for: .seconds(10))
+            if spelledOut == text { spelledOut = nil }
+        }
+    }
+
+    private func line(@ViewBuilder content: () -> some View) -> some View {
+        HStack(spacing: 0, content: content)
+            // Keeps clear of the display's rounded corner.
+            .padding(.trailing, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var hasScore: Bool { workoutManager.score.us + workoutManager.score.them > 0 }
+
+    private var score: some View {
+        Text("\(workoutManager.score.us) – \(workoutManager.score.them)")
+            .font(.system(size: height * 0.82, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .accessibilityLabel("Score, us \(workoutManager.score.us), them \(workoutManager.score.them)")
+    }
+
+    private func label(_ warning: Warning) -> some View {
+        Label(warning.text, systemImage: warning.systemImage)
+            .font(.system(size: height * 0.52, weight: .semibold))
+            .foregroundStyle(WatchTheme.sprint)
+    }
+
+    /// Alone on the line there's no reason to abbreviate.
+    private func isSpelledOut(_ warning: Warning) -> Bool {
+        !hasScore || warning.isAlwaysSpelledOut || spelledOut == warning.text
+    }
+
+    private var warning: Warning? {
+        if workoutManager.sessionState == .paused {
+            return Warning(text: "Paused", systemImage: "pause.fill", isAlwaysSpelledOut: true)
+        }
+        if workoutManager.usesGPS, let problem = gpsProblem {
+            return Warning(text: problem, systemImage: "location.slash.fill")
+        }
+        if workoutManager.healthCollectionStalled {
+            return Warning(text: "No heart rate", systemImage: "heart.slash.fill")
+        }
+        return nil
     }
 
     private var gpsProblem: String? {
@@ -175,26 +230,28 @@ private struct BenchView: View {
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("On the bench")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let questionable = workoutManager.questionableSubOut(at: context.date)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(questionable == nil ? "On the bench" : "Looks like you came off")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .minimumScaleFactor(0.7)
                 Text(benchTime(at: context.date))
                     .font(.system(size: 52, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .foregroundStyle(.white.opacity(isLuminanceReduced ? 0.65 : 1))
+                Spacer(minLength: 0)
+                Button {
+                    if let questionable { workoutManager.stillOn(after: questionable) } else { workoutManager.toggleSub() }
+                } label: {
+                    Label(questionable == nil ? "Back On" : "Still On", systemImage: "figure.run")
+                        .font(.title3.weight(.bold))
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 64, prominent: true))
             }
-            Spacer(minLength: 0)
-            Button {
-                workoutManager.toggleSub()
-            } label: {
-                Label("Back On", systemImage: "figure.run")
-                    .font(.title3.weight(.bold))
-            }
-            .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 64, prominent: true))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .scenePadding(.horizontal)
@@ -204,24 +261,5 @@ private struct BenchView: View {
         let seconds = date.timeIntervalSince(workoutManager.benchedSince ?? date)
         return isLuminanceReduced ? "\(Int(seconds / 60)) min"
                                   : MatchTrackerFormat.hoursMinutesSeconds(max(0, seconds))
-    }
-}
-
-/// A small heart glyph that gently pulses at a capped, human-readable rate while the display is
-/// fully lit; frozen (and dimmed by its tint) in always-on.
-private struct BeatingHeart: View {
-    let bpm: Double
-    let animates: Bool
-    let tint: Color
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        // Cap the pulse so a 180 bpm sprint doesn't strobe; a resting heart reads as a calm beat.
-        let beatsPerSecond = min(max(bpm, 40), 130) / 60
-        Image(systemName: "heart.fill")
-            .foregroundStyle(tint)
-            .symbolEffect(.pulse, options: .speed(beatsPerSecond),
-                          isActive: animates && !reduceMotion && bpm > 0)
     }
 }

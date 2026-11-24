@@ -7,12 +7,13 @@ import SwiftUI
 import MatchTrackerKit
 
 /// Score and moments. The two halves of the scoreline are the buttons — the biggest targets the
-/// screen can hold — and the detail ("who scored?") is asked afterwards, when there's a second to
-/// answer it. Every log can be undone from its own confirmation.
+/// screen can hold. The new score comes straight back, with the detail (who scored?) if there's a
+/// second to give it. Every log can be undone from its own confirmation, and the last goal at any time.
 struct EventsView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @State private var confirmation: Confirmation?
-    @State private var scorerPrompt: MatchEvent?
+    @State private var goalPrompt: GoalPrompt?
+    @State private var confirmingTakeBack = false
 
     private var sport: SportProfile { WatchSettings.sportProfile }
 
@@ -20,7 +21,17 @@ struct EventsView: View {
         let eventID: UUID
         let text: String
         let tint: Color
+        /// Their goal: the score itself is the confirmation.
+        var isScore = false
     }
+
+    private struct GoalPrompt: Identifiable {
+        let goal: MatchEvent
+        let score: String
+        var id: UUID { goal.id }
+    }
+
+    private var scoreText: String { "\(workoutManager.score.us)–\(workoutManager.score.them)" }
 
     var body: some View {
         GeometryReader { proxy in
@@ -45,17 +56,19 @@ struct EventsView: View {
                         }
                     }
                     flagTile
+                    if let goal = workoutManager.lastGoal { takeBackTile(goal) }
                 }
             }
         }
         .scenePadding(.horizontal)
         .overlay { confirmationOverlay }
-        .sheet(item: $scorerPrompt) { goal in
-            ScorerSheet { choice in
+        .sheet(item: $goalPrompt) { prompt in
+            GoalSheet(score: prompt.score) { choice in
                 switch choice {
-                case .me: workoutManager.changeEvent(goal.id, to: .goalMine)
+                case .me: workoutManager.changeEvent(prompt.goal.id, to: .goalMine)
                 case .myAssist: workoutManager.log(.assist)
                 case .teammate: break
+                case .undo: workoutManager.removeEvent(prompt.goal.id)
                 }
             }
         }
@@ -73,7 +86,7 @@ struct EventsView: View {
     @ViewBuilder
     private func scoreTile(_ side: String, value: Int, kind: MatchEventKind, tint: Color, height: CGFloat) -> some View {
         let button = Button {
-            log(kind, text: kind == .goalForUs ? "Goal!" : "They scored", tint: tint)
+            logGoal(kind, tint: tint)
         } label: {
             VStack(spacing: 0) {
                 Text("\(value)")
@@ -99,7 +112,7 @@ struct EventsView: View {
 
     @ViewBuilder
     private var flagTile: some View {
-        let button = eventTile(.flag, title: "Flag")
+        let button = eventTile(.flag, title: "Mark Moment")
         if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .flag {
             button.handGestureShortcut(.primaryAction)
         } else {
@@ -107,25 +120,59 @@ struct EventsView: View {
         }
     }
 
+    private func takeBackTile(_ goal: MatchEvent) -> some View {
+        Button {
+            WatchHaptics.click()
+            confirmingTakeBack = true
+        } label: {
+            Text("Take Back Last Goal")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+        }
+        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.bench, minHeight: 52))
+        .confirmationDialog(goal.kind == .goalAgainstUs ? "Take back their last goal?" : "Take back our last goal?",
+                            isPresented: $confirmingTakeBack, titleVisibility: .visible) {
+            Button("Take Back", role: .destructive) {
+                WatchHaptics.click()
+                workoutManager.removeLastGoal()
+            }
+            Button("Keep It", role: .cancel) {}
+        }
+    }
+
     private func eventTile(_ kind: MatchEventKind, title: String) -> some View {
         Button {
-            log(kind, text: kind == .flag ? "Moment flagged" : title, tint: kind.watchTint)
+            log(kind, text: kind == .flag ? "Moment marked" : title, tint: kind.watchTint)
         } label: {
-            Label(title, systemImage: kind.watchSymbol)
-                .font(.headline)
+            ViewThatFits(in: .horizontal) {
+                Label(title, systemImage: kind.watchSymbol)
+                if kind == .flag { Label("Moment", systemImage: kind.watchSymbol) }
+            }
+            .font(.headline)
         }
         .buttonStyle(WatchTileButtonStyle(tint: kind.watchTint, minHeight: 52))
+        .accessibilityLabel(title)
     }
 
     @ViewBuilder
     private var confirmationOverlay: some View {
         if let confirmation {
             VStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(confirmation.tint)
-                Text(confirmation.text)
-                    .font(.title3.weight(.semibold))
+                if confirmation.isScore {
+                    Text(confirmation.text)
+                        .font(.system(size: 64, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .foregroundStyle(confirmation.tint)
+                        .accessibilityLabel("Score, us \(workoutManager.score.us), them \(workoutManager.score.them)")
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(confirmation.tint)
+                    Text(confirmation.text)
+                        .font(.title3.weight(.semibold))
+                }
                 Button("Undo") {
                     workoutManager.removeEvent(confirmation.eventID)
                     WatchHaptics.click()
@@ -135,47 +182,67 @@ struct EventsView: View {
             }
             .scenePadding(.horizontal)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black.opacity(0.9))
+            .background(.black)
             .transition(.opacity)
         }
     }
 
-    /// Log, buzz and confirm. A goal for us then asks who, once the confirmation has had its moment.
+    /// Log and buzz, then confirm for a moment.
     private func log(_ kind: MatchEventKind, text: String, tint: Color) {
+        let event = logAndBuzz(kind)
+        show(Confirmation(eventID: event.id, text: text, tint: tint), for: 2)
+    }
+
+    /// Ours asks who scored; theirs just shows the new score.
+    private func logGoal(_ kind: MatchEventKind, tint: Color) {
+        let event = logAndBuzz(kind)
+        if kind == .goalForUs, !WatchSettings.refereeMode {
+            goalPrompt = GoalPrompt(goal: event, score: scoreText)
+        } else {
+            show(Confirmation(eventID: event.id, text: scoreText, tint: tint, isScore: true), for: 4)
+        }
+    }
+
+    private func logAndBuzz(_ kind: MatchEventKind) -> MatchEvent {
         let event = workoutManager.log(kind)
         WatchHaptics.forEvent(positive: kind.isPositiveMoment,
                               caution: kind.isCaution,
                               negative: kind.isNegativeMoment)
-        let shown = Confirmation(eventID: event.id, text: text, tint: tint)
+        return event
+    }
+
+    private func show(_ shown: Confirmation, for seconds: TimeInterval) {
         withAnimation(.snappy) { confirmation = shown }
         Task {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(seconds))
             guard confirmation == shown else { return }
             withAnimation(.easeOut) { confirmation = nil }
-            if kind == .goalForUs, !WatchSettings.refereeMode, workoutManager.events.contains(where: { $0.id == event.id }) {
-                scorerPrompt = event
-            }
         }
     }
 }
 
-/// "Who scored?" — three full-width answers. Dismissing means a teammate.
-private struct ScorerSheet: View {
-    enum Choice { case me, myAssist, teammate }
+/// The new score, and who scored it. Dismissing means a teammate.
+private struct GoalSheet: View {
+    enum Choice { case me, myAssist, teammate, undo }
 
+    let score: String
     let onChoose: (Choice) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 8) {
-                choice("I scored", systemImage: "star.fill", tint: WatchTheme.sprint, .me)
-                choice("My assist", systemImage: "hand.thumbsup.fill", tint: WatchTheme.pace, .myAssist)
+            VStack(spacing: 6) {
+                Text(score)
+                    .font(.system(.title, design: .rounded, weight: .bold))
+                    .monospacedDigit()
+                    .accessibilityAddTraits(.isHeader)
+                choice("I scored", systemImage: "soccerball", tint: WatchTheme.turf, .me)
+                choice("My assist", systemImage: "hand.thumbsup.fill", tint: WatchTheme.turf, .myAssist)
                 choice("Teammate", systemImage: "person.2.fill", tint: WatchTheme.bench, .teammate)
+                choice("Undo", systemImage: "arrow.uturn.backward", tint: WatchTheme.loss, .undo)
             }
             .scenePadding(.horizontal)
         }
-        .navigationTitle("Who scored?")
         .task {
             // Left unanswered — play restarted — it gets out of the way by itself.
             try? await Task.sleep(for: .seconds(12))
@@ -192,7 +259,7 @@ private struct ScorerSheet: View {
             Label(title, systemImage: systemImage)
                 .font(.headline)
         }
-        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: 52))
+        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: 48))
     }
 }
 
