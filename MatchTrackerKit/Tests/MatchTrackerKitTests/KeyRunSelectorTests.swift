@@ -53,6 +53,19 @@ final class KeyRunSelectorTests: XCTestCase {
         XCTAssertEqual(select(runs, goals: [(.goalForUs, 20.3), (.assist, 40.3)]).last?.title, "Run just before your assist")
     }
 
+    func testARunTooFarPastTheLinesIsNotShown() {
+        func titles(outside: Int) -> [String] {
+            var fastest = run(at: 10, distance: 40, peak: 8)
+            fastest.pointRange = 0..<8
+            var slower = run(at: 20, distance: 35, peak: 6)
+            slower.pointRange = 8..<12
+            return KeyRunSelector.select(runs: [fastest, slower], events: [], interval: interval,
+                                         isInside: (0..<12).map { $0 >= outside }).map(\.title)
+        }
+        XCTAssertEqual(titles(outside: 2), ["Fastest and longest run"], "a quarter of it is an overrun")
+        XCTAssertEqual(titles(outside: 3), [], "and a runner-up must not take the title")
+    }
+
     func testSelectionIsDeterministic() {
         let runs = [run(at: 70, distance: 40, peak: 7), run(at: 10, distance: 40, peak: 7), run(at: 80, distance: 40, peak: 7)]
         XCTAssertEqual(select(runs).map(\.id), select(runs.reversed()).map(\.id))
