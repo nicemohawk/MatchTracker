@@ -205,11 +205,11 @@ final class MatchRepairTests: XCTestCase {
 
     func testLiveSprintsOnlyEverCountUp() {
         var counter = LiveSprintCounter()
-        let speeds = [2.0, 6, 2, 6, 6.2, 5, 6, 6, 3, 6, 6, 12, 12, 2]
+        let speeds = [2.0, 6, 6, 2, 6, 6.2, 5, 6, 6, 3, 6, 6, 6.1, 12, 12, 12, 2]
         let points = speeds.enumerated().map { point(Double($0) / 60, speed: $1) }
         var counts: [Int] = []
         for point in points + points { counter.add(point); counts.append(counter.count) }
-        XCTAssertEqual(counter.count, 2, "a lone fast sample, a brief dip, a car and redelivery add nothing")
+        XCTAssertEqual(counter.count, 2, "a one-second spike, a brief dip, a car and redelivery add nothing")
         XCTAssertEqual(counts, counts.sorted())
     }
 }

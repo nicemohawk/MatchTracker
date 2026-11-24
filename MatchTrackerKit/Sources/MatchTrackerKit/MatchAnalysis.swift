@@ -90,6 +90,8 @@ public enum MatchAnalyzer {
     /// On/off-field slop (meters): absorbs GPS jitter and players overrunning the line without
     /// admitting warm-up laps, the bench, or the walk to the car.
     private static let onFieldMarginMeters = 6.0
+    /// How far a run at full tilt goes before it stops.
+    private static let overrunMarginMeters = 20.0
     private static let minimumRoutePoints = 30
     private static let maximumSampleSeconds = 10.0
     private static let pathSampleSeconds = 1.9   // fixes jitter around the second
@@ -141,16 +143,21 @@ public enum MatchAnalyzer {
         let playingIntervals = [halftime, forgotten].reduce(
             derivedIntervals.isEmpty ? recordedIntervals : derivedIntervals) { subtract($1, from: $0) }
 
-        // Places are drawn only from on-field play, so warm-up laps and the bench never smear onto
-        // the pitch. Runs are detected over the full track (one may clip the line), then dropped if
-        // they were mostly off it.
+        // Places are drawn and speeds taken only from on-field play, so warm-up laps and the bench
+        // never smear onto the pitch. Standing about waiting is on the pitch but isn't play.
         let isOnField = track.map { projector.isOnField($0.coordinate, marginMeters: onFieldMarginMeters) }
         let isPlaying = track.indices.map { isOnField[$0] && isWithin(track[$0].timestamp, intervals: playingIntervals) }
+        let isWaiting = WaitingDetector.isWaiting(track)
+        let isInPlay = track.indices.map { isPlaying[$0] && !isWaiting[$0] }
         let onFieldTrack = track.indices.filter { isOnField[$0] }.map { track[$0] }
-        let runs = RunDetector.detectRuns(in: track).filter { run in
-            isWithin(run.interval.start, intervals: playingIntervals)
-                && isOnField[run.pointRange].filter { $0 }.count * 2 >= run.pointRange.count
+        // A run may carry over the line chasing a ball. One that never set foot on the pitch is
+        // somebody warming up beside it.
+        let isRunning = track.indices.map {
+            isPlaying[$0] || (projector.isOnField(track[$0].coordinate, marginMeters: overrunMarginMeters)
+                && isWithin(track[$0].timestamp, intervals: playingIntervals))
         }
+        let runs = RunDetector.detectRuns(in: track, isOnPitch: isRunning)
+            .filter { isPlaying[$0.pointRange].contains(true) }
 
         var workrate = WorkrateAnalyzer.analyze(
             track: track, runs: runs, playingIntervals: playingIntervals, heartRate: heartRate,
@@ -163,7 +170,7 @@ public enum MatchAnalyzer {
         // The one direction every place below is drawn in.
         let normalized = track.map { projector.normalizedPoint(for: $0.coordinate) }
         let placed = track.indices.compactMap { index in
-            isPlaying[index] ? normalized[index].map { (date: track[index].timestamp, point: $0) } : nil
+            isInPlay[index] ? normalized[index].map { (date: track[index].timestamp, point: $0) } : nil
         }
         let direction = AttackDirection.resolve(
             points: placed, format: input.format, halftime: halftime, interval: interval,
@@ -173,7 +180,7 @@ public enum MatchAnalyzer {
         }
 
         let weighted = track.indices.dropLast().compactMap { index -> (point: CGPoint, seconds: Double)? in
-            guard isPlaying[index], let point = portrait[index] else { return nil }
+            guard isInPlay[index], let point = portrait[index] else { return nil }
             let gap = track[index + 1].timestamp.timeIntervalSince(track[index].timestamp)
             return (point, min(max(0, gap), maximumSampleSeconds))
         }
@@ -182,9 +189,6 @@ public enum MatchAnalyzer {
             run.points = portrait[run.segment.pointRange].compactMap { $0 }
             return run
         }
-        let peaks = peakSpeeds(track)
-        let topSpeed = sustainedTopSpeed(speeds: peaks, timestamps: track.map(\.timestamp),
-                                         in: track.indices, where: { isPlaying[$0] })
 
         return MatchAnalytics(
             interval: interval,
@@ -197,13 +201,13 @@ public enum MatchAnalyzer {
             position: PositionAnalyzer.estimate(
                 points: onFieldTrack, projector: projector,
                 events: halves(of: interval, around: halftime), playingIntervals: playingIntervals),
-            loadMetrics: SoccerLoadMetrics.compute(track: track, playingIntervals: playingIntervals),
+            loadMetrics: SoccerLoadMetrics.compute(track: track, playingIntervals: playingIntervals, counted: (runs, isRunning)),
             distanceMeters: distance > 0 ? distance : nil,
-            topSpeedMetersPerSecond: topSpeed,
+            topSpeedMetersPerSecond: topSpeed(of: track, runs: runs, where: { isPlaying[$0] }),
             averageHeartRate: averageHeartRate, maximumHeartRate: maximumHeartRate,
             metersPerMinute: metersPerMinute(track: track, steps: steps, interval: interval, total: distance),
             attackDirection: direction,
-            pitchPath: pitchPath(track: track, portrait: portrait, isPlaying: isPlaying, start: interval.start),
+            pitchPath: pitchPath(track: track, portrait: portrait, isInPlay: isInPlay, start: interval.start),
             heat: PortraitHeat.compute(points: weighted),
             thirds: thirds(weighted),
             keyRuns: keyRuns)
@@ -272,7 +276,7 @@ public enum MatchAnalyzer {
         CGPoint(x: min(max(point.x, 0), 1), y: min(max(point.y, 0), 1))
     }
 
-    private static func pitchPath(track: [TrackPoint], portrait: [CGPoint?], isPlaying: [Bool],
+    private static func pitchPath(track: [TrackPoint], portrait: [CGPoint?], isInPlay: [Bool],
                                   start: Date) -> [PitchSample] {
         let speeds = rawPointSpeeds(track)
         var path: [PitchSample] = []
@@ -283,7 +287,7 @@ public enum MatchAnalyzer {
                   last.map({ date.timeIntervalSince($0) >= pathSampleSeconds }) ?? true else { continue }
             path.append(PitchSample(t: date.timeIntervalSince(start), x: Double(point.x), y: Double(point.y),
                                     speed: min(speeds[index], SpeedThresholds.plausibleMaximum),
-                                    onPitch: isPlaying[index]))
+                                    onPitch: isInPlay[index]))
             last = date
         }
         return path
