@@ -6,6 +6,8 @@
 	<array>
 		<string>com.nicemohawk.MatchTracker.refresh</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

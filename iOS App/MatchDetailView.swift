@@ -111,7 +111,7 @@ struct MatchDetailView: View {
         VStack(alignment: .leading, spacing: 32) {
             if let digest = detail.digest {
                 VStack(alignment: .leading, spacing: 14) {
-                    MatchNumbers(digest: digest)
+                    DigestNumbers(digest: digest)
                     if let headline = detail.headline {
                         Text(headline).font(.title3)
                     }

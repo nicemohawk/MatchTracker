@@ -7,11 +7,16 @@ import MatchTrackerKit
 
 @main
 struct MatchTrackerApp: App {
-    @StateObject private var environment = AppEnvironment()
+    @StateObject private var environment: AppEnvironment
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
         Self.registerBackgroundRefresh()
+        LiveActivityController.shared.observeMirroredMatches()
+        // Not left to the first window: the watch wakes the app in the background, without one.
+        let environment = AppEnvironment()
+        environment.connectivity.start()
+        _environment = StateObject(wrappedValue: environment)
     }
 
     var body: some Scene {
@@ -31,6 +36,7 @@ struct MatchTrackerApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        LiveActivityController.shared.appBecameActive()
                         Task { await AppEnvironment.current?.reconcile() }
                     case .background:
                         // Debounced cache writes flush now, before a possible process kill.
@@ -111,7 +117,8 @@ final class AppEnvironment: ObservableObject {
         matches.onNewMatches = { [weak uploads] summaries in
             uploads?.autoUpload(summaries)
         }
-        connectivity.onMatchRecordReceived = { [weak matches] _ in
+        connectivity.onMatchRecordReceived = { [weak matches] record in
+            LiveActivityController.shared.matchFinished(record)
             Task { await matches?.refresh() }
         }
         connectivity.onFieldReceived = { [weak fields] in
@@ -120,13 +127,13 @@ final class AppEnvironment: ObservableObject {
         connectivity.onLiveUpdate = { [weak self] update in
             guard let self else { return }
             liveMatches.ingest(update)
+            LiveActivityController.shared.show(liveMatches.state)
             uploads.relayLive(update)
         }
         AppEnvironment.current = self
     }
 
     func bootstrap() async {
-        connectivity.start()
         await uploads.bootstrapAPIKey()
 #if DEBUG
         // Headless diagnostic import: `-ImportDiagnostics YES` loads Documents/diagnostics-import.
@@ -166,6 +173,8 @@ final class AppEnvironment: ObservableObject {
 struct RootTabView: View {
     @Environment(LiveMatchStore.self) private var liveMatches
     @State private var selectedTab = AppTab.summary
+    @State private var showingLive = false
+    @State private var openedMatch: UUID?
     // First-run onboarding gate. Written once the cover finishes; existing installs (and the UI
     // tests that walk them) skip the cover entirely.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
@@ -175,6 +184,12 @@ struct RootTabView: View {
     var body: some View {
         tabs
             .tint(.green)
+            .systemLinks(showingLive: $showingLive,
+                         openMatch: { id in
+                             selectedTab = .summary
+                             openedMatch = id
+                         },
+                         openSeason: { selectedTab = .summary })
             .fullScreenCover(isPresented: .init(get: { !hasOnboarded },
                                                 set: { if $0 { hasOnboarded = false } })) {
                 OnboardingView()
@@ -185,15 +200,15 @@ struct RootTabView: View {
     private var tabs: some View {
         if #available(iOS 18.0, *) {
             TabView(selection: $selectedTab) {
-                Tab("Summary", systemImage: "soccerball", value: AppTab.summary) { HomeView() }
+                Tab("Summary", systemImage: "soccerball", value: AppTab.summary) { HomeView(openedMatch: $openedMatch) }
                 Tab("Matches", systemImage: "list.bullet", value: AppTab.matches) { MatchesView() }
                 Tab("Team", systemImage: "person.3.fill", value: AppTab.team) { TeamView() }
                 Tab(value: AppTab.search, role: .search) { MatchesView(isSearchTab: true) }
             }
-            .modifier(LiveAccessoryPresenter(isLive: liveMatches.isLive))
+            .modifier(LiveAccessoryPresenter(isLive: liveMatches.isLive, showingLive: $showingLive))
         } else {
             TabView(selection: $selectedTab) {
-                HomeView().tabItem { Label("Summary", systemImage: "soccerball") }.tag(AppTab.summary)
+                HomeView(openedMatch: $openedMatch).tabItem { Label("Summary", systemImage: "soccerball") }.tag(AppTab.summary)
                 MatchesView().tabItem { Label("Matches", systemImage: "list.bullet") }.tag(AppTab.matches)
                 TeamView().tabItem { Label("Team", systemImage: "person.3.fill") }.tag(AppTab.team)
             }
@@ -205,12 +220,13 @@ struct RootTabView: View {
 /// reserve an empty bar.
 private struct LiveAccessoryPresenter: ViewModifier {
     let isLive: Bool
+    @Binding var showingLive: Bool
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *), isLive {
             content
                 .tabBarMinimizeBehavior(.onScrollDown)
-                .tabViewBottomAccessory { LiveMatchAccessory() }
+                .tabViewBottomAccessory { LiveMatchAccessory(isPresented: $showingLive) }
         } else if #available(iOS 26.0, *) {
             content.tabBarMinimizeBehavior(.onScrollDown)
         } else {

@@ -21,6 +21,8 @@
 	<string>Save your match clips, pictures and replays to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Import sideline footage of your match so MatchTracker can auto-clip it around the moments your watch tagged.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

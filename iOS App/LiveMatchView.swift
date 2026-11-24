@@ -6,44 +6,58 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Sideline view of a match in progress, rendered from the watch's live stream — the app's
-/// adrenaline screen. The caller supplies the store and, when a field is known, a projector for
-/// the position dot and its comet trail.
+/// The match as it happens, for whoever is holding the phone. The scoreline and the clock first,
+/// then where they are, then three numbers and what's happened.
 struct LiveMatchView: View {
     let store: LiveMatchStore
+    /// Set when a caller already knows the field; otherwise it's worked out from the trail.
     var projector: FieldProjector?
+    /// For a sheet; pushed onto a stack it has a Back button already.
+    var showsClose = false
 
+    @EnvironmentObject private var fields: FieldsModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The score is the hero but must still fit beside itself at the largest text sizes.
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 88
     @State private var showingCamera = false
+
+    private let units = UnitSystem.current
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                if let update = store.latest {
-                    header(update)
-                    statBand(update)
-                    pitchCard(update)
-                    eventFeed
-                } else {
-                    ContentUnavailableView("Waiting for the watch…",
-                                           systemImage: "applewatch.radiowaves.left.and.right")
-                        .padding(.top, 60)
+            if let state = store.state {
+                VStack(alignment: .leading, spacing: 28) {
+                    hero(state)
+                    pitch(state)
+                    measures(state)
+                    eventList(state)
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 32)
+                .readableWidth()
+            } else {
+                ContentUnavailableView("No Live Match", systemImage: "applewatch",
+                                       description: Text("Start a match on your Apple Watch and it appears here."))
+                    .containerRelativeFrame(.vertical)
             }
-            .padding()
         }
-        .background(Theme.background.ignoresSafeArea())
-        .navigationTitle("Live Match")
+        .background(Color(uiColor: .systemBackground))
+        .navigationTitle("Live match")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Haptics.selection()
-                    showingCamera = true
-                } label: {
-                    Image(systemName: "video.fill")
+            if showsClose {
+                ToolbarItem(placement: .cancellationAction) {
+                    if #available(iOS 26.0, *) {
+                        Button(role: .close) { dismiss() }
+                    } else {
+                        Button("Close") { dismiss() }
+                    }
                 }
-                .tint(Theme.signal)
-                .accessibilityLabel("Record sideline video")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Record Video", systemImage: "video") { showingCamera = true }
             }
         }
         .fullScreenCover(isPresented: $showingCamera) {
@@ -53,268 +67,234 @@ struct LiveMatchView: View {
             // wall-clock start.
             SidelineCameraView(preassociatedMatchID: nil, liveStore: store)
         }
+        .sensoryFeedback(.impact, trigger: store.state?.score)
     }
 
-    // MARK: - Header
+    // MARK: Hero
 
-    private func header(_ update: LiveMatchUpdate) -> some View {
-        VStack(spacing: 8) {
-            HStack {
-                pitchStatusPill(update)
-                Spacer()
-                if store.isLive {
-                    HStack(spacing: 6) {
-                        LivePulseDot(diameter: 7)
-                        Text("LIVE").captionLabel().foregroundStyle(Theme.heart)
-                    }
-                } else {
-                    Label("Signal lost", systemImage: "wifi.slash")
-                        .font(.system(.caption, design: .rounded).weight(.semibold))
-                        .foregroundStyle(Theme.heart)
-                }
-            }
-            LiveScoreView(us: update.usGoals ?? 0, them: update.themGoals ?? 0)
-            elapsedText(update)
-                .font(.title3.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(18)
-        .background(
-            ZStack {
-                Theme.surface
-                Theme.turfFlow.opacity(0.10)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
-    }
-
-    private func pitchStatusPill(_ update: LiveMatchUpdate) -> some View {
-        let tint = update.onPitch ? Theme.turf : Theme.bench
-        return Label(update.onPitch ? "On pitch" : "On bench",
-                     systemImage: update.onPitch ? "figure.soccer" : "chair")
-            .font(.system(.subheadline, design: .rounded).bold())
-            .foregroundStyle(tint)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(Theme.chipFill(tint), in: Capsule())
-            .overlay(Capsule().strokeBorder(Theme.chipStroke(tint), lineWidth: 1))
-            .contentTransition(.symbolEffect(.replace))
-            .animation(.snappy, value: update.onPitch)
-    }
-
-    /// Extrapolates elapsed time between updates so the clock ticks smoothly.
-    private func elapsedText(_ update: LiveMatchUpdate) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            let drift = store.isLive
-                ? timeline.date.timeIntervalSince(store.lastReceivedAt ?? timeline.date)
-                : 0
-            Text(MatchTrackerFormat.hoursMinutesSeconds(update.elapsed + max(0, drift)))
-        }
-    }
-
-    // MARK: - Stat band
-
-    private func statBand(_ update: LiveMatchUpdate) -> some View {
-        HStack(spacing: 12) {
-            heroStat("figure.run",
-                     String(format: "%.2f", update.distanceMeters / 1000),
-                     "KM", Theme.pace)
-            heroStat("bolt.fill",
-                     "\(store.sprintCount)",
-                     "Sprints", Theme.sprint)
-            heroStat("heart.fill",
-                     update.heartRate.map { "\(Int($0))" } ?? "—",
-                     "BPM", Theme.heart)
-        }
-    }
-
-    private func heroStat(_ symbol: String, _ value: String, _ caption: String, _ tint: Color) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(.footnote.weight(.bold))
-                .foregroundStyle(tint)
-            Text(value)
-                .statNumeral()
-                .foregroundStyle(tint)
-                .contentTransition(.numericText())
-                .animation(.snappy, value: value)
-            Text(caption).captionLabel()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .metricTile(tint: tint)
-    }
-
-    // MARK: - Pitch
-
-    private func pitchCard(_ update: LiveMatchUpdate) -> some View {
-        Group {
-            if let projector {
-                Canvas { context, size in
-                    let rect = SoccerPitch.fittedRect(in: size)
-                    SoccerPitch.fillTurf(&context, rect: rect)
-                    SoccerPitch.draw(in: &context, rect: rect)
-
-                    // Project the last ~30 points into the fitted pitch rect for the comet trail.
-                    let trail: [CGPoint] = store.recentPoints.suffix(30).compactMap { point in
-                        guard let n = projector.normalizedPoint(for: point.coordinate) else { return nil }
-                        return CGPoint(x: rect.minX + n.x * rect.width, y: rect.minY + n.y * rect.height)
-                    }
-                    guard let head = trail.last else { return }
-                    let tint = update.onPitch ? Theme.signal : Theme.bench
-
-                    // Comet trail: segments fade and thin toward the tail.
-                    if trail.count > 1 {
-                        for index in 1..<trail.count {
-                            let t = Double(index) / Double(trail.count - 1)
-                            var segment = Path()
-                            segment.move(to: trail[index - 1])
-                            segment.addLine(to: trail[index])
-                            context.stroke(segment,
-                                           with: .color(tint.opacity(0.06 + 0.5 * t)),
-                                           style: StrokeStyle(lineWidth: 1 + 3 * t, lineCap: .round, lineJoin: .round))
-                        }
-                    }
-
-                    // Heat glow beneath the current position.
-                    context.fill(
-                        Path(ellipseIn: CGRect(x: head.x - 24, y: head.y - 24, width: 48, height: 48)),
-                        with: .radialGradient(Gradient(colors: [tint.opacity(0.38), .clear]),
-                                              center: head, startRadius: 0, endRadius: 24))
-
-                    // Position dot with a soft glow, then a bright core.
-                    context.drawLayer { layer in
-                        layer.addFilter(.shadow(color: tint.opacity(0.8), radius: 8))
-                        layer.fill(Path(ellipseIn: CGRect(x: head.x - 6, y: head.y - 6, width: 12, height: 12)),
-                                   with: .color(tint))
-                    }
-                    context.fill(Path(ellipseIn: CGRect(x: head.x - 3, y: head.y - 3, width: 6, height: 6)),
-                                 with: .color(.white.opacity(0.9)))
-                }
-            } else {
-                waitingForFieldLock
-            }
-        }
-        .frame(height: 200)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
-    }
-
-    /// Graceful placeholder while no field is matched: a dimmed pitch with a pulsing lock cue,
-    /// rather than a blank rectangle.
-    private var waitingForFieldLock: some View {
-        Canvas { context, size in
-            let rect = SoccerPitch.fittedRect(in: size)
-            SoccerPitch.fillTurf(&context, rect: rect)
-            SoccerPitch.draw(in: &context, rect: rect)
-        }
-        .opacity(0.5)
-        .overlay {
-            VStack(spacing: 8) {
-                Image(systemName: "scope")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Theme.signal)
-                    .symbolEffect(.pulse, options: .repeating)
-                Text("Waiting for field lock")
-                    .font(.subheadline.weight(.semibold))
-                Text("Live position appears once a field is matched")
-                    .font(.caption2)
+    private func hero(_ state: LiveMatchState) -> some View {
+        VStack(spacing: 4) {
+            if let us = state.goalsUs, let them = state.goalsThem {
+                Text("\(us)–\(them)")
+                    .font(.system(size: min(heroSize, 132), weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .animation(reduceMotion ? nil : .snappy, value: state.score)
+                    .accessibilityLabel(state.spokenScore)
+                clock(state, font: .system(.title, design: .rounded, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+            } else {
+                // Nobody has logged a goal, which isn't the same as 0–0.
+                clock(state, font: .system(size: min(heroSize, 132) * 0.8, weight: .bold, design: .rounded))
             }
-            .padding()
+            status(state)
+                .font(.headline)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+
+    private func clock(_ state: LiveMatchState, font: Font) -> some View {
+        LiveClock(store: store)
+            .font(font)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .accessibilityElement()
+            .accessibilityLabel("Match clock")
+            .accessibilityValue(UnitSystem.minutes(state.elapsed).spoken)
+    }
+
+    @ViewBuilder private func status(_ state: LiveMatchState) -> some View {
+        if state.hasEnded {
+            Label("Full time", systemImage: "flag.checkered")
+                .foregroundStyle(.secondary)
+        } else if !store.isLive {
+            Label {
+                Text("Last update at \(state.updatedAt, style: .time)")
+            } icon: {
+                Image(systemName: "wifi.slash")
+            }
+            .foregroundStyle(.secondary)
+        } else {
+            Label(state.status, systemImage: state.statusSymbol)
+                .foregroundStyle(state.isPlaying ? AnyShapeStyle(Theme.turf) : AnyShapeStyle(.secondary))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
     }
 
-    // MARK: - Events
+    // MARK: Pitch
 
-    private var eventFeed: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Recent")
-                .font(.headline)
-            if store.events.isEmpty {
-                Text("Nothing logged yet.")
+    private var fieldProjector: FieldProjector? {
+        if let projector { return projector }
+        let coordinates = store.recentPoints.suffix(30).map(\.coordinate)
+        guard !coordinates.isEmpty else { return nil }
+        return fields.store.bestMatch(for: coordinates).map { FieldProjector(rectangle: $0.rectangle) }
+    }
+
+    /// Only drawn when there's a position to draw on it.
+    @ViewBuilder private func pitch(_ state: LiveMatchState) -> some View {
+        if let projector = fieldProjector {
+            let trail = store.recentPoints.suffix(60).compactMap { projector.normalizedPoint(for: $0.coordinate) }
+            if !trail.isEmpty {
+                LivePitch(trail: trail, isOn: state.onPitch != false)
+                    .aspectRatio(SoccerPitch.aspect, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityElement()
+                    .accessibilityLabel("Pitch. \(Self.whereabouts(trail.last)).")
+            }
+        }
+    }
+
+    private static func whereabouts(_ point: CGPoint?) -> String {
+        guard let point else { return "Position unknown" }
+        let along = point.x < 1 / 3 ? "left third" : point.x > 2 / 3 ? "right third" : "middle third"
+        let across = point.y < 1 / 3 ? ", near the top touchline" : point.y > 2 / 3 ? ", near the bottom touchline" : ""
+        return "Currently in the \(along)\(across)"
+    }
+
+    // MARK: Numbers
+
+    private func measures(_ state: LiveMatchState) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        let distance = units.roughDistance(state.distanceMeters)
+        let speed = store.isLive ? store.latest?.currentSpeed.map { units.speed($0) } : nil
+        return layout {
+            measure("Distance", value: state.distanceMeters > 0 ? distance.value : "—",
+                    unit: state.distanceMeters > 0 ? distance.unit : "", spoken: distance.spoken)
+            measure("Heart rate", value: store.isLive ? state.heartRate.map(String.init) ?? "—" : "—",
+                    unit: state.heartRate == nil || !store.isLive ? "" : "bpm",
+                    spoken: state.heartRate.map { "\($0) beats per minute" } ?? "unknown",
+                    tint: Theme.heart)
+            measure("Speed", value: speed?.value ?? "—", unit: speed?.unit ?? "", spoken: speed?.spoken ?? "unknown")
+        }
+    }
+
+    private func measure(_ title: String, value: String, unit: String, spoken: String,
+                         tint: Color = .primary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.system(.title, design: .rounded, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(tint)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .animation(reduceMotion ? nil : .snappy, value: value)
+                Text(unit)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(recentEvents) { event in
-                        eventChip(event)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: recentEvents.map(\.id))
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .themedCard(cornerRadius: 16)
-    }
-
-    /// Last handful of events, newest first, so the freshest chip springs in at the top.
-    private var recentEvents: [MatchEvent] {
-        store.events.suffix(6).reversed()
-    }
-
-    private func eventChip(_ event: MatchEvent) -> some View {
-        let tint = event.kind.tint
-        return HStack(spacing: 10) {
-            Image(systemName: event.kind.systemImage)
-                .font(.footnote.weight(.bold))
-                .foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Theme.chipFill(tint)))
-            Text(event.kind.title)
-                .font(.subheadline.weight(.medium))
-            Spacer(minLength: 8)
-            Text(event.date, style: .time)
-                .font(.caption.monospacedDigit())
+            Text(title)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement()
+        .accessibilityLabel("\(title), \(value == "—" ? "unknown" : spoken)")
+    }
+
+    // MARK: Events
+
+    @ViewBuilder private func eventList(_ state: LiveMatchState) -> some View {
+        let shown = store.events.filter { $0.kind != .matchStart }.suffix(8).reversed()
+        if !shown.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("What's happened")
+                    .font(.title2.bold())
+                    .padding(.bottom, 8)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(shown) { event in
+                    HStack(spacing: 12) {
+                        Image(systemName: event.kind.systemImage)
+                            .foregroundStyle(Self.tint(event.kind))
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        Text(Self.sentence(event.kind))
+                        Spacer(minLength: 8)
+                        Text(Self.minute(event.date, since: state.startDate))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.body)
+                    .frame(minHeight: 44)
+                    .accessibilityElement(children: .combine)
+                    .transition(.opacity)
+                }
+            }
+            .animation(reduceMotion ? nil : .default, value: store.events.count)
+        }
+    }
+
+    /// By the wall clock since kickoff, as a referee counts.
+    private static func minute(_ date: Date, since start: Date) -> String {
+        "\(max(0, Int(date.timeIntervalSince(start) / 60)) + 1)′"
+    }
+
+    private static func tint(_ kind: MatchEventKind) -> Color {
+        switch kind {
+        case .goalForUs, .goalMine, .assist: return Theme.turf
+        case .goalAgainstUs, .redCard: return Theme.loss
+        case .yellowCard: return Theme.cardYellow
+        default: return .secondary
+        }
+    }
+
+    private static func sentence(_ kind: MatchEventKind) -> String {
+        switch kind {
+        case .matchStart: return "Kickoff"
+        case .matchEnd: return "Full time"
+        case .periodStart: return "Play restarted"
+        case .periodEnd: return "Half-time"
+        case .subIn: return "Came on"
+        case .subOut: return "Came off"
+        case .goalForUs: return "Goal"
+        case .goalMine: return "Scored"
+        case .goalAgainstUs: return "Goal against"
+        case .assist: return "Assist"
+        case .flag: return "Moment flagged"
+        case .yellowCard: return "Yellow card"
+        case .redCard: return "Red card"
+        case .foul: return "Foul"
+        case .turnover: return "Turnover"
+        case .timeout: return "Timeout"
+        }
     }
 }
 
-// MARK: - Live score
-
-/// The big live scoreline: rolling `numericText` digits, a semantic tint (turf when ahead or level,
-/// loss when behind) and a brief scale "pop" whenever either side scores.
-private struct LiveScoreView: View {
-    let us: Int
-    let them: Int
-    @State private var pop = false
+/// The pitch with the last few minutes of movement trailing off behind the player.
+private struct LivePitch: View {
+    /// Normalized field positions, oldest first.
+    let trail: [CGPoint]
+    let isOn: Bool
 
     var body: some View {
-        Text("\(us)–\(them)")
-            .heroNumeral()
-            .contentTransition(.numericText())
-            .foregroundStyle(tint)
-            .animation(.snappy, value: us)
-            .animation(.snappy, value: them)
-            .scaleEffect(pop ? 1.12 : 1)
-            .onChange(of: us) { animatePop() }
-            .onChange(of: them) { animatePop() }
-    }
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.pitchTurfBottom))
+            let rect = SoccerPitch.fittedRect(in: size)
+            SoccerPitch.fillTurf(&context, rect: rect)
+            SoccerPitch.draw(in: &context, rect: rect)
 
-    private var tint: Color {
-        if us > them { return Theme.turf }
-        if us < them { return Theme.loss }
-        return .primary
-    }
-
-    private func animatePop() {
-        Haptics.impact(.rigid)
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.45)) { pop = true }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.16)) { pop = false }
+            let points = trail.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) }
+            let tint = isOn ? Color(red: 0.188, green: 0.820, blue: 0.345) : Color(white: 0.7)
+            for index in points.indices.dropFirst() {
+                let recency = Double(index) / Double(points.count - 1)
+                var segment = Path()
+                segment.move(to: points[index - 1])
+                segment.addLine(to: points[index])
+                context.stroke(segment, with: .color(tint.opacity(0.1 + 0.7 * recency)),
+                               style: StrokeStyle(lineWidth: 1.5 + 3 * recency, lineCap: .round, lineJoin: .round))
+            }
+            guard let head = points.last else { return }
+            let dot = Path(ellipseIn: CGRect(x: head.x - 8, y: head.y - 8, width: 16, height: 16))
+            context.fill(dot, with: .color(tint))
+            context.stroke(dot, with: .color(.white), lineWidth: 3)
+        }
     }
 }

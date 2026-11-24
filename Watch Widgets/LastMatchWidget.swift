@@ -1,3 +1,4 @@
+import RelevanceKit
 import SwiftUI
 import WidgetKit
 import MatchTrackerKit
@@ -9,27 +10,44 @@ struct LastMatchEntry: TimelineEntry {
 }
 
 struct LastMatchProvider: TimelineProvider {
-    /// Reads the shared snapshot from the app-group container. Returns nil when no match exists yet.
-    private func loadSnapshot() -> LastMatchSnapshot? {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: AppGroup.identifier) else { return nil }
-        return LastMatchSnapshot.load(from: container)
-    }
-
     func placeholder(in context: Context) -> LastMatchEntry {
-        LastMatchEntry(date: Date(), snapshot: nil)
+        LastMatchEntry(date: Date(), snapshot: .sample)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (LastMatchEntry) -> Void) {
-        completion(LastMatchEntry(date: Date(), snapshot: loadSnapshot()))
+        let snapshot = WidgetStorage.lastMatch
+        // The gallery sells the widget; on a face nothing is ever made up.
+        completion(LastMatchEntry(date: Date(), snapshot: context.isPreview ? snapshot ?? .sample : snapshot))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<LastMatchEntry>) -> Void) {
-        let entry = LastMatchEntry(date: Date(), snapshot: loadSnapshot())
-        // The watch app also calls WidgetCenter.reloadAllTimelines() after each match (Wave-2);
-        // this periodic refresh keeps the relative date honest between reloads.
-        let refresh = Date().addingTimeInterval(30 * 60)
-        completion(Timeline(entries: [entry], policy: .after(refresh)))
+        // The app reloads this after every match.
+        completion(Timeline(entries: [LastMatchEntry(date: Date(), snapshot: WidgetStorage.lastMatch)], policy: .never))
+    }
+
+    /// The rest of match day.
+    @available(watchOS 11.0, *)
+    func relevance() async -> WidgetRelevance<Void> {
+        guard let end = WidgetStorage.lastMatch?.endDate else { return WidgetRelevance([]) }
+        return WidgetRelevance([WidgetRelevanceAttribute(context: .date(from: end, to: end.addingTimeInterval(12 * 3600)))])
+    }
+}
+
+extension LastMatchSnapshot {
+    /// The gallery's example.
+    static var sample: LastMatchSnapshot {
+        LastMatchSnapshot(matchID: UUID(), endDate: Date(), fieldName: "Riverside Park", durationSeconds: 5400,
+                          timeOnPitchSeconds: 4320, distanceMeters: 7400, goalsUs: 3, goalsThem: 1, sprintCount: 12)
+    }
+
+    /// The watch writes 0–0 both for a goalless draw and for a match nobody kept score in, so 0–0
+    /// says nothing.
+    var result: String? {
+        goalsUs + goalsThem > 0 ? MatchResultText.title(goalsUs: goalsUs, goalsThem: goalsThem) : nil
+    }
+
+    var distance: UnitSystem.Measure? {
+        distanceMeters > 0 ? UnitSystem.current.roughDistance(distanceMeters) : nil
     }
 }
 
@@ -38,65 +56,39 @@ struct LastMatchView: View {
     let snapshot: LastMatchSnapshot?
 
     var body: some View {
-        switch family {
-        case .accessoryInline:
-            inline
-        default:
-            rectangular
-        }
-    }
-
-    @ViewBuilder private var inline: some View {
         if let snapshot {
-            // Inline complications are rendered monochrome by the system, so no tint here.
-            Label("\(score(snapshot)) · \(distance(snapshot))", systemImage: "soccerball")
-        } else {
-            Text("No matches yet")
-        }
-    }
-
-    @ViewBuilder private var rectangular: some View {
-        if let snapshot {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Image(systemName: "soccerball")
-                        .foregroundStyle(WidgetPalette.turf)
-                    Text(score(snapshot))
+            let minutes = UnitSystem.minutes(snapshot.timeOnPitchSeconds)
+            switch family {
+            case .accessoryInline:
+                Label([snapshot.result, snapshot.distance?.text ?? minutes.text].compactMap { $0 }.joined(separator: " · "),
+                      systemImage: "soccerball")
+            default:
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(snapshot.result ?? "Last match")
                         .font(.headline)
-                    Spacer(minLength: 0)
-                    Text(snapshot.endDate, style: .relative)
-                        .font(.caption2)
+                        .foregroundStyle(snapshot.goalsUs > snapshot.goalsThem
+                                         ? AnyShapeStyle(WidgetPalette.turf) : AnyShapeStyle(.primary))
+                        .widgetAccentable()
+                    Text([snapshot.distance?.text, minutes.text].compactMap { $0 }.joined(separator: " · "))
+                        .font(.body)
+                    Text([snapshot.endDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()),
+                          snapshot.fieldName].compactMap { $0 }.joined(separator: " · "))
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("\(distance(snapshot)) · \(timeOnPitch(snapshot))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let fieldName = snapshot.fieldName {
-                    Text(fieldName)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement()
+                .accessibilityLabel([snapshot.result, snapshot.distance?.spoken, minutes.spoken]
+                    .compactMap { $0 }.joined(separator: ", "))
             }
         } else {
             Label("No matches yet", systemImage: "soccerball")
         }
     }
-
-    private func score(_ snapshot: LastMatchSnapshot) -> String {
-        "\(snapshot.goalsUs)\u{2013}\(snapshot.goalsThem)"   // en dash, e.g. "2–1"
-    }
-
-    private func distance(_ snapshot: LastMatchSnapshot) -> String {
-        String(format: "%.1f km", snapshot.distanceMeters / 1000)
-    }
-
-    private func timeOnPitch(_ snapshot: LastMatchSnapshot) -> String {
-        "\(Int((snapshot.timeOnPitchSeconds / 60).rounded())) min"
-    }
 }
 
-/// Compact recap of the wearer's most recent match for the Smart Stack.
 struct LastMatchWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "LastMatchWidget", provider: LastMatchProvider()) { entry in

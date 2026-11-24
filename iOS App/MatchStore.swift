@@ -133,7 +133,10 @@ final class MatchStore: ObservableObject {
     private var badgeCacheLoadTask: Task<Void, Never>?
     /// Every match's digest, for lists, seasons and comparisons: nothing that reads these has to
     /// open a route. Loaded from disk at launch, filled and refreshed in the background.
-    @Published private(set) var digests: [UUID: MatchDigest] = [:]
+    @Published private(set) var digests: [UUID: MatchDigest] = [:] {
+        didSet { publishSurfaces() }
+    }
+    private var publishTask: Task<Void, Never>?
     private var digestCache = DigestCache()
     private nonisolated static let digestCacheFileName = "matchDigests.json"
     private var digestLoadTask: Task<Void, Never>?
@@ -467,6 +470,17 @@ final class MatchStore: ObservableObject {
     }
 
     /// The most interesting true thing about a match. Nil before its digest, or when there's nothing to say.
+    /// Widgets, Siri and Spotlight follow the digests, once per burst: filling a history changes
+    /// them hundreds of times.
+    private func publishSurfaces() {
+        publishTask?.cancel()
+        publishTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self else { return }
+            SystemSurfaces.publish(digests: Array(digests.values))
+        }
+    }
+
     /// The most recent match, if any has been read yet.
     var latestDigest: MatchDigest? { digests.values.max { $0.startDate < $1.startDate } }
 

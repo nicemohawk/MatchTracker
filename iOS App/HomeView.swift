@@ -7,6 +7,9 @@ import SwiftUI
 
 /// The Summary tab: the last match, then the season it belongs to.
 struct HomeView: View {
+    /// A match to open, from a widget, Siri or a notification. Cleared once opened.
+    @Binding var openedMatch: UUID?
+
     @EnvironmentObject private var matches: MatchStore
     @EnvironmentObject private var fields: FieldsModel
     @State private var path = NavigationPath()
@@ -47,6 +50,11 @@ struct HomeView: View {
             }
             .refreshable { await matches.refresh() }
             .sheet(isPresented: $showingSettings) { SettingsView() }
+            .onChange(of: openedMatch, initial: true) { _, id in
+                guard let id else { return }
+                path = NavigationPath([id])
+                openedMatch = nil
+            }
         }
     }
 
@@ -179,7 +187,7 @@ struct LastMatchCard: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                MatchNumbers(digest: digest)
+                DigestNumbers(digest: digest)
                 if let headline {
                     Text(headline).font(.body)
                 }
@@ -195,7 +203,7 @@ struct LastMatchCard: View {
 }
 
 /// The three numbers a match is remembered by. Fewer when fewer are known.
-struct MatchNumbers: View {
+struct DigestNumbers: View {
     let digest: MatchDigest
 
     private var numbers: [(value: String, unit: String?, spoken: String)] {
