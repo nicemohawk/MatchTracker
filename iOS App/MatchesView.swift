@@ -16,6 +16,7 @@ struct MatchesView: View {
     @State private var filter = MatchFilter()
     @State private var query = ""
     @State private var pendingDelete: MatchSummary?
+    @Namespace private var transition
     @State private var sections: [MatchListSection] = []
     @State private var hasBuilt = false
 
@@ -40,7 +41,7 @@ struct MatchesView: View {
                 }
             } else {
                 NavigationStack(path: $path) {
-                    list.navigationDestination(for: UUID.self) { detail($0) }
+                    list.navigationDestination(for: UUID.self) { id in detail(id).zoomDestination(id: id, in: transition) }
                 }
             }
         }
@@ -63,7 +64,7 @@ struct MatchesView: View {
     }
 
     private var list: some View {
-        MatchList(sections: sections, selection: horizontalSizeClass == .regular ? $selection : nil) { pendingDelete = $0 }
+        MatchList(sections: sections, transition: transition, selection: horizontalSizeClass == .regular ? $selection : nil) { pendingDelete = $0 }
             .overlay { emptyState }
             .navigationTitle(isSearchTab ? "Search" : "Matches")
             .modifier(Searching(isActive: isSearchTab, text: $query))
@@ -71,6 +72,7 @@ struct MatchesView: View {
             .task(id: ListKey(revision: matches.contentVersion, digests: matches.digestRevision, filter: filter, query: query)) {
                 sections = MatchListSection.build(from: matches, filter: filter, query: query)
                 hasBuilt = true
+                if selection == nil, !isSearchTab { selection = sections.first?.items.first?.id }
             }
             .refreshable { await matches.refresh() }
             .toolbar {
@@ -116,6 +118,7 @@ private struct Searching: ViewModifier {
 
 struct MatchList: View {
     let sections: [MatchListSection]
+    let transition: Namespace.ID
     var selection: Binding<UUID?>?
     let onDelete: (MatchSummary) -> Void
 
@@ -123,19 +126,18 @@ struct MatchList: View {
         // A selection binding on a list inside a stack swallows the taps its links need.
         Group {
             if let selection {
-                List(selection: selection) { rows }
+                List(selection: selection) { rows }.listStyle(.sidebar)
             } else {
-                List { rows }
+                List { rows }.listStyle(.insetGrouped)
             }
         }
-        .listStyle(.insetGrouped)
     }
 
     private var rows: some View {
         ForEach(sections) { section in
             Section(section.title) {
                 ForEach(section.items) { item in
-                    NavigationLink(value: item.id) { MatchRow(item: item) }
+                    NavigationLink(value: item.id) { MatchRow(item: item, transition: transition) }
                         .swipeActions {
                             Button("Delete", systemImage: "trash", role: .destructive) { onDelete(item.summary) }
                         }
@@ -150,15 +152,14 @@ struct MatchList: View {
 
 struct MatchRow: View {
     let item: MatchListSection.Item
+    let transition: Namespace.ID
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 16) {
             if !dynamicTypeSize.isAccessibilitySize { thumbnail }
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .font(.headline)
-                    .monospacedDigit()
+                Text(item.title).font(.headline)
                 Text(item.subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -168,8 +169,8 @@ struct MatchRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            if let result = item.digest?.result {
-                ResultMark(result: result)
+            if let digest = item.digest, let result = digest.result, let us = digest.goalsUs, let them = digest.goalsThem {
+                ScoreMark(result: result, us: us, them: them)
             }
         }
         .padding(.vertical, 6)
@@ -182,6 +183,7 @@ struct MatchRow: View {
             HeatPitch(heat: PitchHeat(digestHeat: heat))
                 .frame(width: 44, height: 66)
                 .clipShape(.rect(cornerRadius: 8))
+                .zoomSource(id: item.id, in: transition)
                 .accessibilityHidden(true)
         } else {
             Image(systemName: item.symbolName)
@@ -194,18 +196,19 @@ struct MatchRow: View {
     }
 }
 
-/// W, D or L — a letter as well as a color.
-struct ResultMark: View {
+/// The score, in the color of the result.
+private struct ScoreMark: View {
     let result: MatchDigest.Result
+    let us: Int
+    let them: Int
 
     var body: some View {
-        Text(letter)
-            .font(.system(.headline, design: .rounded, weight: .bold))
+        Text("\(us)–\(them)")
+            .font(.system(.title3, design: .rounded, weight: .bold))
+            .monospacedDigit()
             .foregroundStyle(color)
-            .accessibilityLabel(word)
+            .accessibilityLabel("\(word) \(us) \(them)")
     }
-
-    private var letter: String { String(word.prefix(1)) }
 
     private var word: String {
         switch result {
@@ -312,14 +315,13 @@ struct MatchListSection: Identifiable {
 
         private var format: MatchTrackerKit.MatchFormat { summary.record?.format ?? digest?.format ?? .match }
 
-        var title: String { digest?.scoreline ?? (digest?.opponent.map { "vs \($0)" }) ?? digest?.fieldName ?? format.title }
+        var title: String { digest?.place ?? format.title }
 
         var subtitle: String {
             let day = summary.startDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-            let opponent = digest?.scoreline == nil ? nil : digest?.opponent.map { "vs \($0)" }
             let place = title == digest?.fieldName ? nil : digest?.fieldName
             let kind = format == .match || title == format.title ? nil : format.title
-            return [day, opponent, place, kind].compactMap { $0 }.joined(separator: " · ")
+            return [day, place, kind].compactMap { $0 }.joined(separator: " · ")
         }
 
         var numbers: String {

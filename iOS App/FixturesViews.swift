@@ -170,7 +170,7 @@ struct FixturesListView: View {
                     }
                 } actions: {
                     ChooseCalendarButton(store: store)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominentAction)
                 }
             } else if store.upcoming.isEmpty && store.hasLoaded {
                 ContentUnavailableView {

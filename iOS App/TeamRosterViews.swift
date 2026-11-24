@@ -104,7 +104,7 @@ struct TeamLeaderboardSections: View {
                     Text(message)
                 } actions: {
                     Button("Try Again") { Task { await team.load(code: settings.teamCode) } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominentAction)
                 }
             }
         case .loaded where team.season?.players.isEmpty ?? true:
@@ -117,7 +117,7 @@ struct TeamLeaderboardSections: View {
                     ShareLink(item: TeamInvite(code: settings.teamCode, name: settings.teamName(orNil: team.season?.teamName)).message) {
                         Text("Invite Teammates")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.prominentAction)
                 }
             }
         case .loaded:

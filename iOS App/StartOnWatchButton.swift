@@ -45,7 +45,7 @@ final class StartOnWatch {
 }
 
 /// "Start on Apple Watch". Draws nothing when there's no watch with the app on it. Style it like any
-/// button: `StartOnWatchButton().buttonStyle(.borderedProminent)`.
+/// button: `StartOnWatchButton().buttonStyle(.prominentAction)`.
 struct StartOnWatchButton: View {
     @State private var model = StartOnWatch()
     @State private var isAvailable = StartOnWatch.isAvailable

@@ -179,7 +179,7 @@ public enum MatchHeadline {
         if bests.contains(.distance), let distance = digest.distanceMeters {
             return "The most ground you've covered in a match: \(units.distance(distance).text)."
         }
-        if digest.myGoals >= 3 { return "A hat-trick." }
+        if let scoring = scoring(digest) { return scoring }
         if bests.contains(.sprints), let sprints = digest.sprintCount {
             return "More sprints than any match before: \(sprints)."
         }
@@ -191,13 +191,27 @@ public enum MatchHeadline {
             .sorted { $0.startDate > $1.startDate }
             .prefix(8)
             .compactMap(\.distancePerHour)
-        guard peers.count >= 3, let pace = digest.distancePerHour else {
-            return digest.myGoals > 0 ? (digest.myGoals == 1 ? "You scored." : "You scored \(digest.myGoals).") : nil
-        }
+        guard peers.count >= 3, let pace = digest.distancePerHour else { return nil }
         let usual = peers.reduce(0, +) / Double(peers.count)
         let difference = (pace - usual) * digest.secondsOnPitch / 3600
-        if abs(pace - usual) / usual < 0.05 { return "About as much running as usual." }
+        // As usual isn't news.
+        guard abs(pace - usual) / usual >= 0.05 else { return nil }
         let amount = units.distance(abs(difference)).text
         return difference > 0 ? "You covered \(amount) more than usual." : "You covered \(amount) less than usual."
+    }
+
+    private static func scoring(_ digest: MatchDigest) -> String? {
+        switch (digest.myGoals, digest.myAssists) {
+        case (0, 0): return nil
+        case (0, 1): return "You set up a goal."
+        case (0, let assists): return "You set up \(assists) goals."
+        case (3, _): return "A hat-trick."
+        case (1, 0): return "You scored."
+        case (2, 0): return "You scored twice."
+        case (let goals, 0): return "You scored \(goals)."
+        case (1, 1): return "You scored and set one up."
+        case (let goals, let assists):
+            return "You scored \(goals == 2 ? "twice" : "\(goals)") and set up \(assists)."
+        }
     }
 }

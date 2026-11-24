@@ -75,7 +75,7 @@ struct TeamView: View {
                 Button { sheet = .join } label: {
                     Text("Join a Team").frame(minWidth: 200)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.prominentAction)
                 Button { sheet = .create } label: {
                     Text("Create a Team").frame(minWidth: 200)
                 }

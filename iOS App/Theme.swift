@@ -240,3 +240,19 @@ struct PrimaryActionStyle: ButtonStyle {
 extension ButtonStyle where Self == PrimaryActionStyle {
     static var primaryAction: PrimaryActionStyle { PrimaryActionStyle() }
 }
+
+/// `.borderedProminent` with a label that can be read on the bright green of dark mode.
+struct ProminentActionStyle: PrimitiveButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button(role: configuration.role, action: configuration.trigger) {
+            configuration.label.foregroundStyle(isEnabled ? Theme.onTurf : Theme.secondaryLabel)
+        }
+        .buttonStyle(.borderedProminent)
+    }
+}
+
+extension PrimitiveButtonStyle where Self == ProminentActionStyle {
+    static var prominentAction: ProminentActionStyle { ProminentActionStyle() }
+}

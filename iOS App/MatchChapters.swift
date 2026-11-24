@@ -206,14 +206,11 @@ struct EffortChapter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Effort").font(.title2.bold())
-            if let word = Self.word(for: detail.digest?.effort) {
-                Text(word).font(.title3)
-            }
+            EffortVerdict(workout: detail.workout, measured: Self.word(for: detail.digest?.effort))
             if !detail.heartRateSeries.isEmpty {
                 HeartRateChart(series: detail.heartRateSeries, start: detail.matchStart, halftime: analytics.halftime)
                     .frame(height: 180)
             }
-            EffortRatingRow(workout: detail.workout)
             NavigationLink {
                 AllNumbersView(detail: detail, analytics: analytics)
             } label: {

@@ -74,7 +74,7 @@ private struct CoachLivePane: View {
                     Text(message)
                 } actions: {
                     Button("Try Again") { Task { await coach.refreshLive() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominentAction)
                 }
             case .loaded:
                 ContentUnavailableView("Nobody's playing right now", systemImage: "figure.soccer",
@@ -221,7 +221,7 @@ private struct CoachMinutesPane: View {
                 Text(message)
             } actions: {
                 Button("Try Again") { Task { await coach.loadHistory() } }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.prominentAction)
             }
         case .loaded where coach.matches.isEmpty:
             ContentUnavailableView("No matches to count", systemImage: "clock",
@@ -360,7 +360,7 @@ private struct CoachEventsPane: View {
                 Text(message)
             } actions: {
                 Button("Try Again") { Task { await coach.loadHistory() } }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.prominentAction)
             }
         case .loaded where coach.keyEvents.isEmpty:
             ContentUnavailableView("No events yet", systemImage: "flag",

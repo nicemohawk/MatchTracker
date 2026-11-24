@@ -109,7 +109,7 @@ final class DesignCapture: XCTestCase {
             app.tabBars.buttons["Matches"].tap()
             app.collectionViews.cells.element(boundBy: 3).tap()
             sleep(4)
-            let rate = app.buttons["Rate your effort"]
+            let rate = app.buttons["Rate your effort"].firstMatch
             for _ in 0..<5 { app.swipeUp() }
             sleep(1)
             screenshot("30-effort-\(pass)")

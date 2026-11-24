@@ -5,14 +5,16 @@ import HealthKit
 import MatchTrackerKit
 import SwiftUI
 
-/// Where a match's effort is rated, and read once it has been. Nothing without a saved workout to
-/// rate, or before iOS 18.
-struct EffortRatingRow: View {
+/// How hard it was, in one word: the player's own once they've said, the heart's until then.
+struct EffortVerdict: View {
     let workout: HKWorkout?
+    let measured: String?
 
     var body: some View {
         if #available(iOS 18.0, *), let workout {
-            RatedEffort(workout: workout)
+            RatedEffort(workout: workout, measured: measured)
+        } else if let measured {
+            Text(measured).font(.title3)
         }
     }
 }
@@ -20,26 +22,22 @@ struct EffortRatingRow: View {
 @available(iOS 18.0, *)
 private struct RatedEffort: View {
     let workout: HKWorkout
+    let measured: String?
     @State private var score: Int?
     @State private var isRating = false
 
     var body: some View {
-        Button { isRating = true } label: {
-            HStack {
-                if let score {
-                    Text("You rated it")
-                    Spacer()
-                    Text("\(EffortRating.word(for: score)), \(score)").foregroundStyle(.secondary).monospacedDigit()
-                } else {
-                    Text("Rate your effort").foregroundStyle(.tint)
-                    Spacer()
-                }
-                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+        HStack(alignment: .firstTextBaseline) {
+            if let score {
+                Text("\(EffortRating.word(for: score)), \(score) of 10").font(.title3).monospacedDigit()
+            } else if let measured {
+                Text(measured).font(.title3)
             }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+            Spacer()
+            Button(score == nil ? "Rate" : "Change") { isRating = true }
+                .accessibilityLabel(score == nil ? "Rate your effort" : "Change your effort rating")
         }
-        .buttonStyle(.plain)
+        .frame(minHeight: 44)
         .task(id: workout.uuid) { score = await EffortRating.score(of: workout, in: HealthKitService.shared.healthStore) }
         .sheet(isPresented: $isRating) {
             RateEffortSheet(workout: workout, score: $score)

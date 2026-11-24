@@ -262,11 +262,11 @@ private struct ShareReplayView: View {
                     .frame(minHeight: 50)
                 case .stopped:
                     Button { attempt = (attempt ?? 0) + 1 } label: { Text("Make Replay").frame(maxWidth: .infinity) }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .buttonStyle(.prominentAction).controlSize(.large)
                 case .failed(let message):
                     Text(message).font(.footnote).foregroundStyle(.secondary)
                     Button { attempt = (attempt ?? 0) + 1 } label: { Text("Try Again").frame(maxWidth: .infinity) }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .buttonStyle(.prominentAction).controlSize(.large)
                 case .ready(let url):
                     ShareActions(isReady: true) {
                         ShareLink(item: ShareableMovie(url: url),
@@ -361,7 +361,7 @@ private struct ShareActions<Link: View>: View {
     @State private var didSave = false
     @State private var problem: String?
 
-    private var shareButton: some View { link.buttonStyle(.borderedProminent) }
+    private var shareButton: some View { link.buttonStyle(.prominentAction) }
 
     private var saveButton: some View {
         Button {

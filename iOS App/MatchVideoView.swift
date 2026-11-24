@@ -39,7 +39,7 @@ struct MatchVideoView: View {
                     Text("Prop a phone by the touchline. Everything you flag on your watch becomes a clip.")
                 } actions: {
                     Button("Film with This iPhone") { isFilming = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominentAction)
                         .controlSize(.large)
                     sourcePicker
                 }
@@ -301,7 +301,7 @@ private struct LineUpView: View {
                 } label: {
                     Text("It Happens Here").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.prominentAction)
                 .controlSize(.large)
                 .padding()
             }

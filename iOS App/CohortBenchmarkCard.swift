@@ -47,7 +47,7 @@ struct CohortBenchmarkView: View {
                 Text(message)
             } actions: {
                 Button("Try Again") { Task { await load() } }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.prominentAction)
             }
         case .loaded(let benchmark):
             let metrics = Self.metrics(benchmark.percentiles)

@@ -62,7 +62,7 @@ struct FormationView: View {
                     Text(message)
                 } actions: {
                     Button("Try Again") { Task { await board.load() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominentAction)
                 }
             case .loaded where board.squad.isEmpty:
                 ContentUnavailableView("No squad yet", systemImage: "sportscourt",
@@ -74,7 +74,7 @@ struct FormationView: View {
                     Text("One appears after five teammates have shared matches. You can also set one up yourself.")
                 } actions: {
                     Button("Set Up by Hand") { board.setUpByHand() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominentAction)
                 }
             }
         }

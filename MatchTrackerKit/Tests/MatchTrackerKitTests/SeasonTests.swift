@@ -56,10 +56,20 @@ final class SeasonTests: XCTestCase {
         let history = (0..<4).map { digest($0, distance: 6000, speed: 8) }
             + [digest(4, distance: 100, speed: 8, format: .indoor)]
         // Half the minutes and half the distance is the same pace, not "less".
-        XCTAssertEqual(MatchHeadline.make(for: digest(9, distance: 3000, speed: 7, minutes: 45), among: history),
-                       "About as much running as usual.")
+        XCTAssertNil(MatchHeadline.make(for: digest(9, distance: 3000, speed: 7, minutes: 45), among: history))
         XCTAssertEqual(MatchHeadline.make(for: digest(9, distance: 5000, speed: 7), among: history, units: .metric),
                        "You covered 1.00 km less than usual.")
+    }
+
+    func testScoringOutranksRunning() {
+        let history = (0..<4).map { digest($0, distance: 6000, speed: 8) }
+        var latest = digest(9, distance: 5000, speed: 7)
+        latest.myGoals = 2
+        XCTAssertEqual(MatchHeadline.make(for: latest, among: history), "You scored twice.")
+        latest.myAssists = 1
+        XCTAssertEqual(MatchHeadline.make(for: latest, among: history), "You scored twice and set up 1.")
+        latest.myGoals = 3
+        XCTAssertEqual(MatchHeadline.make(for: latest, among: history), "A hat-trick.")
     }
 
     func testHeadlineSaysNothingWithoutHistory() {

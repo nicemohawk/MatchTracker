@@ -1,7 +1,6 @@
 // HomeView.swift
 // MatchTracker
 
-import Charts
 import MatchTrackerKit
 import SwiftUI
 
@@ -15,7 +14,6 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @State private var showingSettings = false
     @State private var selectedTerm: SeasonSummary.Term?
-    @State private var selectedDay: Date?
     @State private var scoring: ScoringMatch?
     @Namespace private var transition
 
@@ -92,19 +90,27 @@ struct HomeView: View {
                     .buttonBorderShape(.capsule)
                     .padding(.top, -16)
                 }
-                if NextMatchCard.hasContent {
-                    NextMatchCard()
-                        .padding(20)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
-                }
+                // A match to look forward to comes first; being asked to set that up can wait.
+                let isFixture = FixtureStore.shared.isConnected
+                if isFixture { nextMatch }
                 season
                 bests
+                if !isFixture { nextMatch }
                 places
             }
             .padding(.horizontal)
             .padding(.bottom, 24)
             .readableWidth()
+        }
+    }
+
+    @ViewBuilder
+    private var nextMatch: some View {
+        if NextMatchCard.hasContent {
+            NextMatchCard()
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
         }
     }
 
@@ -137,11 +143,9 @@ struct HomeView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 20) {
-                if summary.hasResults { RecordLine(summary: summary) }
-                SeasonTotals(summary: summary)
+                SeasonHeader(summary: summary)
                 if summary.matches.count >= 2 {
-                    SeasonChart(matches: summary.matches, selection: $selectedDay) { path.append($0) }
-                        .frame(height: 180)
+                    SeasonWall(matches: summary.matches, transition: transition) { path.append($0) }
                 }
             }
             .padding(20)
@@ -197,14 +201,17 @@ struct LastMatchCard: View {
     let headline: String?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var isWide: Bool { horizontalSizeClass == .regular }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(digest.scoreline ?? digest.format.title)
+                Text(digest.scoreline ?? digest.place)
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .monospacedDigit()
-                Text(digest.subtitle)
+                Text(digest.subtitle(beside: digest.scoreline ?? digest.place))
                     .font(.headline)
                     .foregroundStyle(.white.opacity(0.75))
             }
@@ -237,7 +244,8 @@ struct LastMatchCard: View {
         if let heat = digest.heat {
             HeatPitch(heat: PitchHeat(digestHeat: heat), surface: .clear, insets: EdgeInsets(),
                       directionIsKnown: digest.heatIsDirected ?? false)
-                .frame(width: 168, height: 168 / HeatPitch.aspectRatio(for: .standard))
+                .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
+                .frame(maxWidth: isWide ? 260 : 168)
                 .accessibilityHidden(true)
         }
     }
@@ -248,20 +256,27 @@ struct DigestNumbers: View {
     let digest: MatchDigest
     var isStacked = false
 
-    private var numbers: [(value: String, unit: String?, spoken: String)] {
+    private struct Number {
+        let label: String
+        let value: String
+        let unit: String
+        let spoken: String
+    }
+
+    private var numbers: [Number] {
         let units = UnitSystem.current
-        var numbers: [(String, String?, String)] = []
+        var numbers: [Number] = []
         if let meters = digest.distanceMeters, meters > 100 {
             let distance = units.distance(meters)
-            numbers.append((distance.value, distance.unit, distance.spoken))
+            numbers.append(Number(label: "Distance", value: distance.value, unit: distance.unit, spoken: distance.spoken))
         }
         let minutes = Int((digest.secondsOnPitch / 60).rounded())
-        numbers.append(("\(minutes)", "min", "\(minutes) minutes played"))
+        numbers.append(Number(label: "Played", value: "\(minutes)", unit: "min", spoken: "\(minutes) minutes"))
         if let speed = digest.topSpeedMetersPerSecond {
             let measure = units.speed(speed)
-            numbers.append((measure.value, "\(measure.unit) top", "top speed \(measure.spoken)"))
+            numbers.append(Number(label: "Top speed", value: measure.value, unit: measure.unit, spoken: measure.spoken))
         } else if let bpm = digest.averageHeartRate {
-            numbers.append(("\(Int(bpm))", "bpm", "average heart rate \(Int(bpm))"))
+            numbers.append(Number(label: "Heart rate", value: "\(Int(bpm))", unit: "bpm", spoken: "\(Int(bpm)) beats per minute"))
         }
         return numbers
     }
@@ -272,7 +287,7 @@ struct DigestNumbers: View {
         } else {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    ForEach(numbers, id: \.spoken) { number in
+                    ForEach(numbers, id: \.label) { number in
                         view(number).fixedSize().frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -283,22 +298,23 @@ struct DigestNumbers: View {
 
     private var stack: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(numbers, id: \.spoken) { view($0) }
+            ForEach(numbers, id: \.label) { view($0) }
         }
     }
 
-    private func view(_ number: (value: String, unit: String?, spoken: String)) -> some View {
+    private func view(_ number: Number) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(number.value)
-                .font(.system(.title, design: .rounded, weight: .semibold))
-                .monospacedDigit()
-            if let unit = number.unit {
-                Text(unit).font(.subheadline).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(number.value)
+                    .font(.system(.title, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                Text(number.unit).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
             }
+            Text(number.label).font(.subheadline).foregroundStyle(.secondary)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(number.spoken)
+        .accessibilityLabel("\(number.label), \(number.spoken)")
     }
 }
 
@@ -335,21 +351,37 @@ private struct LiveMatchCard: View {
 
 // MARK: - Season pieces
 
-private struct RecordLine: View {
+/// The record when enough of the season has one, or else how much was played. A record of three
+/// results in thirty matches isn't the season.
+private struct SeasonHeader: View {
     let summary: SeasonSummary
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    private var results: Int { summary.won + summary.drawn + summary.lost }
+    private var recordLeads: Bool { results > 0 && results * 2 >= summary.matches.count }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if recordLeads {
+                record
+            } else {
+                piece(summary.matches.count, summary.matches.count == 1 ? "match" : "matches", .primary)
+            }
+            Text(sentence).font(.headline).foregroundStyle(.secondary)
+        }
+    }
+
+    private var record: some View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 24))
-        layout {
-            piece(summary.won, "Won", Theme.turf)
-            piece(summary.drawn, "Drew", .secondary)
-            piece(summary.lost, "Lost", .red)
+        return layout {
+            piece(summary.won, "won", Theme.turf)
+            piece(summary.drawn, "drawn", .primary)
+            piece(summary.lost, "lost", .red)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Won \(summary.won), drew \(summary.drawn), lost \(summary.lost)")
+        .accessibilityLabel("Won \(summary.won), drawn \(summary.drawn), lost \(summary.lost)")
     }
 
     private func piece(_ count: Int, _ label: String, _ color: Color) -> some View {
@@ -358,73 +390,91 @@ private struct RecordLine: View {
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(count == 0 ? .secondary : color)
-            Text(label).font(.subheadline).foregroundStyle(.secondary)
+            Text(label).font(.body).foregroundStyle(.secondary)
         }
     }
-}
-
-private struct SeasonTotals: View {
-    let summary: SeasonSummary
 
     private var sentence: String {
-        let matches = summary.matches.count
-        var parts = ["\(matches) \(matches == 1 ? "match" : "matches")"]
-        if summary.distanceMeters > 500 { parts.append(UnitSystem.current.distance(summary.distanceMeters).text) }
-        if summary.goals > 0 { parts.append("\(summary.goals) \(summary.goals == 1 ? "goal" : "goals")") }
-        if summary.assists > 0 { parts.append("\(summary.assists) \(summary.assists == 1 ? "assist" : "assists")") }
-        return parts.joined(separator: " · ")
-    }
-
-    var body: some View {
-        Text(sentence).font(.headline)
+        func counted(_ count: Int, _ noun: String) -> String? { count > 0 ? "\(count) \(noun)\(count == 1 ? "" : "s")" : nil }
+        var parts: [String?] = []
+        if recordLeads {
+            if results < summary.matches.count { parts.append("\(summary.matches.count) matches") }
+        } else if results > 0 {
+            let record = [summary.won > 0 ? "won \(summary.won)" : nil, summary.drawn > 0 ? "drew \(summary.drawn)" : nil,
+                          summary.lost > 0 ? "lost \(summary.lost)" : nil].compactMap { $0 }.joined(separator: ", ")
+            parts.append(record.prefix(1).uppercased() + record.dropFirst())
+        }
+        if summary.distanceMeters > 500 { parts.append(UnitSystem.current.totalDistance(summary.distanceMeters).text) }
+        parts += [counted(summary.goals, "goal"), counted(summary.assists, "assist")]
+        return parts.compactMap { $0 }.joined(separator: " · ")
     }
 }
 
-/// One bar per match, tall as the ground covered and colored by the result. Tap a bar for the match.
-private struct SeasonChart: View {
+/// The season as it was played: every match's pitch in order, newest first, ringed by its result.
+/// Touch one to open it.
+private struct SeasonWall: View {
     let matches: [MatchDigest]
-    @Binding var selection: Date?
+    let transition: Namespace.ID
     let onOpen: (UUID) -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsAll = false
+
+    private static let firstRows = 24
+
+    private var shown: [MatchDigest] {
+        let newestFirst = Array(matches.reversed())
+        return showsAll ? newestFirst : Array(newestFirst.prefix(Self.firstRows))
+    }
+
     var body: some View {
-        Chart(Array(matches.enumerated()), id: \.element.id) { index, digest in
-            BarMark(x: .value("Match", String(index)),
-                    y: .value("Distance", distance(digest)))
-                .foregroundStyle(color(digest))
-                .cornerRadius(4)
-                .accessibilityLabel(digest.startDate.formatted(date: .abbreviated, time: .omitted))
-                .accessibilityValue([digest.scoreline, digest.distanceMeters.map { UnitSystem.current.distance($0).spoken }]
-                    .compactMap { $0 }.joined(separator: ", "))
-        }
-        .chartXAxis(.hidden)
-        .chartYScale(domain: 0...max((matches.map(distance).max() ?? 1) * 1.1, 1))
-        .chartYAxis {
-            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3))
-        }
-        .chartYAxisLabel(UnitSystem.current.distance(0).unit)
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle().fill(.clear).contentShape(Rectangle())
-                    .onTapGesture { location in
-                        guard let frame = proxy.plotFrame,
-                              let label: String = proxy.value(atX: location.x - geometry[frame].origin.x),
-                              let index = Int(label), matches.indices.contains(index) else { return }
-                        onOpen(matches[index].id)
-                    }
+        VStack(alignment: .leading, spacing: 14) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 72 : 46), spacing: 8)],
+                      spacing: 8) {
+                ForEach(shown) { digest in
+                    Button { onOpen(digest.id) } label: { SeasonTile(digest: digest) }
+                        .buttonStyle(.plain)
+                        .zoomSource(id: digest.id, in: transition)
+                }
+            }
+            if matches.count > shown.count {
+                Button("Show All \(matches.count)") { withAnimation { showsAll = true } }
+                    .frame(minHeight: 44)
             }
         }
     }
+}
 
-    private func distance(_ digest: MatchDigest) -> Double {
-        let meters = digest.distanceMeters ?? 0
-        return UnitSystem.current == .imperial ? meters / 1609.344 : meters / 1000
+private struct SeasonTile: View {
+    let digest: MatchDigest
+
+    var body: some View {
+        ZStack {
+            if let heat = digest.heat {
+                HeatPitch(heat: PitchHeat(digestHeat: heat), insets: EdgeInsets(),
+                          directionIsKnown: digest.heatIsDirected ?? false)
+            } else {
+                Rectangle().fill(Color(.tertiarySystemFill))
+                Image(systemName: digest.format == .indoor ? "house.fill" : "soccerball").foregroundStyle(.secondary)
+            }
+        }
+        .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
+        .clipShape(.rect(cornerRadius: 8))
+        .overlay {
+            if let color { RoundedRectangle(cornerRadius: 8).strokeBorder(color, lineWidth: 2.5) }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(digest.startDate.formatted(date: .abbreviated, time: .omitted))
+        .accessibilityValue([digest.scoreline ?? digest.place, digest.distanceMeters.map { UnitSystem.current.distance($0).spoken }]
+            .compactMap { $0 }.joined(separator: ", "))
     }
 
-    private func color(_ digest: MatchDigest) -> Color {
+    private var color: Color? {
         switch digest.result {
-        case .won: return Theme.turf
+        case .won: return .green
         case .lost: return .red
-        case .drawn, nil: return Color(.systemGray3)
+        case .drawn: return Color(.systemGray)
+        case nil: return nil
         }
     }
 }
@@ -439,7 +489,7 @@ private struct BestRow: View {
         HStack(spacing: 16) {
             Image(systemName: best.symbolName)
                 .font(.title2)
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.turf)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(best.title).font(.body)
@@ -515,8 +565,11 @@ extension MatchDigest {
         return "\(word) \(goalsUs)–\(goalsThem)"
     }
 
-    /// "Sunday · Demo Park", "Nov 7 · vs Rovers · Field 2".
-    var subtitle: String {
+    /// What a match is called before anyone says who won: who it was against, or where.
+    var place: String { opponent.map { "vs \($0)" } ?? fieldName ?? format.title }
+
+    /// "Sunday · Demo Park", "Nov 7 · vs Rovers · Field 2": whatever `title` doesn't already say.
+    func subtitle(beside title: String) -> String {
         let day: String
         if Calendar.current.isDateInToday(startDate) {
             day = "Today"
@@ -528,7 +581,9 @@ extension MatchDigest {
             let sameYear = Calendar.current.isDate(startDate, equalTo: Date(), toGranularity: .year)
             day = startDate.formatted(sameYear ? .dateTime.month(.abbreviated).day() : .dateTime.month(.abbreviated).day().year())
         }
-        return [day, opponent.map { "vs \($0)" }, fieldName].compactMap { $0 }.joined(separator: " · ")
+        let kind = format == .match ? nil : format.title
+        return ([day] + [opponent.map { "vs \($0)" }, fieldName, kind].compactMap { $0 }.filter { $0 != title })
+            .joined(separator: " · ")
     }
 }
 
