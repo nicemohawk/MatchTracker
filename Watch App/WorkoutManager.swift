@@ -130,7 +130,7 @@ final class WorkoutManager: NSObject {
 
     // MARK: HealthKit / location plumbing
 
-    @ObservationIgnored private let healthStore = HKHealthStore()
+    @ObservationIgnored let healthStore = HKHealthStore()
     @ObservationIgnored private var session: HKWorkoutSession?
     @ObservationIgnored private var builder: HKLiveWorkoutBuilder?
     /// GPS for the match: warm-up, recording, retries and the on-disk copy of the route.

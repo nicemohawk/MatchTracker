@@ -100,4 +100,30 @@ final class DesignCapture: XCTestCase {
         sleep(3)
         screenshot("23-line-up")
     }
+
+    func testEffort() {
+        for pass in 1...2 {
+            app.launch()
+            handleHealthKitPrompt(app: app, timeout: 4)
+            sleep(8)
+            app.tabBars.buttons["Matches"].tap()
+            app.collectionViews.cells.element(boundBy: 3).tap()
+            sleep(4)
+            let rate = app.buttons["Rate your effort"]
+            for _ in 0..<5 { app.swipeUp() }
+            sleep(1)
+            screenshot("30-effort-\(pass)")
+            if rate.exists {
+                rate.tap()
+                sleep(1)
+                app.sliders["Effort"].adjust(toNormalizedSliderPosition: 0.8)
+                screenshot("31-rating-\(pass)")
+                app.buttons["Save"].tap()
+                handleHealthKitPrompt(app: app, timeout: 6)
+                sleep(3)
+                screenshot("32-rated-\(pass)")
+            }
+            app.terminate()
+        }
+    }
 }

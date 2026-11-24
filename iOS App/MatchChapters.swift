@@ -208,6 +208,7 @@ struct EffortChapter: View {
                 HeartRateChart(series: detail.heartRateSeries, start: detail.matchStart, halftime: analytics.halftime)
                     .frame(height: 180)
             }
+            EffortRatingRow(workout: detail.workout)
             NavigationLink {
                 AllNumbersView(detail: detail, analytics: analytics)
             } label: {

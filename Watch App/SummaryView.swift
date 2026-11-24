@@ -3,6 +3,7 @@
 //  MatchTracker
 //
 
+import HealthKit
 import SwiftUI
 import MatchTrackerKit
 
@@ -27,6 +28,9 @@ struct SummaryView: View {
                 }
                 stats
                 saveState
+                if #available(watchOS 11.0, *), let workout = workoutManager.finishedWorkout {
+                    EffortButton(workout: workout)
+                }
                 Button("Done") {
                     WatchHaptics.click()
                     workoutManager.reset()
@@ -139,6 +143,82 @@ struct SummaryView: View {
 
     private func promptForFieldIfNeeded() {
         if workoutManager.proposedField != nil { showFieldPrompt = true }
+    }
+}
+
+/// Rated while the legs still remember, on Apple's scale, for Training Load.
+@available(watchOS 11.0, *)
+private struct EffortButton: View {
+    let workout: HKWorkout
+    @Environment(WorkoutManager.self) private var workoutManager
+    @State private var score: Int?
+    @State private var isRating = false
+
+    var body: some View {
+        Button { isRating = true } label: {
+            VStack(spacing: 0) {
+                Text(score.map { "\(EffortRating.word(for: $0)), \($0)" } ?? "Rate Effort").font(.headline)
+                if score == nil { Text("For Training Load").font(.footnote).foregroundStyle(.secondary) }
+            }
+        }
+        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.sprint, minHeight: 52))
+        .sheet(isPresented: $isRating) {
+            EffortSheet(initial: score ?? 5) { chosen in
+                score = chosen
+                Task {
+                    do {
+                        try await EffortRating.rate(workout, chosen, in: workoutManager.healthStore)
+                    } catch {
+                        MatchLog.error("effort rating failed: \(error.localizedDescription)", category: "workout")
+                        score = nil
+                        WatchHaptics.failure()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@available(watchOS 11.0, *)
+private struct EffortSheet: View {
+    let onRate: (Int) -> Void
+    @State private var value: Double
+    @Environment(\.dismiss) private var dismiss
+
+    init(initial: Int, onRate: @escaping (Int) -> Void) {
+        self.onRate = onRate
+        _value = State(initialValue: Double(initial))
+    }
+
+    private var score: Int { Int(value.rounded()) }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("\(score)")
+                .font(.system(size: 72, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text(EffortRating.word(for: score)).font(.title3.weight(.semibold)).foregroundStyle(WatchTheme.sprint)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .focusable()
+        .digitalCrownRotation($value, from: 1, through: 10, by: 1, sensitivity: .low, isHapticFeedbackEnabled: true)
+        .animation(.snappy, value: score)
+        .accessibilityElement()
+        .accessibilityLabel("Effort")
+        .accessibilityValue("\(score) of 10, \(EffortRating.word(for: score))")
+        .accessibilityAdjustableAction { direction in
+            value = min(max(value + (direction == .increment ? 1 : -1), 1), 10)
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save", systemImage: "checkmark") {
+                    WatchHaptics.click()
+                    onRate(score)
+                    dismiss()
+                }
+            }
+        }
     }
 }
 
