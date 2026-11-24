@@ -74,6 +74,86 @@ final class DesignCapture: XCTestCase {
         }
     }
 
+    /// The match screen: opening, playing, and every way of sending a minute to the picture.
+    func testStage() {
+        openMatch()
+        sleep(9)
+        screenshot("50-match")
+        // Large type puts the controls under the tab bar until they're scrolled to.
+        if app.buttons["Play"].frame.maxY > app.frame.maxY - 110 { app.swipeUp(velocity: .slow) }
+        app.buttons["Play"].tap()
+        sleep(5)
+        screenshot("51-playing")
+        app.buttons["Pause"].tap()
+        app.sliders["Match time"].adjust(toNormalizedSliderPosition: 0.5)
+        sleep(1)
+        screenshot("52-scrubbed")
+        app.buttons["Whole Match"].tap()
+        sleep(1)
+        XCTAssertFalse(app.sliders["Match time"].exists, "The slider is only there while there's a time to show")
+        if app.buttons["Runs"].exists {
+            app.buttons["Runs"].tap()
+            sleep(2)
+            screenshot("53-runs")
+        }
+        if app.buttons["Season"].exists {
+            app.buttons["Season"].tap()
+            sleep(2)
+            XCTAssertFalse(app.buttons["Play"].exists, "A season doesn't play")
+            screenshot("54-season")
+        }
+        tapRow(saying: " over ")
+        sleep(3)
+        screenshot("55-run")
+        sleep(10)
+        screenshot("56-run-finished")
+        tapRow(saying: "Minute", "goal", "Goal", "scored", "assist", "Flagged")
+        sleep(3)
+        screenshot("57-moment")
+        sleep(8)
+        screenshot("58-moment-finished")
+        for _ in 0..<3 { app.swipeUp() }
+        sleep(1)
+        screenshot("59-effort")
+    }
+
+    /// A match nobody has opened on this simulator: touching it ends its opening, and still scrolls.
+    func testStageOpening() {
+        openMatch()
+        screenshot("60-opening")
+        app.swipeUp(velocity: .slow)
+        sleep(1)
+        screenshot("61-touched")
+        app.swipeDown()
+        app.swipeDown()
+        sleep(1)
+        screenshot("62-settled")
+    }
+
+    private func openMatch() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(6)
+        app.buttons["Matches"].firstMatch.tap()
+        sleep(2)
+        let day = ProcessInfo.processInfo.environment["DAY"] ?? "Jul 14"
+        let row = app.collectionViews.cells.containing(NSPredicate(format: "label CONTAINS %@", day)).firstMatch
+        for _ in 0..<12 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 15), "A match with a route should play")
+    }
+
+    private func tapRow(saying words: String...) {
+        let saysOne = NSCompoundPredicate(orPredicateWithSubpredicates: words.dropFirst(words.count > 1 ? 1 : 0).map {
+            NSPredicate(format: "label CONTAINS %@", $0)
+        })
+        let row = app.buttons.matching(NSCompoundPredicate(andPredicateWithSubpredicates: [
+            saysOne, NSPredicate(format: "label CONTAINS %@", words[0])
+        ])).firstMatch
+        for _ in 0..<5 where !row.exists || !row.isHittable { app.swipeUp() }
+        if row.exists { row.tap() }
+    }
+
     func testVideo() {
         app.launch()
         handleHealthKitPrompt(app: app, timeout: 4)
