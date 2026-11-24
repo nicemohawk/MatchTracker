@@ -69,7 +69,7 @@ struct TeamView: View {
         ContentUnavailableView {
             Label("Play with your team", systemImage: "person.3")
         } description: {
-            Text("See who covered the most ground this week, set up a formation and talk about the match.")
+            Text("See who covered the most ground this week, and set up a formation.")
         } actions: {
             VStack(spacing: 12) {
                 Button { sheet = .join } label: {

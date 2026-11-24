@@ -131,20 +131,26 @@ final class DesignCapture: XCTestCase {
     func testPadGrantHealth() {
         app.launchArguments += ["-ImportDiagnostics", "YES"]
         app.launch()
-        for _ in 0..<2 {
-            sleep(6)
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.557)).tap()
+        for pass in 0..<2 {
+            sleep(8)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.557)).tap()
             sleep(2)
+            screenshot("0\(pass)-on")
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.664)).tap()
+            sleep(2)
+            screenshot("0\(pass)-allowed")
         }
-        sleep(3)
+        sleep(90)
         screenshot("00-granted")
     }
 
     func testPad() {
         app.launch()
-        handleHealthKitPrompt(app: app, timeout: 4)
-        sleep(10)
+        sleep(6)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.557)).tap()
+        sleep(1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.664)).tap()
+        sleep(8)
         screenshot("40-pad-summary")
         app.buttons["Matches"].firstMatch.tap()
         sleep(3)
