@@ -192,9 +192,15 @@ public enum MatchAnalyzer {
             let gap = track[index + 1].timestamp.timeIntervalSince(track[index].timestamp)
             return (point, min(max(0, gap), maximumSampleSeconds))
         }
-        let keyRuns = KeyRunSelector.select(runs: runs, events: input.events, interval: interval).map { run in
+        let isInside = normalized.map { $0.map { (0...1).contains($0.x) && (0...1).contains($0.y) } ?? false }
+        let keyRuns = KeyRunSelector.select(runs: runs, events: input.events, interval: interval,
+                                            isInside: isInside).map { run in
             var run = run
-            run.points = portrait[run.segment.pointRange].compactMap { $0 }
+            // An end past the lines would be drawn held at them, pointing at nothing.
+            let inside = run.segment.pointRange.filter { isInside[$0] }
+            if let first = inside.first, let last = inside.last {
+                run.points = portrait[first...last].compactMap { $0 }
+            }
             return run
         }
 

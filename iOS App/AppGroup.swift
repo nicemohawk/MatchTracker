@@ -36,6 +36,8 @@ enum AppGroup {
     enum DefaultsKey {
         /// Build string the watch last reported, e.g. "1.0 (7)".
         static let watchVersion = "watchVersion"
+        /// Matches whose picture has built itself up once.
+        static let openedMatches = "openedMatches"
     }
 
     /// Directory the Kit `FieldStore` reads/writes `fields.json` in.

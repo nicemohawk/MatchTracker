@@ -21,7 +21,8 @@ public struct KeyRun: Identifiable, Sendable {
     public let title: String
     /// What else was true of it, if anything: "Late in the match".
     public let detail: String?
-    /// The run on the portrait pitch (x 0...1 left to right, y 1 = attacking end), in order.
+    /// The run on the portrait pitch (x 0...1 left to right, y 1 = attacking end), in order. However
+    /// it overran, it's drawn starting and finishing between the lines.
     public var points: [CGPoint]
     /// Seconds since the start of the match.
     public let fromT: TimeInterval
@@ -37,11 +38,19 @@ public enum KeyRunSelector {
     static let decisiveWindow: TimeInterval = 30
     /// How near the end of the match counts as late.
     static let lateWindow: TimeInterval = 15 * 60
+    /// A run with more of its fixes past the lines than this isn't one to draw on a pitch.
+    static let maximumShareOutside = 0.25
 
     /// Deterministic, best category first; empty when no run is a sprint or 30 yards.
-    public static func select(runs: [RunSegment], events: [MatchEvent], interval: DateInterval) -> [KeyRun] {
+    /// - Parameter isInside: Whether each fix the runs index into was between the lines; nil when all were.
+    public static func select(runs: [RunSegment], events: [MatchEvent], interval: DateInterval,
+                              isInside: [Bool]? = nil) -> [KeyRun] {
+        func isOnPitch(_ run: RunSegment) -> Bool {
+            guard let fixes = isInside?[run.pointRange] else { return true }
+            return Double(fixes.filter { !$0 }.count) <= maximumShareOutside * Double(fixes.count)
+        }
         let candidates = runs
-            .filter { $0.intensity == .sprint || $0.distanceMeters >= minimumDistanceMeters }
+            .filter { ($0.intensity == .sprint || $0.distanceMeters >= minimumDistanceMeters) && isOnPitch($0) }
             .sorted { $0.interval.start < $1.interval.start }
         guard !candidates.isEmpty else { return [] }
 
