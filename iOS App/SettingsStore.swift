@@ -35,6 +35,7 @@ final class SettingsStore: ObservableObject {
         static let consentAcknowledgedAt = "consentAcknowledgedAt"
         static let contributeDetectedFields = "contributeDetectedFields"
         static let asksAfterMatches = "asksAfterMatches"
+        static let playHabits = "playHabits"
         static let units = "units"
     }
 
@@ -74,6 +75,15 @@ final class SettingsStore: ObservableObject {
     var baseURL: URL {
         if let url = URL(string: serverURLOverride), url.scheme != nil { return url }
         return APIClient.defaultBaseURL
+    }
+
+    /// How each kind of match is played, as far as the player has said.
+    var playHabits: PlayHabits {
+        get { defaults.data(forKey: Key.playHabits).flatMap { try? JSONDecoder().decode(PlayHabits.self, from: $0) } ?? PlayHabits() }
+        set {
+            defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.playHabits)
+            bump()
+        }
     }
 
     /// Whether to ask how a match ended once it arrives. On until turned off.

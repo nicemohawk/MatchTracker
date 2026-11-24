@@ -352,8 +352,10 @@ public extension MatchDigest {
         opponent = record?.opponent
         let events = record?.events ?? []
         if let score = record?.score { (goalsUs, goalsThem) = (score.us, score.them) }
-        myGoals = record?.score?.mine ?? 0
-        myAssists = events.filter { $0.kind == .assist }.count
+        let logged = events.filter { $0.kind == .goalMine }.count
+        myGoals = record?.myGoals ?? record?.score?.mine ?? logged
+        games = record?.keepsScore == false ? nil : record?.games.flatMap(Games.tally)
+        myAssists = record?.myAssists ?? events.filter { $0.kind == .assist }.count
         guard let analytics else {
             fieldID = record?.fieldID
             return

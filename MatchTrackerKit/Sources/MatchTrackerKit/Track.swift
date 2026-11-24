@@ -142,6 +142,13 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     /// Automatic substitutions the wearer has said were wrong. Any at all, and the ones in `events`
     /// are taken as they are.
     public var rejectedSubOuts: Int?
+    /// False when nobody was counting, so goals are the wearer's own and there's no result.
+    public var keepsScore: Bool?
+    /// The wearer's own, when not every one was logged.
+    public var myGoals: Int?
+    public var myAssists: Int?
+    /// The games of a session that held several, as the wearer settled them.
+    public var games: [GameResult]?
     /// When the wearer last said how it went.
     public var reviewedAt: Date?
     /// The phone made this for a workout whose record hasn't come from the watch, if it ever will.
@@ -191,14 +198,22 @@ public extension MatchRecord {
 
     /// What was logged as it happened. Nil with no goals: that may be 0–0, or nobody counting.
     var loggedScore: FinalScore? {
+        guard keepsScore != false else { return nil }
         let mine = events.filter { $0.kind == .goalMine }.count
         let us = mine + events.filter { $0.kind == .goalForUs }.count
         let them = events.filter { $0.kind == .goalAgainstUs }.count
         return us + them > 0 ? FinalScore(us: us, them: them, mine: mine) : nil
     }
 
-    /// The wearer's word, or else what was logged.
-    var score: FinalScore? { finalScore ?? loggedScore }
+    /// The wearer's word, or else what was logged. Every goal of several games, when there were.
+    var score: FinalScore? {
+        guard keepsScore != false else { return nil }
+        if let scores = games.map({ $0.compactMap(\.score) }), !scores.isEmpty {
+            return FinalScore(us: scores.map(\.us).reduce(0, +), them: scores.map(\.them).reduce(0, +),
+                              mine: scores.map(\.mine).reduce(0, +))
+        }
+        return finalScore ?? loggedScore
+    }
 }
 
 public enum SubstitutionTracker {

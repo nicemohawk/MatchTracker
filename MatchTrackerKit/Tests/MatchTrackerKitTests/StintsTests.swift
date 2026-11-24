@@ -80,4 +80,68 @@ final class StintsTests: XCTestCase {
             events: [MatchEvent(kind: .subOut, date: start.addingTimeInterval(40 * 60))], heartRate: samples)))
         XCTAssertEqual(analytics.workrate.timeOnPitch / 60, 22, accuracy: 2)
     }
+
+    // MARK: - Games
+
+    /// Blocks of one or two twelve-minute games, with long sit-outs between.
+    func testShortGamesInBlocks() throws {
+        let found = try XCTUnwrap(stints([(5, false), (11, true), (2, false), (11, true), (17, false), (24, true), (15, false), (13, true)]))
+        let interval = DateInterval(start: start, duration: 98 * 60)
+        let games = Games.inSession(record: nil, stints: found, interval: interval, length: 12 * 60)
+        XCTAssertEqual(games.count, 5)
+        XCTAssertTrue(games.allSatisfy { (8 * 60...16 * 60).contains($0.end.timeIntervalSince($0.start)) })
+        XCTAssertEqual(zip(games, games.dropFirst()).filter { $0.end > $1.start.addingTimeInterval(1) }.count, 0)
+        XCTAssertEqual(games[1].start.timeIntervalSince(start) / 60, 18, accuracy: 1.5, "parted at the rest")
+        XCTAssertEqual(Games.inSession(record: nil, stints: found, interval: interval, length: nil).count, 3, "blocks, until the length is known")
+    }
+
+    func testMarkedEndingsAreTheGames() throws {
+        var record = MatchRecord(id: UUID(), startDate: start, endDate: start.addingTimeInterval(3600), fieldID: nil, events: [
+            MatchEvent(kind: .goalForUs, date: start.addingTimeInterval(300)),
+            MatchEvent(kind: .periodEnd, date: start.addingTimeInterval(720)),
+            MatchEvent(kind: .goalAgainstUs, date: start.addingTimeInterval(1500)),
+            MatchEvent(kind: .periodEnd, date: start.addingTimeInterval(1800))
+        ], teamCode: nil, format: .indoor)
+        let interval = DateInterval(start: start, duration: 3600)
+        let games = Games.inSession(record: record, stints: nil, interval: interval, length: nil)
+        XCTAssertEqual(games.map { $0.score }, [FinalScore(us: 1, them: 0), FinalScore(us: 0, them: 1), nil])
+        XCTAssertEqual(Games.tally(games), GameTally(won: 1, drawn: 0, lost: 1))
+        record.games = games
+        record.games?[2].outcome = .won
+        XCTAssertEqual(Games.tally(record.games ?? []), GameTally(won: 2, drawn: 0, lost: 1), "won is enough to say")
+        let digest = MatchDigest(id: record.id, interval: interval, format: .indoor, record: record, analytics: nil)
+        XCTAssertEqual(digest.goalsUs, 1)
+    }
+
+    func testHabitsAreLearnedForEachKindOfMatch() {
+        var habits = PlayHabits()
+        habits.learn(format: .indoor, keepsScore: false, games: 5, played: 60 * 60)
+        XCTAssertEqual(habits[.indoor].keepsScore, false)
+        XCTAssertEqual(habits[.indoor].gameSeconds, 720)
+        XCTAssertNil(habits[.match].keepsScore, "a league match is another thing")
+        habits.learn(format: .indoor, keepsScore: true, games: 1, played: 40 * 60)
+        XCTAssertEqual(habits[.indoor].playsSeveralGames, false)
+    }
+
+    func testTwoHalvesArentTwoGamesUntilSomebodySays() throws {
+        let (samples, interval) = heart([(3, false), (20, true), (10, false), (20, true), (3, false)])
+        let analytics = try XCTUnwrap(MatchAnalyzer.analyze(MatchAnalysisInput(interval: interval, format: .indoor, heartRate: samples)))
+        let record = MatchRecord(id: UUID(), startDate: start, endDate: interval.end, fieldID: nil,
+                                 events: [MatchEvent(kind: .goalForUs, date: start.addingTimeInterval(600))], teamCode: nil, format: .indoor)
+        let digest = MatchDigest(id: record.id, interval: interval, format: .indoor, record: record, analytics: analytics)
+        XCTAssertNil(digest.games)
+        XCTAssertEqual(digest.goalsUs, 1)
+    }
+
+    func testNobodyCounting() {
+        var record = MatchRecord(id: UUID(), startDate: start, endDate: start.addingTimeInterval(3600), fieldID: nil, events: [
+            MatchEvent(kind: .goalMine, date: start.addingTimeInterval(300))
+        ], teamCode: nil, format: .indoor)
+        record.keepsScore = false
+        XCTAssertNil(record.score)
+        let digest = MatchDigest(id: record.id, interval: DateInterval(start: start, duration: 3600), format: .indoor,
+                                 record: record, analytics: nil)
+        XCTAssertNil(digest.result)
+        XCTAssertEqual(digest.myGoals, 1, "my goals are still mine")
+    }
 }

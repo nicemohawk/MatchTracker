@@ -7,7 +7,7 @@ import Foundation
 /// it has to open a route.
 public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     /// Bump when a definition changes, so stale digests are recomputed rather than compared.
-    public static let currentVersion = 6
+    public static let currentVersion = 7
 
     public var version: Int
     public var id: UUID
@@ -36,6 +36,8 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     /// Whether the top of `heat` is known to be the attacking end.
     public var heatIsDirected: Bool?
     /// `Stints`, for a match without a route. Nil when the heart rate couldn't tell.
+    /// How the games went, when the session held several.
+    public var games: GameTally?
     public var strip: [Float]?
     public var stintCount: Int?
     public var longestStintSeconds: TimeInterval?
@@ -55,7 +57,9 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
 
     public enum Result: String, Codable, Sendable { case won, drawn, lost }
 
+    /// More won than lost, over several games.
     public var result: Result? {
+        if let games { return games.won > games.lost ? .won : games.won < games.lost ? .lost : .drawn }
         guard let goalsUs, let goalsThem else { return nil }
         return goalsUs > goalsThem ? .won : goalsUs < goalsThem ? .lost : .drawn
     }
@@ -100,9 +104,10 @@ public struct SeasonSummary: Equatable, Sendable {
         matches = digests.sorted { $0.startDate < $1.startDate }
     }
 
-    public var won: Int { matches.filter { $0.result == .won }.count }
-    public var drawn: Int { matches.filter { $0.result == .drawn }.count }
-    public var lost: Int { matches.filter { $0.result == .lost }.count }
+    /// Every game counts, whether it had a night to itself or not.
+    public var won: Int { matches.reduce(0) { $0 + ($1.games?.won ?? ($1.result == .won ? 1 : 0)) } }
+    public var drawn: Int { matches.reduce(0) { $0 + ($1.games?.drawn ?? ($1.result == .drawn ? 1 : 0)) } }
+    public var lost: Int { matches.reduce(0) { $0 + ($1.games?.lost ?? ($1.result == .lost ? 1 : 0)) } }
     public var hasResults: Bool { won + drawn + lost > 0 }
 
     public var distanceMeters: Double { matches.compactMap(\.distanceMeters).reduce(0, +) }
