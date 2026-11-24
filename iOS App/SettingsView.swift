@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Environment(BacklogImporter.self) private var backlogImporter
     @Environment(EntitlementStore.self) private var entitlements
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.isPresented) private var isPresented
 
     @State private var playerName = ""
@@ -104,7 +105,7 @@ struct SettingsView: View {
                 TextField("Player name", text: $playerName)
                     .textInputAutocapitalization(.words)
                     .textContentType(.name)
-                    .multilineTextAlignment(.trailing)
+                    .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
                     .submitLabel(.done)
                     .focused($focus, equals: .name)
             }
@@ -112,7 +113,7 @@ struct SettingsView: View {
                 TextField("Team code", text: $teamCode)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
-                    .multilineTextAlignment(.trailing)
+                    .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
                     .submitLabel(.done)
                     .focused($focus, equals: .teamCode)
             }
@@ -417,6 +418,7 @@ private struct DisclosureRow: View {
                 } label: {
                     Text(title).foregroundStyle(Color(.label))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color(.tertiaryLabel))

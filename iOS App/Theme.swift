@@ -207,6 +207,7 @@ extension View {
             .readableWidth(560)
         if #available(iOS 26.0, *) {
             safeAreaBar(edge: .bottom) { bar }
+                .scrollEdgeEffectStyle(.hard, for: .bottom)
         } else {
             safeAreaInset(edge: .bottom, spacing: 0) { bar.background(.bar) }
         }

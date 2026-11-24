@@ -18,6 +18,10 @@ struct FieldsList: View {
 
     var body: some View {
         List {
+            if fields.fields.isEmpty, detected.isEmpty {
+                // A row rather than an overlay, so it scrolls at large text sizes.
+                emptyState.listRowBackground(Color.clear)
+            }
             if !detected.isEmpty {
                 Section("Found in this view") {
                     ForEach(detected) { candidate in
@@ -48,9 +52,6 @@ struct FieldsList: View {
         }
         .listStyle(.insetGrouped)
         .contentMargins(.top, 8, for: .scrollContent)
-        .overlay {
-            if fields.fields.isEmpty, detected.isEmpty { emptyState }
-        }
     }
 
     private var emptyState: some View {
@@ -60,9 +61,11 @@ struct FieldsList: View {
             Text("Play a match with GPS and its field appears here. You can also add one now.")
         } actions: {
             Button("Draw Corners") { model.isDrawing = true }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderless)
+                .frame(minHeight: 44)
             Button("Detect in This View", action: onDetect)
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderless)
+                .frame(minHeight: 44)
                 .disabled(model.isDetecting)
         }
     }
@@ -95,7 +98,16 @@ private struct FieldRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
-                Text(detail).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
+                if dynamicTypeSize.isAccessibilitySize {
+                    Text(size).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
+                    if matchCount > 0 {
+                        Text(Self.matches(matchCount)).font(.subheadline).foregroundStyle(Theme.secondaryLabel)
+                    }
+                } else {
+                    Text(matchCount > 0 ? "\(size) · \(Self.matches(matchCount))" : size)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryLabel)
+                }
                 if needsCheck {
                     Label("Check outline", systemImage: "exclamationmark.circle")
                         .font(.subheadline)
@@ -112,11 +124,7 @@ private struct FieldRow: View {
         .accessibilityLabel(spoken)
     }
 
-    private var detail: String {
-        let size = MatchFormat.fieldSize(rectangle)
-        guard matchCount > 0 else { return size }
-        return "\(size) · \(Self.matches(matchCount))"
-    }
+    private var size: String { MatchFormat.fieldSize(rectangle) }
 
     private var spoken: String {
         [title, MatchFormat.spokenFieldSize(rectangle),

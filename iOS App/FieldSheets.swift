@@ -5,9 +5,11 @@ import SwiftUI
 import MapKit
 import MatchTrackerKit
 
-/// One field: its name and size, and what you can do with it. The map it opens over is its picture.
+/// One field: its name and size, and what you can do with it.
 struct FieldDetailView: View {
     let fieldID: UUID
+    /// On iPhone the map behind the sheet is the picture.
+    let showsPicture: Bool
     var onDeleted: () -> Void = {}
 
     @EnvironmentObject private var fields: FieldsModel
@@ -27,6 +29,14 @@ struct FieldDetailView: View {
 
     private func form(for field: FieldModel) -> some View {
         Form {
+            if showsPicture {
+                Section {
+                    FieldSatelliteImage(rectangle: field.rectangle, isGuess: field.needsOutlineCheck)
+                        .aspectRatio(1.6, contentMode: .fit)
+                        .listRowInsets(EdgeInsets())
+                        .accessibilityLabel("Satellite picture of \(field.name), \(MatchFormat.spokenFieldSize(field.rectangle))")
+                }
+            }
             Section {
                 TextField("Field name", text: $name, axis: .vertical)
                     .font(.title2.bold())
@@ -117,6 +127,7 @@ struct FieldDetailView: View {
 /// Review a field found in satellite imagery before adding it.
 struct DetectedFieldView: View {
     let candidate: DetectedField
+    let showsPicture: Bool
     let onAdded: (FieldModel) -> Void
     let onDismissed: () -> Void
 
@@ -126,6 +137,13 @@ struct DetectedFieldView: View {
 
     var body: some View {
         Form {
+            if showsPicture {
+                Section {
+                    FieldSatelliteImage(rectangle: candidate.rectangle, isGuess: true)
+                        .aspectRatio(1.6, contentMode: .fit)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
             Section {
                 LabeledContent("Name") {
                     TextField("Field name", text: $name)

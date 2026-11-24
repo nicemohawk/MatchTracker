@@ -19,24 +19,34 @@ struct OnboardingView: View {
     @State private var isRequestingHealth = false
     @State private var isImporting = false
     @State private var importFailed = false
+    private static let top = "top"
 
     var body: some View {
-        ScrollView {
-            Group {
-                switch step {
-                case .payoff: PayoffPage()
-                case .health: HealthPage()
-                case .firstMatch: FirstMatchPage(isImporting: isImporting)
+        ScrollViewReader { scroll in
+            ScrollView {
+                Group {
+                    switch step {
+                    case .payoff: PayoffPage()
+                    case .health: HealthPage()
+                    case .firstMatch: FirstMatchPage(isImporting: isImporting)
+                    }
                 }
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 16)
+                .readableWidth(560)
+                .id(Self.top)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 16)
-            .readableWidth(560)
+            // Progress shows at the top, which may be a long way up at large text sizes.
+            .onChange(of: isImporting) { scroll.scrollTo(Self.top, anchor: .top) }
         }
         .id(step)
         .transition(.opacity)
         .scrollBounceBehavior(.basedOnSize)
+        // Keeps text from scrolling under the clock.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Theme.background.frame(height: 1).background(Theme.background.ignoresSafeArea(edges: .top))
+        }
         .bottomActionBar { actions }
         .background(Theme.background.ignoresSafeArea())
         .tint(Theme.turf)
@@ -118,13 +128,21 @@ struct OnboardingView: View {
 
 private struct PayoffPage: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// As big as it can be with the words still on screen.
+    private var pictureHeight: CGFloat {
+        if dynamicTypeSize.isAccessibilitySize || verticalSizeClass == .compact { return 240 }
+        return horizontalSizeClass == .regular ? 600 : 420
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             HeatPitch(heat: ExampleMatch.heat)
                 .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .frame(height: dynamicTypeSize.isAccessibilitySize ? 240 : 420)
+                .frame(height: pictureHeight)
                 .accessibilityLabel("Example heat map. A right winger, mostly along the right side in the attacking half.")
                 .frame(maxWidth: .infinity)
             OnboardingHeading(title: "See where you played",
@@ -183,7 +201,6 @@ private struct HealthPage: View {
                 .font(.system(size: 64))
                 .foregroundStyle(Theme.heart)
                 .accessibilityHidden(true)
-                .padding(.top, 32)
             OnboardingHeading(title: "Connect Health",
                               detail: "Your matches are workouts in Apple Health. MatchTracker needs to see them to show them.")
             VStack(alignment: .leading, spacing: 20) {
@@ -240,7 +257,6 @@ private struct FirstMatchPage: View {
                               detail: "End the match at the whistle and it shows up here.")
             }
         }
-        .padding(.top, 16)
     }
 
     @ViewBuilder

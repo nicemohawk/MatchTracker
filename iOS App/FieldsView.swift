@@ -33,7 +33,7 @@ struct FieldsView: View {
     var body: some View {
         layout
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { locateButton }
             }
@@ -66,7 +66,6 @@ struct FieldsView: View {
                         }
                     }
                 }
-                .toolbar(.hidden, for: .tabBar)
                 .sheet(isPresented: .init(get: { isOnScreen }, set: { _ in })) {
                     NavigationStack(path: $model.path) {
                         list
@@ -80,12 +79,19 @@ struct FieldsView: View {
                 }
         } else {
             HStack(spacing: 0) {
-                list
-                    .frame(width: 380)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Fields")
+                        .font(.largeTitle.bold())
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                    list
+                }
+                .frame(width: 380)
+                .background(Theme.background.ignoresSafeArea())
                 mapUnderBars
             }
             .modifier(FieldsPanelChrome(model: model, onDetect: detect))
-            .navigationTitle("Fields")
             .sheet(item: openRoute) { route in
                 NavigationStack {
                     destination(route)
@@ -107,7 +113,8 @@ struct FieldsView: View {
     /// Keeps the status bar and the back button readable over pale roofs.
     private var mapUnderBars: some View {
         map.overlay(alignment: .top) {
-            LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color(.systemBackground).opacity(0.75), Color(.systemBackground).opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
                 .frame(height: 110)
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
@@ -118,9 +125,9 @@ struct FieldsView: View {
     private func destination(_ route: FieldsRoute) -> some View {
         switch route {
         case .field(let id):
-            FieldDetailView(fieldID: id) { model.path = [] }
+            FieldDetailView(fieldID: id, showsPicture: !usesSheet) { model.path = [] }
         case .detected(let candidate):
-            DetectedFieldView(candidate: candidate) { added in
+            DetectedFieldView(candidate: candidate, showsPicture: !usesSheet) { added in
                 model.dismissed.insert(candidate.id)
                 model.path = [.field(added.id)]
             } onDismissed: {
