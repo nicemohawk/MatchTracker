@@ -47,7 +47,9 @@ public enum KeyRunSelector {
                               isInside: [Bool]? = nil) -> [KeyRun] {
         func isOnPitch(_ run: RunSegment) -> Bool {
             guard let fixes = isInside?[run.pointRange] else { return true }
-            return Double(fixes.filter { !$0 }.count) <= maximumShareOutside * Double(fixes.count)
+            let outside = fixes.filter { !$0 }.count
+            // One stray fix can be a quarter of a short run.
+            return outside < 2 || Double(outside) <= maximumShareOutside * Double(fixes.count)
         }
         let candidates = runs
             .filter { ($0.intensity == .sprint || $0.distanceMeters >= minimumDistanceMeters) && isOnPitch($0) }

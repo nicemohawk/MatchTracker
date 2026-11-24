@@ -193,8 +193,10 @@ public enum MatchAnalyzer {
             return (point, min(max(0, gap), maximumSampleSeconds))
         }
         let isInside = normalized.map { $0.map { (0...1).contains($0.x) && (0...1).contains($0.y) } ?? false }
+        // GPS a few meters out on a small pitch is still a run on it.
+        let isNearPitch = track.map { projector.isOnField($0.coordinate, marginMeters: onFieldMarginMeters) }
         let keyRuns = KeyRunSelector.select(runs: runs, events: input.events, interval: interval,
-                                            isInside: isInside).map { run in
+                                            isInside: isNearPitch).map { run in
             var run = run
             // An end past the lines would be drawn held at them, pointing at nothing.
             let inside = run.segment.pointRange.filter { isInside[$0] }
