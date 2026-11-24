@@ -60,6 +60,8 @@ public struct MatchAnalytics: Sendable {
     public var fieldName: String?
     public var fieldSource: FieldSource?
     public var playingIntervals: [DateInterval]
+    /// Without a route, the playing told by the heart.
+    public var stints: Stints?
     /// Landscape and not direction-normalized; prefer `heat`.
     public var heatmap: HeatmapGrid
     public var runs: [RunSegment]
@@ -121,15 +123,19 @@ public enum MatchAnalyzer {
         guard let field = resolveField(track: track, saved: input.savedField) else {
             guard input.format == .indoor || !heartRate.isEmpty || healthDistance != nil else { return nil }
             // No route: effort comes from heart rate alone, and nothing is placed on a pitch.
+            let stints = Stints.detect(heartRate: heartRate, in: interval)
+            let playingIntervals = stints.map {
+                input.hasSettledSubs ? intersection($0.playing, recordedIntervals) : $0.playing
+            } ?? recordedIntervals
             var workrate = WorkrateAnalyzer.analyze(
-                track: [], runs: [], playingIntervals: recordedIntervals,
+                track: [], runs: [], playingIntervals: playingIntervals,
                 heartRate: heartRate, context: MatchContext(format: .indoor))
             workrate.averageHeartRate = averageHeartRate
             workrate.totalDistanceMeters = healthDistance ?? 0
             return MatchAnalytics(
                 interval: interval, rectangle: placeholderRectangle,
                 projector: FieldProjector(rectangle: placeholderRectangle),
-                playingIntervals: recordedIntervals,
+                playingIntervals: playingIntervals, stints: stints,
                 heatmap: HeatmapGrid(columns: 30, rows: 20, cells: []), runs: [], workrate: workrate,
                 position: PositionEstimate(role: .midfielder, side: .center, confidence: 0,
                                            meanPoint: CGPoint(x: 0.5, y: 0.5), periodMeanPoints: []),
@@ -359,6 +365,12 @@ public extension MatchDigest {
         secondsOnPitch = analytics.workrate.timeOnPitch
         averageHeartRate = analytics.averageHeartRate
         hasRoute = analytics.hasRoute
+        if let stints = analytics.stints {
+            strip = stints.strip
+            stintCount = stints.playing.count
+            longestStintSeconds = stints.longest
+            recoveryBPM = stints.recovery
+        }
         if hasRoute || averageHeartRate != nil { effort = analytics.workrate.workrateScore }
         if hasRoute {
             topSpeedMetersPerSecond = analytics.topSpeedMetersPerSecond

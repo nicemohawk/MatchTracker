@@ -250,4 +250,21 @@ final class DesignCapture: XCTestCase {
         screenshot("45-pad-summary-landscape")
         XCUIDevice.shared.orientation = .portrait
     }
+
+    func testIndoor() {
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(8)
+        app.tabBars.buttons["Matches"].tap()
+        sleep(2)
+        let row = app.collectionViews.cells.containing(NSPredicate(format: "label BEGINSWITH 'Indoor' OR label CONTAINS 'Indoor'")).firstMatch
+        row.tap()
+        sleep(6)
+        screenshot("50-indoor")
+        app.swipeUp()
+        sleep(1)
+        screenshot("51-indoor-2")
+        app.swipeUp()
+        if app.buttons["All numbers"].exists { app.buttons["All numbers"].tap(); sleep(1); screenshot("52-indoor-numbers") }
+    }
 }

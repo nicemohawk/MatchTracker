@@ -7,7 +7,7 @@ import Foundation
 /// it has to open a route.
 public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     /// Bump when a definition changes, so stale digests are recomputed rather than compared.
-    public static let currentVersion = 5
+    public static let currentVersion = 6
 
     public var version: Int
     public var id: UUID
@@ -35,6 +35,11 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
     public var heat: [Float]?
     /// Whether the top of `heat` is known to be the attacking end.
     public var heatIsDirected: Bool?
+    /// `Stints`, for a match without a route. Nil when the heart rate couldn't tell.
+    public var strip: [Float]?
+    public var stintCount: Int?
+    public var longestStintSeconds: TimeInterval?
+    public var recoveryBPM: Double?
 
     public init(id: UUID, startDate: Date, endDate: Date, format: MatchFormat) {
         version = Self.currentVersion
@@ -57,14 +62,17 @@ public struct MatchDigest: Codable, Identifiable, Equatable, Sendable {
 
     public var distancePerHour: Double? {
         guard let distanceMeters, secondsOnPitch > 600 else { return nil }
-        return distanceMeters / secondsOnPitch * 3600
+        // Minutes played indoors are only known for matches with a close heart rate; the booking is
+        // the same length either way.
+        let seconds = format == .indoor ? endDate.timeIntervalSince(startDate) : secondsOnPitch
+        return distanceMeters / seconds * 3600
     }
 }
 
 // MARK: - Personal bests
 
 public enum PersonalBest: String, CaseIterable, Codable, Sendable {
-    case topSpeed, distance, sprints, goals, longestMatch
+    case topSpeed, distance, sprints, goals, longestMatch, recovery
 
     public func value(in digest: MatchDigest) -> Double? {
         switch self {
@@ -73,7 +81,11 @@ public enum PersonalBest: String, CaseIterable, Codable, Sendable {
         case .sprints: return digest.sprintCount.map(Double.init)
         case .goals: return digest.myGoals > 0 ? Double(digest.myGoals) : nil
         // Forgotten matches run for hours; nobody's longest match is one of those.
-        case .longestMatch: return digest.secondsOnPitch < 3 * 3600 ? digest.secondsOnPitch : nil
+        // Nor one where rests couldn't be told from play.
+        case .longestMatch:
+            guard digest.secondsOnPitch < 3 * 3600, digest.format != .indoor || digest.stintCount != nil else { return nil }
+            return digest.secondsOnPitch
+        case .recovery: return digest.recoveryBPM
         }
     }
 }
@@ -180,6 +192,9 @@ public enum MatchHeadline {
             return "The most ground you've covered in a match: \(units.distance(distance).text)."
         }
         if let scoring = scoring(digest) { return scoring }
+        if bests.contains(.recovery), let recovery = digest.recoveryBPM {
+            return "Your quickest recovery yet: \(Int(recovery)) beats in a minute."
+        }
         if bests.contains(.sprints), let sprints = digest.sprintCount {
             return "More sprints than any match before: \(sprints)."
         }
@@ -193,7 +208,8 @@ public enum MatchHeadline {
             .compactMap(\.distancePerHour)
         guard peers.count >= 3, let pace = digest.distancePerHour else { return nil }
         let usual = peers.reduce(0, +) / Double(peers.count)
-        let difference = (pace - usual) * digest.secondsOnPitch / 3600
+        let seconds = digest.format == .indoor ? digest.endDate.timeIntervalSince(digest.startDate) : digest.secondsOnPitch
+        let difference = (pace - usual) * seconds / 3600
         // As usual isn't news.
         guard abs(pace - usual) / usual >= 0.05 else { return nil }
         let amount = units.distance(abs(difference)).text
