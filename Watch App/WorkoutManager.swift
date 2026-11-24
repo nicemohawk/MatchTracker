@@ -407,6 +407,11 @@ final class WorkoutManager: NSObject {
                 if sessionState == .paused { session.pause() } else { applySessionState(session.state) }
                 MatchLog.info("session: collecting (attempt \(attempt), \(Int(Date().timeIntervalSince(start))) s after the tap)",
                               category: "workout")
+                // Lets the phone start its Live Activity without being opened. Never worth failing over.
+                session.startMirroringToCompanionDevice { _, error in
+                    guard let error else { return }
+                    MatchLog.info("session: not mirrored to the phone: \(error.localizedDescription)", category: "workout")
+                }
                 await addMetadata(to: builder)
             } catch {
                 guard isCurrent() else { return }

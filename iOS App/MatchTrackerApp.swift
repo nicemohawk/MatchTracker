@@ -7,11 +7,16 @@ import MatchTrackerKit
 
 @main
 struct MatchTrackerApp: App {
-    @StateObject private var environment = AppEnvironment()
+    @StateObject private var environment: AppEnvironment
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
         Self.registerBackgroundRefresh()
+        LiveActivityController.shared.observeMirroredMatches()
+        // Not left to the first window: the watch wakes the app in the background, without one.
+        let environment = AppEnvironment()
+        environment.connectivity.start()
+        _environment = StateObject(wrappedValue: environment)
     }
 
     var body: some Scene {
@@ -31,6 +36,7 @@ struct MatchTrackerApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        LiveActivityController.shared.appBecameActive()
                         Task { await AppEnvironment.current?.reconcile() }
                     case .background:
                         // Debounced cache writes flush now, before a possible process kill.
@@ -111,7 +117,8 @@ final class AppEnvironment: ObservableObject {
         matches.onNewMatches = { [weak uploads] summaries in
             uploads?.autoUpload(summaries)
         }
-        connectivity.onMatchRecordReceived = { [weak matches] _ in
+        connectivity.onMatchRecordReceived = { [weak matches] record in
+            LiveActivityController.shared.matchFinished(record)
             Task { await matches?.refresh() }
         }
         connectivity.onFieldReceived = { [weak fields] in
@@ -120,13 +127,13 @@ final class AppEnvironment: ObservableObject {
         connectivity.onLiveUpdate = { [weak self] update in
             guard let self else { return }
             liveMatches.ingest(update)
+            LiveActivityController.shared.show(liveMatches.state)
             uploads.relayLive(update)
         }
         AppEnvironment.current = self
     }
 
     func bootstrap() async {
-        connectivity.start()
         await uploads.bootstrapAPIKey()
 #if DEBUG
         // Headless diagnostic import: `-ImportDiagnostics YES` loads Documents/diagnostics-import.
@@ -166,6 +173,7 @@ final class AppEnvironment: ObservableObject {
 struct RootTabView: View {
     @Environment(LiveMatchStore.self) private var liveMatches
     @State private var selectedTab = "matches"
+    @State private var showingLive = false
     /// Whether the Matches tab is showing its root list (no detail pushed). The settings circle
     /// is a root-screen affordance: it hides on other tabs and on pushed detail screens.
     @State private var matchesAtRoot = true
@@ -178,6 +186,7 @@ struct RootTabView: View {
 
     var body: some View {
         tabContent
+            .systemLinks(showingLive: $showingLive)
             .fullScreenCover(isPresented: .init(get: { !hasOnboarded },
                                                 set: { if $0 { hasOnboarded = false } })) {
                 OnboardingView()
@@ -193,7 +202,7 @@ struct RootTabView: View {
         if #available(iOS 26.0, *) {
             modernTabView
                 .tabBarMinimizeBehavior(.onScrollDown)
-                .modifier(LiveAccessoryPresenter(isLive: liveMatches.isLive))
+                .modifier(LiveAccessoryPresenter(isLive: liveMatches.isLive, showingLive: $showingLive))
         } else {
             legacyTabView
         }
@@ -250,11 +259,12 @@ struct RootTabView: View {
 @available(iOS 26.0, *)
 private struct LiveAccessoryPresenter: ViewModifier {
     let isLive: Bool
+    @Binding var showingLive: Bool
 
     func body(content: Content) -> some View {
         if isLive {
             content.tabViewBottomAccessory {
-                LiveMatchAccessory()
+                LiveMatchAccessory(isPresented: $showingLive)
             }
         } else {
             content
