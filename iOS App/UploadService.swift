@@ -117,7 +117,8 @@ final class UploadService: ObservableObject {
 
     /// Upload matches not yet sent. Called after new records arrive.
     func autoUpload(_ summaries: [MatchSummary]) {
-        let pending = summaries.filter { !uploadedIDs.contains($0.id) }
+        // Only a team can see matches, so without one they stay on the phone.
+        let pending = summaries.filter { !uploadedIDs.contains($0.id) && teamCode(for: $0) != nil }
         guard !pending.isEmpty else { return }
         Task { await upload(summaries: pending, markUploaded: true) }
     }
@@ -184,12 +185,15 @@ final class UploadService: ObservableObject {
         }
     }
 
+    private func teamCode(for summary: MatchSummary) -> String? {
+        summary.record?.teamCode ?? (settings.teamCode.isEmpty ? nil : settings.teamCode)
+    }
+
     private func buildPayload(summary: MatchSummary, detail: MatchDetailModel) -> MatchPayload {
         // Record-only matches (no HK workout / GPS route) still upload, with empty coordinates.
         let coordinates = detail.track.map { [$0.coordinate.latitude, $0.coordinate.longitude] }
         let report = detail.analytics?.workrate ?? WorkrateReport()
         let position = detail.analytics?.position
-        let teamCode = summary.record?.teamCode ?? (settings.teamCode.isEmpty ? nil : settings.teamCode)
         let playerName = settings.playerName.isEmpty ? nil : settings.playerName
         return MatchPayload(
             uuid: summary.id,
@@ -197,7 +201,7 @@ final class UploadService: ObservableObject {
             coordinates: coordinates,
             events: summary.record?.events ?? [],
             fieldUUID: summary.record?.fieldID,
-            teamCode: teamCode,
+            teamCode: teamCode(for: summary),
             playerName: playerName,
             sportID: summary.record?.sportID,
             stats: MatchStats(report: report, position: position)
@@ -253,6 +257,7 @@ final class UploadService: ObservableObject {
     // MARK: - Fields
 
     func uploadFields() async {
+        guard settings.contributeDetectedFields else { return }
         guard let client else { status = "No API key yet"; return }
         let toUpload = fields.fields
         guard !toUpload.isEmpty else { return }

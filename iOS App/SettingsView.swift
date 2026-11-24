@@ -227,7 +227,7 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         Section {
-            Toggle("Share detected fields", isOn: .init(get: { settings.contributeDetectedFields },
+            Toggle("Share fields", isOn: .init(get: { settings.contributeDetectedFields },
                                                         set: { settings.contributeDetectedFields = $0 }))
             if let acknowledgedAt = settings.consentAcknowledgedAt {
                 LabeledContent("Guardian consent",
@@ -251,7 +251,7 @@ struct SettingsView: View {
         } header: {
             Text("Privacy")
         } footer: {
-            Text("Matches you record and your fields are sent to the MatchTracker server so your team can see them. Sharing detected fields also adds ones found in satellite imagery, so other players don’t have to draw them.")
+            Text("Matches stay on your devices unless you’re on a team, which then sees the ones you record. Sharing fields sends only their outlines and names, so other players don’t have to draw them.")
         }
     }
 
