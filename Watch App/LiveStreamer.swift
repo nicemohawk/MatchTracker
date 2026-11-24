@@ -16,7 +16,8 @@ final class LiveStreamer {
     private var streamTask: Task<Void, Never>?
     private var sequence = 0
     private var sentTrackCount = 0
-    private var sentEventCount = 0
+    /// Kind last streamed for each event: an event can be changed or undone after it was sent.
+    private var sentEventKinds: [UUID: MatchEventKind] = [:]
     private var lastUserInfoSend = Date.distantPast
     private var reportedSendFailure = false
 
@@ -28,7 +29,7 @@ final class LiveStreamer {
         stop()
         sequence = 0
         sentTrackCount = 0
-        sentEventCount = 0
+        sentEventKinds = [:]
         reportedSendFailure = false
         streamTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -47,9 +48,9 @@ final class LiveStreamer {
     @MainActor
     func deltas(track: [TrackPoint], events: [MatchEvent]) -> (points: [TrackPoint], events: [MatchEvent]) {
         let newPoints = Array(track.suffix(from: min(sentTrackCount, track.count)).suffix(10))
-        let newEvents = Array(events.suffix(from: min(sentEventCount, events.count)))
+        let newEvents = events.filter { sentEventKinds[$0.id] != $0.kind }
         sentTrackCount = track.count
-        sentEventCount = events.count
+        for event in newEvents { sentEventKinds[event.id] = event.kind }
         return (newPoints, newEvents)
     }
 
