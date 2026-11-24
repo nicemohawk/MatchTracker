@@ -467,6 +467,9 @@ final class MatchStore: ObservableObject {
     }
 
     /// The most interesting true thing about a match. Nil before its digest, or when there's nothing to say.
+    /// The most recent match, if any has been read yet.
+    var latestDigest: MatchDigest? { digests.values.max { $0.startDate < $1.startDate } }
+
     func headline(for id: UUID) -> String? {
         digests[id].flatMap { MatchHeadline.make(for: $0, among: Array(digests.values)) }
     }
