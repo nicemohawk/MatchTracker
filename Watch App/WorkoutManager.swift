@@ -67,16 +67,15 @@ final class WorkoutManager: NSObject {
     var onPitch = true
     private(set) var track: [TrackPoint] = []
 
-    /// Transient banner surfaced when an automatic substitution is detected (e.g. "Subbed out
-    /// (auto)"). Set for a moment, then cleared; Metrics/Session overlays it briefly.
-    var autoSubBanner: String?
-
     // MARK: Summary results (populated by endMatch)
 
     var finishedWorkout: HKWorkout?
     var finishedRecord: MatchRecord?
     var summaryAverageHeartRate: Double?
     var proposedField: FieldModel?
+    /// The result as the wearer gave it on the summary.
+    private(set) var finalScore: FinalScore?
+    @ObservationIgnored private var finishedRecordFile: FinishedRecordFile?
 
     /// Run/sprint counts computed once by the post-match pipeline; nil while still computing.
     /// SummaryView reads this instead of re-running the detector in its body.
@@ -126,7 +125,7 @@ final class WorkoutManager: NSObject {
 
     @ObservationIgnored private var matchID = UUID()
     @ObservationIgnored private var matchStartDate = Date()
-    @ObservationIgnored private var fieldID: UUID?
+    @ObservationIgnored private(set) var fieldID: UUID?
 
     // MARK: HealthKit / location plumbing
 
@@ -160,6 +159,11 @@ final class WorkoutManager: NSObject {
     /// works as before).
     @ObservationIgnored private var autoSubDetector: AutoSubDetector?
     @ObservationIgnored private let motionRecorder = MotionRecorder()
+    /// Automatic substitutions the wearer has said were wrong. Any at all, and the phone is told not
+    /// to look for them again.
+    @ObservationIgnored private var rejectedSubOuts = 0
+    /// When the last automatic substitution was noticed: minutes after it's dated.
+    @ObservationIgnored private var autoSubNoticed: Date?
 
     /// Sensor-fusion heading samples and live sideline streaming, both active only during a match.
     @ObservationIgnored private let liveStreamer = LiveStreamer()
@@ -631,6 +635,17 @@ final class WorkoutManager: NSObject {
         persistInProgress()
     }
 
+    var lastGoal: MatchEvent? {
+        events.last { [.goalForUs, .goalMine, .goalAgainstUs].contains($0.kind) }
+    }
+
+    /// Take back the last goal, and the assist logged for it.
+    func removeLastGoal() {
+        guard let goal = lastGoal else { return }
+        for assist in events where assist.kind == .assist && assist.date >= goal.date { removeEvent(assist.id) }
+        removeEvent(goal.id)
+    }
+
     /// Say more about an event already logged ("that goal was mine").
     func changeEvent(_ id: UUID, to kind: MatchEventKind) {
         guard let index = events.firstIndex(where: { $0.id == id }) else { return }
@@ -673,6 +688,28 @@ final class WorkoutManager: NSObject {
     /// When the wearer last went off, while they're off.
     var benchedSince: Date? {
         onPitch ? nil : events.last { $0.kind == .subOut }?.date
+    }
+
+    /// An automatic "came off" recent enough to be worth questioning.
+    func questionableSubOut(at date: Date) -> MatchEvent? {
+        guard !onPitch, let event = events.last(where: { $0.kind == .subOut }),
+              event.source == .automatic, date.timeIntervalSince(autoSubNoticed ?? event.date) < 5 * 60 else { return nil }
+        return event
+    }
+
+    /// The wearer never came off: forget that they did.
+    func stillOn(after subOut: MatchEvent) {
+        MatchLog.info("auto-sub: OUT rejected by the wearer", category: "autosub")
+        rejectedSubOuts += 1
+        onPitch = true
+        // Wrong twice is a field in the wrong place, and it would be wrong all match.
+        if rejectedSubOuts < 2 {
+            autoSubDetector?.recordManualEvent(MatchEvent(kind: .subIn, date: Date(), source: .manual))
+        } else {
+            autoSubDetector = nil
+        }
+        removeEvent(subOut.id)
+        WKInterfaceDevice.current().play(.notification)
     }
 
     /// Whether a manually-tagged half is running (referee mode).
@@ -720,6 +757,8 @@ final class WorkoutManager: NSObject {
         let score: (us: Int, them: Int)
         let sportID: String
         let teamCode: String?
+        let detection: Int?
+        let file = FinishedRecordFile()
 
         var track: [TrackPoint] { fixes.map(\.point) }
 
@@ -732,6 +771,7 @@ final class WorkoutManager: NSObject {
             // The full-resolution track travels with the record too, so the phone can analyze the
             // match even if the HealthKit route was never saved.
             record.track = fixes.isEmpty ? nil : track
+            record.detection = detection
             return record
         }
     }
@@ -770,7 +810,8 @@ final class WorkoutManager: NSObject {
             motion: motionRecorder.trace, context: matchContext,
             session: session, builder: builder, elapsed: elapsed,
             distanceMeters: distanceMeters, score: score,
-            sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode)
+            sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode, detection: detection)
+        finishedRecordFile = match.file
         savingIDs.insert(match.id)
         session = nil
         builder = nil
@@ -798,7 +839,7 @@ final class WorkoutManager: NSObject {
         // this is what the next launch sends, and the phone pairs it with the workout by time.
         let provisional = match.record(id: match.id, events: match.events)
         let provisionalSaved = await Task.detached(priority: .userInitiated) {
-            AppGroupStorage.persistFinished(provisional) != nil
+            match.file.write(provisional, isFinal: false).saved
         }.value
         if provisionalSaved { clearInProgress(matchID: match.id) }
 
@@ -830,10 +871,8 @@ final class WorkoutManager: NSObject {
                 MatchLog.info("endMatch: detected \(periods.count) period events at minutes [\(boundaries.joined(separator: ", "))]",
                               category: "workout")
             }
-            let record = match.record(id: recordID, events: (match.events + periods).sorted { $0.date < $1.date })
-            let saved = AppGroupStorage.persistFinished(record) != nil
-            // At once: two copies on disk at the next launch would reach the phone as two matches.
-            if saved, recordID != match.id { AppGroupStorage.removeFinished(id: match.id) }
+            let (record, saved) = match.file.write(
+                match.record(id: recordID, events: (match.events + periods).sorted { $0.date < $1.date }), isFinal: true)
             let runs = RunDetector.detectRuns(in: track)
             let counts = (runs: runs.runCount, sprints: runs.sprintCount)
             return (record, counts, saved)
@@ -969,6 +1008,7 @@ final class WorkoutManager: NSObject {
 
     /// Feeds the widget's last-match Smart Stack card.
     private func writeLastMatchSnapshot(_ match: FinishingMatch, record: MatchRecord, sprintCount: Int) {
+        let finalScore = match.file.finalScore
         let fieldName = record.fieldID
             .flatMap { id in AppGroupStorage.fieldStore.fields.first { $0.id == id }?.name }
         let snapshot = LastMatchSnapshot(
@@ -980,8 +1020,8 @@ final class WorkoutManager: NSObject {
                                                                 matchStart: record.startDate,
                                                                 matchEnd: match.end),
             distanceMeters: match.distanceMeters,
-            goalsUs: match.score.us,
-            goalsThem: match.score.them,
+            goalsUs: finalScore?.us ?? match.score.us,
+            goalsThem: finalScore?.them ?? match.score.them,
             sprintCount: sprintCount
         )
         do {
@@ -992,11 +1032,32 @@ final class WorkoutManager: NSObject {
         }
     }
 
+    /// The result, given on the summary: before, during or after the save, and perhaps just before
+    /// Done. A match that has already gone to the phone is sent again.
+    @MainActor
+    func setFinalScore(_ score: FinalScore) {
+        guard phase == .summary, let file = finishedRecordFile else { return }
+        MatchLog.info("user: gave the final score (record \(finishedRecord == nil ? "still saving" : "saved"))",
+                      category: "workout")
+        finalScore = score
+        Task.detached(priority: .userInitiated) {
+            guard let record = file.setFinalScore(score) else { return }
+            ConnectivityManager.shared.send(matchRecord: record)
+            if var snapshot = LastMatchSnapshot.load(from: AppGroupStorage.containerURL), snapshot.matchID == record.id {
+                (snapshot.goalsUs, snapshot.goalsThem) = (score.us, score.them)
+                try? snapshot.save(to: AppGroupStorage.containerURL)
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+        }
+    }
+
     /// Return to the start screen. Clears what's on screen only — a match still being saved has
     /// its own copy of everything (`FinishingMatch`).
     func reset() {
         finishedWorkout = nil
         finishedRecord = nil
+        finalScore = nil
+        finishedRecordFile = nil
         proposedField = nil
         summaryAverageHeartRate = nil
         summaryRunCounts = nil
@@ -1011,7 +1072,6 @@ final class WorkoutManager: NSObject {
         pauseStarted = nil
         onPitch = true
         autoSubDetector = nil
-        autoSubBanner = nil
         session = nil
         builder = nil
         collectionBegan = false
@@ -1033,8 +1093,9 @@ final class WorkoutManager: NSObject {
         askingStillPlaying = false
         lastMovingDate = nil
         lastAskedStillPlaying = nil
+        rejectedSubOuts = 0
+        autoSubNoticed = nil
         autoSubDetector = field.flatMap(makeAutoSubDetector)
-        autoSubBanner = nil
         events = []
         track = []
         recentLocations = []
@@ -1048,6 +1109,8 @@ final class WorkoutManager: NSObject {
         onPitch = true
         finishedWorkout = nil
         finishedRecord = nil
+        finalScore = nil
+        finishedRecordFile = nil
         proposedField = nil
         summaryAverageHeartRate = nil
         summaryRunCounts = nil
@@ -1060,6 +1123,9 @@ final class WorkoutManager: NSObject {
         return AutoSubDetector(projector: FieldProjector(rectangle: field.rectangle), initiallyOnPitch: onPitch)
     }
 
+    /// Set once the wearer has corrected the detector, so the phone keeps the events as they are.
+    private var detection: Int? { rejectedSubOuts > 0 ? MatchRecord.currentDetection : nil }
+
     private func persistInProgress() {
         // Snapshot the observable state here (cheap); build, encode and write on the serial
         // persist queue (ordered, so a later snapshot can never be clobbered). `teamCode` reads
@@ -1070,6 +1136,7 @@ final class WorkoutManager: NSObject {
         let field = fieldID
         let loggedEvents = events
         let format = matchFormat
+        let detection = detection
         persistQueue.async {
             var record = MatchRecord(
                 id: id,
@@ -1080,6 +1147,7 @@ final class WorkoutManager: NSObject {
                 teamCode: AppGroupStorage.teamCode
             )
             record.format = format
+            record.detection = detection
             AppGroupStorage.persistInProgress(record)
         }
     }
@@ -1290,6 +1358,7 @@ final class WorkoutManager: NSObject {
         matchStartDate = saved?.startDate ?? sessionStart
         fieldID = saved?.fieldID
         events = saved?.events ?? []
+        rejectedSubOuts = saved?.detection == nil ? 0 : 1
         // Restore on-pitch state from the last substitution event (a subIn or subOut), ignoring
         // any later non-sub events that would otherwise mask it.
         onPitch = events.last { $0.kind == .subIn || $0.kind == .subOut }?.kind != .subOut
@@ -1433,8 +1502,8 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
 extension WorkoutManager {
     /// Feed accepted GPS points (with the latest heart rate) through the detector. A returned auto
-    /// sub event is logged preserving its own date/source, flips `onPitch`, fires a distinct gentle
-    /// haptic and raises a transient banner. Runs on the main queue with the published metrics.
+    /// sub event is logged preserving its own date/source, flips `onPitch` and buzzes hard: it may be
+    /// wrong, and the bench screen is where to say so. Runs on the main queue with the published metrics.
     private func runAutoSubDetection(on points: [TrackPoint]) {
         guard let detector = autoSubDetector else { return }
         let latestHeartRate = heartRate > 0 ? heartRate : nil
@@ -1444,18 +1513,9 @@ extension WorkoutManager {
             MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count), running level \(detector.motion.runningLevel.map { String(format: "%.2f", $0) } ?? "unknown"))",
                           category: "autosub")
             append(event, haptic: false)
+            autoSubNoticed = Date()
             onPitch = event.kind != .subOut
-            WKInterfaceDevice.current().play(.directionUp)
-            showAutoSubBanner(event.kind == .subOut ? "Subbed out (auto)" : "Subbed in (auto)")
-        }
-    }
-
-    /// Raise the auto-sub banner and clear it after a moment.
-    private func showAutoSubBanner(_ message: String) {
-        autoSubBanner = message
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            if self?.autoSubBanner == message { self?.autoSubBanner = nil }
+            WKInterfaceDevice.current().play(.notification)
         }
     }
 }

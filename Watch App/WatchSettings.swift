@@ -16,7 +16,7 @@ enum DoubleTapAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .flag: return "Flag Moment"
+        case .flag: return "Mark Moment"
         case .subToggle: return "Sub In/Out"
         case .goalUs: return "Goal Us"
         }

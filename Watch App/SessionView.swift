@@ -32,8 +32,6 @@ struct SessionView: View {
                 .tag(Page.events)
         }
         .tabViewStyle(.verticalPage)
-        .overlay(alignment: .top) { autoSubBanner }
-        .animation(.snappy, value: workoutManager.autoSubBanner)
         .sheet(isPresented: Bindable(workoutManager).askingStillPlaying) {
             StillPlayingSheet()
         }
@@ -63,20 +61,6 @@ struct SessionView: View {
     private func noteLeftActive() {
         guard leftActiveAt == nil else { return }
         leftActiveAt = Date()
-    }
-
-    /// Brief confirmation that an automatic substitution was detected.
-    @ViewBuilder
-    private var autoSubBanner: some View {
-        if let message = workoutManager.autoSubBanner {
-            Label(message, systemImage: "wand.and.stars")
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.thinMaterial, in: Capsule())
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .padding(.top, 4)
-        }
     }
 }
 

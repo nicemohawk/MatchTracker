@@ -135,15 +135,14 @@ final class WatchSmokeTests: XCTestCase {
 
         // ---- 62: Events page (score header + event tiles). swipeUp pages Metrics → Events. ----
         app.swipeUp()
-        let flagButton = app.buttons.matching(NSPredicate(format: "label ==[c] 'Flag'")).firstMatch
+        let flagButton = app.buttons.matching(NSPredicate(format: "label ==[c] 'Mark Moment'")).firstMatch
         _ = flagButton.waitForExistence(timeout: 12)
         sleep(1)
         screenshot("62-watch-ingame-events")
 
-        // ---- 63: goal confirmation flash. Reveal the goal grid, tap "Goal Us", grab the flash. ----
+        // ---- 63: the goal sheet. Reveal the goal grid, tap "Goal Us", grab the sheet. ----
         // At the top of Events the "Goal Us" tile only peeks above the fold; one small swipeUp
         // brings the 2×2 grid fully on screen so the button's hit-point is on screen and tappable.
-        // The ConfirmationFlash is a full-view overlay, so it's captured regardless of scroll.
         let goalUs = app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Us'")).firstMatch
         if !(goalUs.exists && goalUs.isHittable) {
             app.swipeUp()
@@ -155,8 +154,11 @@ final class WatchSmokeTests: XCTestCase {
             // Fallback: tap the Goal Us tile position (top-left of the grid) by coordinate.
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.5)).tap()
         }
-        usleep(400_000)              // inside the ~1s flash window
-        screenshot("63-watch-goal-flash")
+        let teammate = app.buttons.matching(NSPredicate(format: "label ==[c] 'Teammate'")).firstMatch
+        XCTAssertTrue(teammate.waitForExistence(timeout: 5), "Our goal should ask who scored at once")
+        screenshot("63-watch-goal")
+        teammate.tap()
+        sleep(1)
 
         // ---- Return to Metrics (the pager pivot). Events may be scrolled, so swipeDown until the
         // Metrics marker reappears: the first swipe scrolls Events to its top, the next pages up. ----
@@ -269,17 +271,64 @@ final class WatchSmokeTests: XCTestCase {
 
         app.swipeDown()
         endMatch(app)
-        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 20), "End should show the summary at once")
-        // Let the live screen finish leaving and the list scroll to rest before tapping.
-        for _ in 0..<6 {
-            app.swipeUp(velocity: .slow)
-            usleep(800_000)
-            if done.isHittable { break }
-        }
-        done.tap()
+        // Answered and left while it's still saving: the score belongs in the record either way.
+        enterScore(app, us: 2, them: 1)
+        let save = app.buttons.matching(NSPredicate(format: "label ==[c] 'Save'")).firstMatch
+        scroll(app, to: save)
+        save.tap()
+        tapDone(app)
         XCTAssertTrue(startButton.waitForExistence(timeout: 20))
         sleep(12)
+        assertSavedScore(us: 2, them: 1)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(startButton.waitForExistence(timeout: 45), "A finished match must not come back")
+        assertSavedScore(us: 2, them: 1)
+    }
+
+    /// Answers "How did it end?" on the summary, short of saving it.
+    private func enterScore(_ app: XCUIApplication, us: Int, them: Int) {
+        for (side, goals) in [("Us", us), ("Them", them)] {
+            let tile = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "\(side), goals")).firstMatch
+            XCTAssertTrue(tile.waitForExistence(timeout: 20), "A match with no goals logged should ask the score at once")
+            scroll(app, to: tile)
+            for _ in 0..<goals { tile.tap() }
+            XCTAssertEqual(tile.value as? String, "\(goals)")
+        }
+    }
+
+    /// Scrolls a little at a time, letting the list come to rest before anything is tapped.
+    private func scroll(_ app: XCUIApplication, to element: XCUIElement) {
+        sleep(1)
+        for _ in 0..<12 where !(element.exists && element.isHittable && element.frame.maxY < app.frame.maxY - 8) {
+            XCUIDevice.shared.rotateDigitalCrown(delta: 0.25)
+            usleep(500_000)
+        }
+    }
+
+    private func tapDone(_ app: XCUIApplication) {
+        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 20), "End should show the summary at once")
+        scroll(app, to: done)
+        done.tap()
+    }
+
+    /// The newest finished record in the app group. Simulators share one file system, and no paired
+    /// phone has collected it.
+    private func assertSavedScore(us: Int, them: Int, line: UInt = #line) {
+        let groups = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("../../../Shared/AppGroup").standardizedFileURL
+        let records = FileManager.default.enumerator(at: groups, includingPropertiesForKeys: [.contentModificationDateKey])?
+            .compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "json" && $0.deletingLastPathComponent().lastPathComponent == "matches" } ?? []
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        }
+        let newest = records.max { modified($0) < modified($1) }.flatMap { try? Data(contentsOf: $0) }
+        let record = newest.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        let score = record?["finalScore"] as? [String: Int]
+        XCTAssertEqual(score, ["us": us, "them": them, "mine": 0], "records found: \(records.count)", line: line)
     }
 
     /// An unnoticed pause in the first seconds must not make the whole match look accidental.
@@ -302,7 +351,13 @@ final class WatchSmokeTests: XCTestCase {
         endMatch(app)
         let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 20), "A 40-second match that was mostly paused is still a match")
+
+        // Goals tapped in are an answer, even if Done is what gets tapped next.
+        enterScore(app, us: 0, them: 1)
+        tapDone(app)
+        XCTAssertTrue(startButton.waitForExistence(timeout: 20))
         sleep(8)
+        assertSavedScore(us: 0, them: 1)
     }
 
     /// Captures every redesigned screen of a real match, for design review.
@@ -326,13 +381,24 @@ final class WatchSmokeTests: XCTestCase {
         sleep(1)
         screenshot("83-score")
         app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Us'")).firstMatch.tap()
-        usleep(600_000)
-        screenshot("84-goal")
-        sleep(3)
-        screenshot("85-scorer")
         let scored = app.buttons.matching(NSPredicate(format: "label ==[c] 'I scored'")).firstMatch
-        if scored.waitForExistence(timeout: 5) { scored.tap() }
+        XCTAssertTrue(scored.waitForExistence(timeout: 5))
         sleep(1)
+        screenshot("84-goal")
+        app.swipeUp()
+        sleep(1)
+        screenshot("84b-goal-undo")
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Undo'")).firstMatch.tap()
+        sleep(1)
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Us'")).firstMatch.tap()
+        XCTAssertTrue(scored.waitForExistence(timeout: 5))
+        sleep(1)
+        scored.tap()
+        sleep(1)
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Them'")).firstMatch.tap()
+        usleep(600_000)
+        screenshot("85-goal-them")
+        sleep(5)
         for _ in 0..<4 where !heartRate.exists { app.swipeDown(); usleep(700_000) }
         screenshot("86-live-score")
         app.swipeDown()
@@ -347,6 +413,25 @@ final class WatchSmokeTests: XCTestCase {
         sleep(14)
         app.swipeDown()
         sleep(1)
+        screenshot("88b-back-on")
+        // Back on, and take both goals back: the summary then has to ask.
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Back On'")).firstMatch.tap()
+        for _ in 0..<4 where !heartRate.exists { app.swipeUp(); usleep(700_000) }
+        app.swipeUp()
+        sleep(1)
+        let takeBack = app.buttons.matching(NSPredicate(format: "label ==[c] 'Take Back Last Goal'")).firstMatch
+        for goal in 1...2 {
+            scroll(app, to: takeBack)
+            screenshot("88c-take-back-\(goal)")
+            takeBack.tap()
+            sleep(1)
+            screenshot("88d-take-back-confirm-\(goal)")
+            app.buttons.matching(NSPredicate(format: "label ==[c] 'Take Back'")).firstMatch.tap()
+            sleep(1)
+        }
+        for _ in 0..<4 where !heartRate.exists { app.swipeDown(); usleep(700_000) }
+        app.swipeDown()
+        sleep(1)
         let end = app.buttons.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
         _ = end.waitForExistence(timeout: 8)
         end.tap()
@@ -356,10 +441,22 @@ final class WatchSmokeTests: XCTestCase {
         sleep(1)
         screenshot("90-summary-saving")
         sleep(6)
-        screenshot("91-summary")
-        app.swipeUp()
+        screenshot("91-summary-score")
+        enterScore(app, us: 2, them: 1)
+        screenshot("92-summary-score-entered")
+        let save = app.buttons.matching(NSPredicate(format: "label ==[c] 'Save'")).firstMatch
+        scroll(app, to: save)
+        screenshot("92b-summary-save")
+        save.tap()
         sleep(1)
-        screenshot("92-summary-stats")
+        app.swipeDown()
+        sleep(3)
+        screenshot("93-summary")
+        for page in 1...4 {
+            app.swipeUp()
+            sleep(1)
+            screenshot("94-summary-\(page)")
+        }
     }
 
     /// Taps End on the Controls page and confirms.

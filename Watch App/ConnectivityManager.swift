@@ -111,16 +111,13 @@ final class ConnectivityManager: NSObject {
                 at: AppGroupStorage.finishedMatchesDirectory,
                 includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
 
-            func modified(_ url: URL) -> Date {
-                (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            }
             // Already queued from an earlier launch: a second copy can arrive after the phone has
             // renamed the first, and come back as a duplicate match.
             let queued = Set(WCSession.default.outstandingFileTransfers
                 .compactMap { $0.file.metadata?[TransferType.recordID] as? String })
             let pending = urls.filter { $0.pathExtension == "json" }
                 .filter { !queued.contains($0.deletingPathExtension().lastPathComponent) }
-                .sorted { modified($0) > modified($1) }
+                .sorted { self.modified($0) > self.modified($1) }
                 .prefix(limit)
             guard !pending.isEmpty else { return }
 
@@ -131,6 +128,10 @@ final class ConnectivityManager: NSObject {
                                                                TransferType.recordID: id])
             }
         }
+    }
+
+    private func modified(_ url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
     }
 
     private func writeTemporaryJSON<T: Encodable>(_ value: T, prefix: String) -> URL? {
@@ -210,12 +211,15 @@ extension ConnectivityManager: WCSessionDelegate {
     /// been delivered and can be removed; on failure it is left in place so WCSession can retry.
     func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
         guard error == nil else { return }
-        try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
         // The copy in the app group is the retry source for a record the phone hasn't got yet, so
-        // it goes only now that this transfer has actually landed.
+        // it goes only now that this transfer has actually landed — unless it has been added to
+        // since (the final score), in which case a newer copy is on its way.
         if let id = fileTransfer.file.metadata?[TransferType.recordID] as? String {
-            try? FileManager.default.removeItem(
-                at: AppGroupStorage.finishedMatchesDirectory.appendingPathComponent("\(id).json"))
+            let record = AppGroupStorage.finishedMatchesDirectory.appendingPathComponent("\(id).json")
+            if modified(record) <= modified(fileTransfer.file.fileURL) {
+                try? FileManager.default.removeItem(at: record)
+            }
         }
+        try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
     }
 }

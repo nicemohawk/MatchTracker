@@ -83,6 +83,20 @@ final class MatchRepairTests: XCTestCase {
         XCTAssertEqual(received.keepingEdits(from: opened).events, opened.events)
     }
 
+    func testAScoreGivenOnTheWatchReachesAMatchThePhoneAlreadyHas() {
+        var resent = record([MatchEvent(kind: .subOut, date: at(5), source: .automatic)])
+        var opened = resent
+        resent.finalScore = FinalScore(us: 0, them: 0)
+        opened.detection = 1
+        opened.opponent = "Rovers"
+        XCTAssertEqual(resent.keepingEdits(from: opened).finalScore, FinalScore(us: 0, them: 0))
+        XCTAssertEqual(resent.keepingEdits(from: opened).opponent, "Rovers")
+        // Whichever copy arrives first, and whatever the phone has been told since.
+        XCTAssertEqual(opened.keepingEdits(from: resent).finalScore, FinalScore(us: 0, them: 0))
+        opened.finalScore = FinalScore(us: 2, them: 1)
+        XCTAssertEqual(resent.keepingEdits(from: opened).finalScore, FinalScore(us: 2, them: 1))
+    }
+
     // MARK: - Trim
 
     func testTrimIsKeptInsideTheRecording() {
