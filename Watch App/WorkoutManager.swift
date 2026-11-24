@@ -161,7 +161,6 @@ final class WorkoutManager: NSObject {
     @ObservationIgnored private var autoSubDetector: AutoSubDetector?
 
     /// Sensor-fusion heading samples and live sideline streaming, both active only during a match.
-    @ObservationIgnored private let headingRecorder = HeadingRecorder()
     @ObservationIgnored private let liveStreamer = LiveStreamer()
 
     /// Serial queue for crash-safety record writes: keeps the JSON encode + disk write off the
@@ -290,11 +289,10 @@ final class WorkoutManager: NSObject {
         MatchLog.info("user: start tapped (format \(format.rawValue), field \(field?.name ?? "none"), referee \(WatchSettings.refereeMode))",
                       category: "workout")
 
-        // Indoor: no location updates, route, field detection, auto-sub or heading capture.
+        // Indoor: no location updates, route, field detection, or auto-sub.
         if !isIndoor {
             routeRecorder.arm()
             routeRecorder.beginRecording(matchID: matchID, start: start)
-            headingRecorder.start()
         } else {
             routeRecorder.coolDown()
         }
@@ -505,7 +503,6 @@ final class WorkoutManager: NSObject {
         let endingBuilder = builder
         _ = routeRecorder.finish()
         routeRecorder.removeJournal(matchID: abandonedID)
-        headingRecorder.reset()
         liveStreamer.stop()
         clearInProgress(matchID: abandonedID)
         reset()
@@ -706,7 +703,6 @@ final class WorkoutManager: NSObject {
         let fieldID: UUID?
         let events: [MatchEvent]
         let fixes: [RouteFix]
-        let headings: [HeadingSample]?
         let context: MatchContext
         let session: HKWorkoutSession?
         let builder: HKLiveWorkoutBuilder?
@@ -720,7 +716,7 @@ final class WorkoutManager: NSObject {
 
         func record(id: UUID, events: [MatchEvent]) -> MatchRecord {
             var record = MatchRecord(id: id, startDate: start, endDate: end, fieldID: fieldID, events: events,
-                                     teamCode: teamCode, sportID: sportID, headings: headings)
+                                     teamCode: teamCode, sportID: sportID)
             // Set explicitly so a formal match records `.match` rather than relying on nil.
             record.format = format
             // The full-resolution track travels with the record too, so the phone can analyze the
@@ -756,11 +752,10 @@ final class WorkoutManager: NSObject {
         elapsedAtPause = elapsed
         // Built while the match is still live, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
-        headingRecorder.stop()
         let match = FinishingMatch(
             id: matchID, start: matchStartDate, end: end, format: matchFormat, fieldID: fieldID,
             events: events, fixes: isIndoor ? [] : routeRecorder.finish().filter { $0.point.timestamp <= end },
-            headings: headingRecorder.collected, context: matchContext,
+            context: matchContext,
             session: session, builder: builder, elapsed: elapsed,
             distanceMeters: distanceMeters, score: score,
             sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode)
@@ -1293,7 +1288,6 @@ final class WorkoutManager: NSObject {
             routeRecorder.arm()
             routeRecorder.beginRecording(matchID: matchID, start: matchStartDate, resuming: true)
             track = routeRecorder.fixes.map(\.point)
-            headingRecorder.start()
         }
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
         phase = .active
