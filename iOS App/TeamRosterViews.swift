@@ -1,413 +1,333 @@
 // TeamRosterViews.swift
 // MatchTracker
-//
-// The Team-tab leaderboard: a Strava-club-style ranked list that replaces the old cramped
-// 7-column roster table. One hero metric per row, a chip picker to re-rank, medal treatment for
-// the podium, and an inline expandable detail carrying the full stat set the table used to show.
 
 import SwiftUI
 import MatchTrackerKit
 
 // MARK: - Metric
 
-/// The leaderboard's selectable hero metric. Each case knows its accent, how to pull a sortable
-/// value from a `TeamStats.Player`, and how to render that value as a big monospaced numeral.
 enum TeamMetric: String, CaseIterable, Identifiable {
-    case workrate, distance, goals, assists, sprints, minutes
+    case distance, minutes, goals, assists, sprints
 
     var id: String { rawValue }
 
-    var label: String {
+    var title: String {
         switch self {
-        case .workrate: return "Workrate"
         case .distance: return "Distance"
+        case .minutes: return "Minutes"
         case .goals: return "Goals"
         case .assists: return "Assists"
         case .sprints: return "Sprints"
-        case .minutes: return "Minutes"
         }
     }
 
-    var icon: String {
+    /// Nil when nobody measured it, which is not the same as zero.
+    func value(_ player: TeamStats.Player) -> Double? {
         switch self {
-        case .workrate: return "bolt.fill"
-        case .distance: return "figure.run"
-        case .goals: return "soccerball"
-        case .assists: return "hand.thumbsup.fill"
-        case .sprints: return "hare.fill"
-        case .minutes: return "clock.fill"
-        }
-    }
-
-    /// Semantic tint, reusing the app's established mapping (turf = effort, pace = distance,
-    /// sprint = sprints/amber, goal = green).
-    var tint: Color {
-        switch self {
-        case .workrate: return Theme.turf
-        case .distance: return Theme.pace
-        case .goals: return Theme.goal
-        case .assists: return Theme.signal
-        case .sprints: return Theme.sprint
-        case .minutes: return Theme.bench
-        }
-    }
-
-    /// Sortable numeric value; optional stats collapse to 0 so they still rank.
-    func value(_ player: TeamStats.Player) -> Double {
-        switch self {
-        case .workrate: return player.averageWorkrateScore
-        case .distance: return player.totalDistanceMeters
+        case .distance: return player.totalDistanceMeters > 0 ? player.totalDistanceMeters : nil
+        case .minutes: return player.minutesPlayed
         case .goals: return Double(player.goals)
         case .assists: return Double(player.assists)
-        case .sprints: return Double(player.sprints ?? 0)
-        case .minutes: return player.minutesPlayed ?? 0
+        case .sprints: return player.sprints.map(Double.init)
         }
     }
 
-    /// The big right-aligned hero numeral (unitless — the unit renders beside it).
-    func heroText(_ player: TeamStats.Player) -> String {
+    func text(_ value: Double) -> String {
         switch self {
-        case .workrate: return "\(Int(player.averageWorkrateScore.rounded()))"
-        case .distance: return String(format: "%.1f", player.totalDistanceMeters / 1000)
-        case .goals: return "\(player.goals)"
-        case .assists: return "\(player.assists)"
-        case .sprints: return player.sprints.map { "\($0)" } ?? "—"
-        case .minutes: return player.minutesPlayed.map { "\(Int($0.rounded()))" } ?? "—"
+        case .distance: return UnitSystem.current.distance(value).text
+        case .minutes: return "\(Int(value.rounded())) min"
+        case .goals, .assists, .sprints: return "\(Int(value.rounded()))"
         }
     }
 
-    /// Small unit caption under the hero numeral, if any.
-    var unit: String? {
+    func spoken(_ value: Double) -> String {
         switch self {
-        case .workrate: return "score"
-        case .distance: return "km"
-        case .goals: return "goals"
-        case .assists: return "assists"
-        case .sprints: return "sprints"
-        case .minutes: return "min"
+        case .distance: return UnitSystem.current.distance(value).spoken
+        case .minutes: return "\(Int(value.rounded())) minutes"
+        case .goals, .assists, .sprints:
+            let count = Int(value.rounded())
+            return count == 1 ? "1 \(rawValue.dropLast())" : "\(count) \(rawValue)"
+        }
+    }
+
+    struct Standing: Identifiable {
+        let name: String
+        let rank: Int
+        let value: Double
+        var id: String { name }
+    }
+
+    /// Best first, ties sharing a rank. Players with nothing to rank are left out.
+    func standings(_ players: [TeamStats.Player]) -> [Standing] {
+        let entries: [(name: String, value: Double)] = players.compactMap { player in
+            guard let value = value(player), value > 0 else { return nil }
+            return (player.name, value)
+        }
+        let ranked = entries.sorted { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value > rhs.value }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+        return ranked.map { name, value in
+            Standing(name: name, rank: 1 + ranked.filter { $0.value > value }.count, value: value)
         }
     }
 }
 
-// MARK: - Metric picker
+// MARK: - Leaderboard
 
-/// Capsule-chip segmented picker matching MatchDetailView's chip idiom: the selected chip fills
-/// with its metric tint, the rest stay quiet on the elevated surface.
-struct MetricPicker: View {
-    @Binding var selection: TeamMetric
-    var onSelect: (TeamMetric) -> Void
+/// The leaderboard as list sections, including its loading, empty and failed states.
+struct TeamLeaderboardSections: View {
+    let team: TeamModel
+    let showsSquadLink: Bool
+
+    @EnvironmentObject private var settings: SettingsStore
+    @AppStorage("teamLeaderboardMetric") private var metric: TeamMetric = .distance
+
+    private static let homeLimit = 5
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(TeamMetric.allCases) { metric in
-                    chip(metric)
+        switch team.phase {
+        case .loading:
+            Section {
+                ForEach(0..<5, id: \.self) { index in
+                    LeaderboardRow(standing: .init(name: "Player Name", rank: index + 1, value: 10_000), best: 12_000,
+                                   metric: .distance, isMe: false)
+                }
+                .redacted(reason: .placeholder)
+                .accessibilityHidden(true)
+            }
+        case .failed(let message):
+            Section {
+                ContentUnavailableView {
+                    Label("Couldn't load your team", systemImage: "wifi.slash")
+                } description: {
+                    Text(message)
+                } actions: {
+                    Button("Try Again") { Task { await team.load(code: settings.teamCode) } }
+                        .buttonStyle(.borderedProminent)
                 }
             }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 2)
-        }
-    }
-
-    private func chip(_ metric: TeamMetric) -> some View {
-        let isSelected = metric == selection
-        return Button {
-            guard metric != selection else { return }
-            Haptics.selection()
-            onSelect(metric)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: metric.icon).font(.caption2.weight(.bold))
-                Text(metric.label).font(.system(.subheadline, design: .rounded).weight(.semibold))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .foregroundStyle(isSelected ? metric.tint : Color.secondary)
-            .background(
-                Capsule().fill(isSelected ? Theme.chipFill(metric.tint) : Theme.surfaceElevated)
-            )
-            .overlay(
-                Capsule().strokeBorder(
-                    isSelected ? Theme.chipStroke(metric.tint) : Theme.surfaceStroke,
-                    lineWidth: 1
-                )
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Avatar
-
-/// Deterministic initials avatar. The tint is a stable hash of the name into the app's accent
-/// set, so a given teammate keeps the same color across launches.
-enum RosterAvatar {
-    static let palette: [Color] = [Theme.turf, Theme.signal, Theme.pace, Theme.sprint, Theme.heart]
-
-    static func tint(for name: String) -> Color {
-        let hash = name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFFF }
-        return palette[abs(hash) % palette.count]
-    }
-
-    static func initials(from name: String) -> String {
-        let parts = name.split(whereSeparator: { $0 == " " || $0 == "." }).filter { !$0.isEmpty }
-        if parts.count >= 2 {
-            return (parts[0].prefix(1) + parts[1].prefix(1)).uppercased()
-        }
-        if let first = parts.first {
-            return String(first.prefix(2)).uppercased()
-        }
-        return "?"
-    }
-}
-
-struct PlayerAvatar: View {
-    let name: String
-    var size: CGFloat = 40
-
-    var body: some View {
-        let tint = RosterAvatar.tint(for: name)
-        Text(RosterAvatar.initials(from: name))
-            .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
-            .foregroundStyle(tint)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Theme.tintWash(tint, dark: 0.22, light: 0.14)))
-            .overlay(Circle().strokeBorder(Theme.chipStroke(tint), lineWidth: 1))
-    }
-}
-
-// MARK: - Rank medal
-
-/// Podium treatment: gold/silver/bronze approximated within the token set (sprint amber, neutral
-/// bench, dimmed sprint). Ranks 4+ get a quiet numeral.
-private struct RankBadge: View {
-    let rank: Int
-
-    var body: some View {
-        Group {
-            if let tint = medalTint {
-                Text("\(rank)")
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(tint)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Theme.tintWash(tint, dark: 0.25, light: 0.16)))
-                    .overlay(Circle().strokeBorder(tint.opacity(0.7), lineWidth: 1.5))
-            } else {
-                Text("\(rank)")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-            }
-        }
-    }
-
-    private var medalTint: Color? {
-        switch rank {
-        case 1: return Theme.sprint                 // gold
-        case 2: return Theme.bench                  // silver
-        case 3: return Theme.sprint.opacity(0.55)   // bronze (dimmed amber)
-        default: return nil
-        }
-    }
-}
-
-// MARK: - Leaderboard row
-
-/// One ranked teammate. Tapping toggles an inline expansion (spring) revealing the full stat set.
-struct LeaderboardRow: View {
-    let player: TeamStats.Player
-    let rank: Int
-    let metric: TeamMetric
-    let isYou: Bool
-    let isExpanded: Bool
-    var onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                if isExpanded {
-                    PlayerStatGrid(player: player, highlighted: metric)
-                        .padding(.top, 14)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .top)),
-                            removal: .opacity
-                        ))
-                }
-            }
-            .padding(14)
-            .background(rowBackground)
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(isYou ? Theme.chipStroke(Theme.turf) : Theme.surfaceStroke, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            RankBadge(rank: rank)
-            PlayerAvatar(name: player.name)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(player.name)
-                        .font(.system(.body, design: .rounded).weight(isYou ? .bold : .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if isYou {
-                        Text("YOU")
-                            .font(.system(size: 9, weight: .heavy, design: .rounded))
-                            .tracking(0.5)
-                            .foregroundStyle(Theme.turf)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(Theme.chipFill(Theme.turf)))
+        case .loaded where team.season?.players.isEmpty ?? true:
+            Section {
+                ContentUnavailableView {
+                    Label("No matches yet", systemImage: "figure.soccer")
+                } description: {
+                    Text("Teammates appear here after their first match with MatchTracker. Invite them to get started.")
+                } actions: {
+                    ShareLink(item: TeamInvite(code: settings.teamCode, name: settings.teamName(orNil: team.season?.teamName)).message) {
+                        Text("Invite Teammates")
                     }
+                    .buttonStyle(.borderedProminent)
                 }
-                Text("\(player.matchesPlayed) \(player.matchesPlayed == 1 ? "match" : "matches")")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
-            heroValue
-            Image(systemName: "chevron.down")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(isExpanded ? 180 : 0))
+        case .loaded:
+            leaderboard
         }
     }
 
-    private var heroValue: some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            Text(metric.heroText(player))
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(metric.tint)
-                .contentTransition(.numericText())
-            if let unit = metric.unit {
-                Text(unit)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .textCase(.uppercase)
-                    .tracking(0.8)
+    @ViewBuilder private var leaderboard: some View {
+        let isThisWeek = !(team.week?.players.isEmpty ?? true)
+        let players = (isThisWeek ? team.week : team.season)?.players ?? []
+        let standings = metric.standings(players)
+        Section {
+            header(isThisWeek ? "This week" : TeamModel.seasonTitle,
+                   note: !isThisWeek && team.week != nil ? "Nobody has played yet this week." : nil)
+                .listRowSeparator(.hidden, edges: .bottom)
+            ForEach(visible(standings)) { standing in
+                LeaderboardRow(standing: standing, best: standings.first?.value ?? 0, metric: metric,
+                               isMe: settings.isMe(standing.name))
+            }
+            if standings.isEmpty {
+                Text("No \(metric.title.lowercased()) recorded yet.")
                     .foregroundStyle(.secondary)
             }
-        }
-        .frame(minWidth: 52, alignment: .trailing)
-    }
-
-    private var rowBackground: some View {
-        ZStack {
-            Theme.surface
-            if isYou {
-                Theme.tintWash(Theme.turf, dark: 0.10, light: 0.06)
-            }
-        }
-    }
-}
-
-// MARK: - Expanded stat set
-
-/// The full stat set the old table row carried, as labeled mini-stats. The currently ranked
-/// metric is tinted so the expansion ties back to the leaderboard.
-struct PlayerStatGrid: View {
-    let player: TeamStats.Player
-    let highlighted: TeamMetric
-
-    private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Divider().overlay(Theme.surfaceStroke)
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
-                stat("Matches", "\(player.matchesPlayed)", Theme.bench, metric: nil)
-                stat("Minutes", player.minutesPlayed.map { "\(Int($0.rounded()))" } ?? "—", Theme.bench, metric: .minutes)
-                stat("Distance", String(format: "%.1f km", player.totalDistanceMeters / 1000), Theme.pace, metric: .distance)
-                stat("Workrate", "\(Int(player.averageWorkrateScore.rounded()))", Theme.turf, metric: .workrate)
-                stat("Sprints", player.sprints.map { "\($0)" } ?? "—", Theme.sprint, metric: .sprints)
-                stat("Goals", "\(player.goals)", Theme.goal, metric: .goals)
-                stat("Assists", "\(player.assists)", Theme.signal, metric: .assists)
+            if showsSquadLink {
+                NavigationLink(value: TeamDestination.squad) {
+                    LabeledContent("Whole squad", value: "\(team.season?.players.count ?? players.count)")
+                }
             }
         }
     }
 
-    private func stat(_ label: String, _ value: String, _ tint: Color, metric: TeamMetric?) -> some View {
-        let isHot = metric == highlighted
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(isHot ? tint : .primary)
-            Text(label).captionLabel()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Skeleton loading
-
-/// Redacted placeholder rows shown while the roster loads — a leaderboard-shaped shimmer instead
-/// of a bare spinner.
-struct SkeletonLeaderboard: View {
-    var rows = 5
-
-    var body: some View {
-        VStack(spacing: 10) {
-            ForEach(0..<rows, id: \.self) { index in
-                HStack(spacing: 12) {
-                    Circle().fill(Theme.surfaceElevated).frame(width: 26, height: 26)
-                    Circle().fill(Theme.surfaceElevated).frame(width: 40, height: 40)
-                    VStack(alignment: .leading, spacing: 6) {
-                        RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                            .frame(width: 120 - CGFloat(index * 12), height: 13)
-                        RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                            .frame(width: 60, height: 10)
-                    }
+    private func header(_ title: String, note: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Text(title).font(.title2.bold())
                     Spacer()
-                    RoundedRectangle(cornerRadius: 4).fill(Theme.surfaceElevated)
-                        .frame(width: 40, height: 22)
+                    metricPicker
                 }
-                .padding(14)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-                )
+                VStack(alignment: .leading) {
+                    Text(title).font(.title2.bold())
+                    // A menu picker insets its label; line it up with the rest.
+                    metricPicker.padding(.leading, -12)
+                }
+            }
+            if let note {
+                Text(note).font(.subheadline).foregroundStyle(.secondary)
             }
         }
-        .redacted(reason: .placeholder)
-        .shimmering()
+        .accessibilityElement(children: .contain)
+    }
+
+    private var metricPicker: some View {
+        Picker("Ranked by", selection: $metric) {
+            ForEach(TeamMetric.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    /// The top five, and you if you're further down.
+    private func visible(_ standings: [TeamMetric.Standing]) -> [TeamMetric.Standing] {
+        guard showsSquadLink, standings.count > Self.homeLimit else { return standings }
+        let top = standings.prefix(Self.homeLimit)
+        guard let mine = standings.first(where: { settings.isMe($0.name) }), !top.contains(where: { $0.id == mine.id }) else {
+            return Array(top)
+        }
+        return top + [mine]
     }
 }
 
-// MARK: - Shimmer
+struct LeaderboardRow: View {
+    let standing: TeamMetric.Standing
+    let best: Double
+    let metric: TeamMetric
+    let isMe: Bool
 
-/// A lightweight left-to-right sheen for redacted placeholders.
-private struct Shimmer: ViewModifier {
-    @State private var phase: CGFloat = -1
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                GeometryReader { geometry in
-                    LinearGradient(
-                        colors: [.clear, Color.white.opacity(0.06), .clear],
-                        startPoint: .leading, endPoint: .trailing
-                    )
-                    .frame(width: geometry.size.width * 1.5)
-                    .offset(x: phase * geometry.size.width * 1.5)
+    private var isLeader: Bool { standing.rank == 1 }
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        VStack(alignment: .leading, spacing: 8) {
+            layout {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("\(standing.rank)")
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 22, alignment: .leading)
+                    TeamPlayerName(name: standing.name, isMe: isMe)
+                        .font(isLeader ? .title3.bold() : .body)
                 }
-                .allowsHitTesting(false)
-            )
-            .onAppear {
-                withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
-                    phase = 1
-                }
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
+                Text(metric.text(standing.value))
+                    .font(.system(isLeader ? .title2 : .body, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
             }
+            ProgressView(value: best > 0 ? standing.value / best : 0)
+                .tint(isMe ? Theme.turf : Color(.systemGray2))
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(standing.rank). \(standing.name)\(isMe ? ", you" : "")")
+        .accessibilityValue(metric.spoken(standing.value))
     }
 }
 
-private extension View {
-    func shimmering() -> some View { modifier(Shimmer()) }
+/// A player's name, marked in words as well as green when it's you.
+struct TeamPlayerName: View {
+    let name: String
+    var isMe: Bool?
+
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        if isMe ?? settings.isMe(name) {
+            Text("\(name) \(Text("You").foregroundStyle(Theme.turf))")
+        } else {
+            Text(name)
+        }
+    }
+}
+
+// MARK: - Squad
+
+struct TeamSquadView: View {
+    let team: TeamModel
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(players, id: \.name) { player in
+                    NavigationLink(value: TeamDestination.player(player.name)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            TeamPlayerName(name: player.name)
+                            Text(summary(player))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text(TeamModel.seasonTitle)
+            } footer: {
+                Text("Everyone who has shared a match with the team this season.")
+            }
+        }
+        .navigationTitle("Squad")
+    }
+
+    private var players: [TeamStats.Player] {
+        (team.season?.players ?? []).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func summary(_ player: TeamStats.Player) -> String {
+        let matches = player.matchesPlayed == 1 ? "1 match" : "\(player.matchesPlayed) matches"
+        guard let minutes = player.minutesPlayed else { return matches }
+        return "\(matches), \(Int(minutes.rounded())) minutes"
+    }
+}
+
+struct TeamPlayerView: View {
+    let name: String
+    let team: TeamModel
+
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        List {
+            if let player = team.week?.players.first(where: { $0.name == name }) {
+                Section("This week") { rows(player) }
+            }
+            if let player = team.season?.players.first(where: { $0.name == name }) {
+                Section(TeamModel.seasonTitle) { rows(player) }
+            }
+        }
+        .readableFormWidth()
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(settings.isMe(name) ? "\(name) (You)" : name)
+    }
+
+    @ViewBuilder
+    private func rows(_ player: TeamStats.Player) -> some View {
+        LabeledContent("Matches", value: "\(player.matchesPlayed)")
+        ForEach(TeamMetric.allCases) { metric in
+            LabeledContent(metric.title) {
+                Text(metric.value(player).map(metric.text) ?? "—")
+                    .monospacedDigit()
+                    .accessibilityLabel(metric.value(player).map(metric.spoken) ?? "Not recorded")
+            }
+        }
+    }
+}
+
+// MARK: - Initials
+
+enum RosterAvatar {
+    static func initials(from name: String) -> String {
+        let parts = name.split { $0 == " " || $0 == "." }
+        if parts.count >= 2 { return "\(parts[0].prefix(1))\(parts[parts.count - 1].prefix(1))".uppercased() }
+        return parts.first.map { String($0.prefix(2)).uppercased() } ?? "?"
+    }
+
+    /// "Maya", or "M. B." as it stands when that's all there is.
+    static func shortName(_ name: String) -> String {
+        name.contains(".") ? name : String(name.split(separator: " ").first ?? "?")
+    }
 }

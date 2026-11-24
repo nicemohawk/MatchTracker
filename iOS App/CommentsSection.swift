@@ -4,254 +4,249 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Strava-style social proof under the analysis: a lightweight team-chat thread on a single match.
-/// Reading is not paywalled — it appears whenever a team code is configured. Comments load lazily
-/// (a `.task` fires when the section scrolls into view) so they never block the detail screen, and
-/// this backend endpoint may 404 on older servers, so every failure degrades to a quiet one-liner
-/// rather than an alarming empty state.
-struct CommentsSection: View {
-    /// The backend match UUID (matches the `uuid` uploads send in the payload).
+/// The toolbar button that opens a match's comments, with how many there are.
+/// Draws nothing when the player has no team to talk to.
+struct MatchCommentsButton: View {
     let matchUUID: UUID
-    @EnvironmentObject private var uploads: UploadService
 
-    @State private var comments: [MatchComment] = []
-    @State private var phase: Phase = .loading
-    @State private var draft: String = ""
-    /// Comments whose network post failed — rendered subtly with a retry affordance.
-    @State private var failedIDs: Set<UUID> = []
-
-    private enum Phase { case loading, loaded, failed }
+    @EnvironmentObject private var settings: SettingsStore
+    @State private var count: Int?
+    @State private var isShowingComments = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SectionHeaderBar(title: "Comments", tint: Theme.signal,
-                             subtitle: "Team chat on this match")
-
-            content
-
-            // No composer while unreachable — a send box above "unavailable" reads as broken.
-            if phase != .failed {
-                composer
-            }
-        }
-        .padding(.horizontal)
-        .task {
-            // Lazy load: only reaches here once the section scrolls into view.
-            guard phase == .loading else { return }
-            await load()
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch phase {
-        case .loading:
-            VStack(spacing: 12) {
-                placeholderRow
-                placeholderRow
-            }
-            .redacted(reason: .placeholder)
-        case .failed:
-            quietState(icon: "exclamationmark.bubble", text: "Comments aren't available for this match.")
-        case .loaded:
-            if comments.isEmpty {
-                quietState(icon: "bubble.left", text: "Be the first to comment.")
-            } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(sortedComments) { comment in
-                        CommentRow(
-                            comment: comment,
-                            hasFailed: failedIDs.contains(comment.id),
-                            onRetry: { Task { await retry(comment) } }
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
+        if !settings.teamCode.isEmpty {
+            Button { isShowingComments = true } label: {
+                if let count, count > 0 {
+                    Label("\(count)", systemImage: "bubble")
+                        .labelStyle(.titleAndIcon)
+                        .monospacedDigit()
+                } else {
+                    Image(systemName: "bubble")
                 }
             }
-        }
-    }
-
-    /// A quiet inline card for the empty / unavailable states: a small themed icon and a single
-    /// line of copy on the elevated surface — reads as intentional, not a broken screen.
-    private func quietState(icon: String, text: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.subheadline)
-                .foregroundStyle(Theme.signal)
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-        )
-    }
-
-    /// Rounded composer pinned at the section bottom.
-    private var composer: some View {
-        HStack(spacing: 10) {
-            TextField("Add a comment…", text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.subheadline)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule().fill(Theme.surfaceElevated)
-                )
-                .overlay(
-                    Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-                )
-
-            Button {
-                post()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(Theme.turf)
+            .accessibilityLabel("Comments")
+            .accessibilityValue(count.map { $0 == 0 ? "None yet" : "\($0)" } ?? "")
+            .task(id: matchUUID) {
+                count = try? await TeamService.comments(match: matchUUID).count
             }
-            .buttonStyle(.plain)
-            .disabled(trimmedDraft.isEmpty)
-            .opacity(trimmedDraft.isEmpty ? 0.4 : 1)
-        }
-        .padding(.top, 4)
-    }
-
-    private var placeholderRow: some View {
-        CommentRow(
-            comment: MatchComment(matchUUID: matchUUID, author: "Placeholder Name",
-                                  body: "A teammate's comment goes right about here."),
-            hasFailed: false,
-            onRetry: {}
-        )
-    }
-
-    // MARK: - Data
-
-    /// Newest last — reads top-to-bottom like a conversation.
-    private var sortedComments: [MatchComment] {
-        comments.sorted { $0.postedAt < $1.postedAt }
-    }
-
-    private var trimmedDraft: String {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func load() async {
-        do {
-            let fetched = try await uploads.fetchComments(match: matchUUID)
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                comments = fetched
-                phase = .loaded
-            }
-        } catch {
-            phase = .failed
-        }
-    }
-
-    private func post() {
-        let text = trimmedDraft
-        guard !text.isEmpty else { return }
-        let author = SettingsStore.shared.playerName.isEmpty ? "Me" : SettingsStore.shared.playerName
-        let comment = MatchComment(matchUUID: matchUUID, author: author, body: text)
-
-        // Optimistic insert with a gentle spring, then the network call.
-        Haptics.selection()
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            comments.append(comment)
-            phase = .loaded
-        }
-        draft = ""
-        Task { await send(comment) }
-    }
-
-    private func retry(_ comment: MatchComment) async {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            _ = failedIDs.remove(comment.id)
-        }
-        await send(comment)
-    }
-
-    private func send(_ comment: MatchComment) async {
-        do {
-            try await uploads.postComment(comment, match: matchUUID)
-            withAnimation(.easeInOut(duration: 0.2)) {
-                _ = failedIDs.remove(comment.id)
-            }
-        } catch {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                _ = failedIDs.insert(comment.id)
+            .sheet(isPresented: $isShowingComments) {
+                MatchCommentsSheet(matchUUID: matchUUID, count: $count)
             }
         }
     }
 }
 
-/// One comment: an initials avatar (deterministically tinted from the author's name), the author
-/// and a relative timestamp, then the body. A failed post marks itself quietly and offers a retry.
-private struct CommentRow: View {
-    let comment: MatchComment
-    let hasFailed: Bool
-    let onRetry: () -> Void
+/// Stands in wherever match detail still embeds comments: the same button, on a line of its own.
+struct CommentsSection: View {
+    let matchUUID: UUID
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            avatar
+        MatchCommentsButton(matchUUID: matchUUID)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal)
+    }
+}
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(comment.author)
-                        .font(.subheadline.weight(.semibold))
-                    Text(comment.postedAt, format: .relative(presentation: .named))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Text(comment.body)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+/// What the team said about one match.
+struct MatchCommentsSheet: View {
+    let matchUUID: UUID
+    var count: Binding<Int?> = .constant(nil)
 
-                if hasFailed {
-                    Button(action: onRetry) {
-                        Label("Couldn't post — tap to retry", systemImage: "exclamationmark.circle")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 1)
+    @EnvironmentObject private var settings: SettingsStore
+    @Environment(EntitlementStore.self) private var entitlements
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    @State private var comments: [MatchComment] = []
+    @State private var phase: Phase = .loading
+    @State private var problems: [UUID: Problem] = [:]
+    /// Written here; kept on screen until the server has them.
+    @State private var ownIDs: Set<UUID> = []
+    @State private var draft = ""
+    @State private var authorName = ""
+    @State private var isShowingPlan = false
+    @State private var sentCount = 0
+    @FocusState private var isWriting: Bool
+
+    private enum Phase: Equatable { case loading, loaded, failed(String) }
+    private enum Problem { case notSent, needsPlan }
+
+    private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Asked for once, so nobody posts as nobody.
+    private var needsName: Bool { settings.playerName.isEmpty }
+
+    private var author: String {
+        needsName ? authorName.trimmingCharacters(in: .whitespaces) : settings.playerName
+    }
+
+    var body: some View {
+        NavigationStack {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .safeAreaInset(edge: .bottom) {
+                    if case .failed = phase {} else { composer }
                 }
-            }
-            Spacer(minLength: 0)
+                .navigationTitle("Comments")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        .task { await poll() }
+        .sensoryFeedback(.success, trigger: sentCount)
+        .sheet(isPresented: $isShowingPlan) { PaywallView(entitlements: entitlements) }
+        .onChange(of: comments.count) { _, newCount in
+            if phase == .loaded { count.wrappedValue = newCount }
+        }
     }
 
-    private var avatar: some View {
-        let tint = Self.tint(for: comment.author)
-        return Text(Self.initials(for: comment.author))
-            .font(.system(.caption, design: .rounded).weight(.bold))
-            .foregroundStyle(tint)
-            .frame(width: 36, height: 36)
-            .background(Circle().fill(Theme.chipFill(tint)))
-            .overlay(Circle().strokeBorder(Theme.chipStroke(tint), lineWidth: 1))
+    // MARK: Thread
+
+    @ViewBuilder private var content: some View {
+        switch phase {
+        case .loading:
+            ProgressView()
+        case .failed(let message):
+            ContentUnavailableView {
+                Label("Couldn't load comments", systemImage: "wifi.slash")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try Again") {
+                    phase = .loading
+                    Task { await refresh() }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        case .loaded where comments.isEmpty:
+            ContentUnavailableView("No comments yet", systemImage: "bubble",
+                                   description: Text("Say something about this match. Your team will see it."))
+        case .loaded:
+            ScrollViewReader { proxy in
+                List(comments) { comment in
+                    row(comment)
+                        .id(comment.id)
+                        .listRowSeparator(.hidden)
+                }
+                .listStyle(.plain)
+                .refreshable { await refresh() }
+                .onChange(of: comments.last?.id) { _, last in
+                    withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                }
+                .onAppear { proxy.scrollTo(comments.last?.id, anchor: .bottom) }
+            }
+        }
     }
 
-    /// Up to two initials from the author's name.
-    private static func initials(for name: String) -> String {
-        let parts = name.split(separator: " ").prefix(2)
-        let letters = parts.compactMap { $0.first }.map(String.init)
-        return letters.isEmpty ? "?" : letters.joined().uppercased()
+    private func row(_ comment: MatchComment) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) { byline(comment) }
+                VStack(alignment: .leading, spacing: 2) { byline(comment) }
+            }
+            Text(comment.body)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+            switch problems[comment.id] {
+            case .notSent:
+                Button("Not sent. Try again.") { Task { await send(comment) } }
+                    .font(.subheadline)
+                    .buttonStyle(.borderless)
+                    .tint(Theme.loss)
+            case .needsPlan:
+                Button("Not sent. Commenting is part of the Team plan.") { isShowingPlan = true }
+                    .font(.subheadline)
+                    .buttonStyle(.borderless)
+                    .multilineTextAlignment(.leading)
+            case nil:
+                EmptyView()
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 
-    /// Deterministic accent from the author's name so a given teammate always keeps the same hue.
-    /// Avoids `String.hashValue` (seeded per-launch) in favor of a stable scalar sum.
-    private static func tint(for name: String) -> Color {
-        let palette: [Color] = [Theme.turf, Theme.signal, Theme.pace, Theme.sprint, Theme.heart, Theme.bench]
-        let sum = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        return palette[sum % palette.count]
+    @ViewBuilder
+    private func byline(_ comment: MatchComment) -> some View {
+        TeamPlayerName(name: comment.author)
+            .font(.subheadline.weight(.semibold))
+        Text(comment.postedAt, format: .relative(presentation: .named))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+    }
+
+    // MARK: Composer
+
+    private var composer: some View {
+        VStack(spacing: 8) {
+            if needsName {
+                TextField("Your name", text: $authorName)
+                    .textContentType(.name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Add a comment", text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .focused($isWriting)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 22))
+                Button("Send", systemImage: "arrow.up", action: post)
+                    .labelStyle(.iconOnly)
+                    .fontWeight(.semibold)
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .disabled(trimmedDraft.isEmpty || author.isEmpty)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    // MARK: Data
+
+    private func poll() async {
+        while !Task.isCancelled {
+            await refresh()
+            try? await Task.sleep(for: .seconds(15))
+        }
+    }
+
+    private func refresh() async {
+        do {
+            let fetched = try await TeamService.comments(match: matchUUID)
+            let fetchedIDs = Set(fetched.map(\.id))
+            comments = (fetched + comments.filter { !fetchedIDs.contains($0.id) && ownIDs.contains($0.id) })
+                .sorted { $0.postedAt < $1.postedAt }
+            phase = .loaded
+            count.wrappedValue = comments.count
+        } catch {
+            // Comments already on screen stay there; the next refresh may do better.
+            if phase != .loaded && !Task.isCancelled { phase = .failed(TeamService.explain(error)) }
+        }
+    }
+
+    private func post() {
+        if needsName { settings.playerName = author }
+        let comment = MatchComment(matchUUID: matchUUID, author: author, body: trimmedDraft)
+        draft = ""
+        ownIDs.insert(comment.id)
+        comments.append(comment)
+        phase = .loaded
+        Task { await send(comment) }
+    }
+
+    private func send(_ comment: MatchComment) async {
+        problems[comment.id] = nil
+        do {
+            try await TeamService.post(comment)
+            sentCount += 1
+        } catch {
+            problems[comment.id] = TeamService.needsPlan(error) ? .needsPlan : .notSent
+        }
     }
 }

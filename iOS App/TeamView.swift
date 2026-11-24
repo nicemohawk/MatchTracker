@@ -1,250 +1,316 @@
 // TeamView.swift
 // MatchTracker
-//
-// The Team tab, reimagined as a Strava-club leaderboard rather than a settings form: a metric
-// picker re-ranks teammates with a spring, the podium gets medal treatment, and each row expands
-// inline to the full stat set. Setup (join / switch teams / features) lives in supporting cards
-// so the leaderboard is the focus. See TeamRosterViews.swift and TeamJoinCard.swift.
 
 import SwiftUI
 import MatchTrackerKit
 
+/// Where the Team tab can go.
+enum TeamDestination: Hashable {
+    case leaderboard, squad, formation, coach, comparison, fixtures
+    case player(String)
+}
+
+/// The Team tab. A stack on iPhone; on iPad the tab itself is the split view, so every page,
+/// including Coach, gets the detail column rather than a split view pushed inside a stack.
 struct TeamView: View {
-    @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var settings: SettingsStore
-    @EnvironmentObject private var uploads: UploadService
-    @EnvironmentObject private var matches: MatchStore
-
     @Environment(EntitlementStore.self) private var entitlements
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
 
-    @State private var teamCode = ""
-    @State private var playerName = ""
-    @State private var loadState: LoadState = .idle
-    @State private var newTeamCode = ""
-    @State private var showingPaywall = false
-    @State private var selectedMetric: TeamMetric = .workrate
-    @State private var expandedPlayer: String?
+    @State private var team = TeamModel()
+    @State private var path: [TeamDestination] = []
+    @State private var selection: TeamDestination? = .leaderboard
+    @State private var sheet: TeamSheet?
 
-    enum LoadState {
-        case idle, loading, loaded(TeamStats), failed(String)
+    enum TeamSheet: String, Identifiable {
+        case join, create, manage, plan
+        var id: String { rawValue }
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    if settings.teamCode.isEmpty {
-                        JoinTeamCard(playerName: $playerName, teamCode: $teamCode, onJoin: commitAndLoad)
-                    } else {
-                        TeamHeaderBar(
-                            teamCode: settings.teamCode,
-                            memberCount: loadedMemberCount,
-                            isLoading: isLoading,
-                            isOffline: isOffline,
-                            onRefresh: { Task { await load() } }
-                        )
-                        leaderboardSection
-                        CohortBenchmarkCard()
-                        MembershipsCard(
-                            newTeamCode: $newTeamCode,
-                            onShowPaywall: { showingPaywall = true },
-                            onSelect: selectTeam
-                        )
-                        TeamFeaturesCard(teamCode: settings.teamCode, onShowPaywall: { showingPaywall = true })
+        Group {
+            if settings.teamCode.isEmpty {
+                NavigationStack {
+                    noTeam.navigationTitle("Team")
+                }
+            } else if horizontalSizeClass == .regular {
+                splitView
+            } else {
+                NavigationStack(path: $path) {
+                    home
+                        .navigationDestination(for: TeamDestination.self, destination: destination)
+                }
+            }
+        }
+        .task(id: settings.teamCode) { await team.load(code: settings.teamCode) }
+        .onChange(of: settings.teamCode) {
+            path = []
+            selection = .leaderboard
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await team.load(code: settings.teamCode) } }
+        }
+        .sheet(item: $sheet) { sheet in
+            switch sheet {
+            case .join: TeamJoinSheet()
+            case .create: TeamCreateSheet()
+            case .manage: TeamManageSheet(sharedName: team.season?.teamName)
+            case .plan: PaywallView(entitlements: entitlements)
+            }
+        }
+    }
+
+    private var teamName: String { settings.teamName(sharedName: team.season?.teamName) }
+
+    // MARK: No team
+
+    private var noTeam: some View {
+        ContentUnavailableView {
+            Label("Play with your team", systemImage: "person.3")
+        } description: {
+            Text("See who covered the most ground this week, set up a formation and talk about the match.")
+        } actions: {
+            VStack(spacing: 12) {
+                Button { sheet = .join } label: {
+                    Text("Join a Team").frame(minWidth: 200)
+                }
+                .buttonStyle(.borderedProminent)
+                Button { sheet = .create } label: {
+                    Text("Create a Team").frame(minWidth: 200)
+                }
+                .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
+        }
+    }
+
+    // MARK: iPhone
+
+    private var home: some View {
+        List {
+            TeamLeaderboardSections(team: team, showsSquadLink: true)
+            Section {
+                pageLinks { page in
+                    NavigationLink(value: page.destination) {
+                        Label(page.title, systemImage: page.systemImage)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-                // iPad / wide split: keep the leaderboard + setup cards a readable centered column.
-                .readableWidth()
             }
-            .background(Theme.background.ignoresSafeArea())
-            .scrollContentBackground(.hidden)
-            .navigationTitle("Team")
-            .refreshable { await load() }
-            .onAppear {
-                teamCode = settings.teamCode
-                playerName = settings.playerName
-                if !teamCode.isEmpty, case .idle = loadState { Task { await load() } }
+            Section {
+                inviteLink
+            } footer: {
+                refreshNote
             }
-            .sheet(isPresented: $showingPaywall) {
-                PaywallView(entitlements: entitlements)
+        }
+        .navigationTitle(teamName)
+        .toolbar { manageButton }
+        .refreshable { await team.load(code: settings.teamCode) }
+    }
+
+    // MARK: iPad
+
+    private var splitView: some View {
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section {
+                    Label("Leaderboard", systemImage: "list.number").tag(TeamDestination.leaderboard)
+                    pageLinks { page in
+                        Label(page.title, systemImage: page.systemImage).tag(page.destination)
+                    }
+                }
+                if let players = team.season?.players, !players.isEmpty {
+                    Section("Squad") {
+                        ForEach(players.map(\.name).sorted(), id: \.self) { name in
+                            TeamPlayerName(name: name).tag(TeamDestination.player(name))
+                        }
+                    }
+                }
+                Section { inviteLink }
+            }
+            .navigationTitle(teamName)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar { manageButton }
+        } detail: {
+            NavigationStack {
+                destination(selection ?? .leaderboard)
+            }
+            .id(selection)
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    // MARK: Shared pieces
+
+    private struct Page {
+        let destination: TeamDestination
+        let title: String
+        let systemImage: String
+        var needsPlan = false
+    }
+
+    private static let pages = [
+        Page(destination: .formation, title: "Formation", systemImage: "sportscourt", needsPlan: true),
+        Page(destination: .coach, title: "Coach", systemImage: "clipboard", needsPlan: true),
+        Page(destination: .fixtures, title: "Fixtures", systemImage: "calendar"),
+        Page(destination: .comparison, title: "How you compare", systemImage: "chart.bar")
+    ]
+
+    private func pageLinks<Row: View>(@ViewBuilder row: @escaping (Page) -> Row) -> some View {
+        ForEach(Self.pages, id: \.destination) { page in
+            if page.needsPlan && !entitlements.entitledToTeam {
+                lockedPage(page)
+            } else {
+                row(page)
             }
         }
     }
 
-    // MARK: - Leaderboard
+    private func lockedPage(_ page: Page) -> some View {
+        Button { sheet = .plan } label: {
+            LabeledContent {
+                Text("Team plan")
+            } label: {
+                Label(page.title, systemImage: page.systemImage)
+            }
+        }
+        .tint(.primary)
+    }
+
+    private var inviteLink: some View {
+        ShareLink(item: TeamInvite(code: settings.teamCode, name: settings.teamName(orNil: team.season?.teamName)).message) {
+            Label("Invite teammates", systemImage: "square.and.arrow.up")
+        }
+    }
+
+    private var manageButton: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Manage team", systemImage: "person.2.badge.gearshape") { sheet = .manage }
+        }
+    }
+
+    @ViewBuilder private var refreshNote: some View {
+        if let problem = team.refreshProblem {
+            Text("Couldn't refresh. \(problem) Showing what was here before.")
+        }
+    }
 
     @ViewBuilder
-    private var leaderboardSection: some View {
-        switch loadState {
-        case .idle, .loading:
-            SkeletonLeaderboard()
-        case .loaded(let stats) where stats.players.isEmpty:
-            emptyRosterCard
-        case .loaded(let stats):
-            MetricPicker(selection: $selectedMetric) { metric in
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                    selectedMetric = metric
+    private func destination(_ destination: TeamDestination) -> some View {
+        switch destination {
+        case .leaderboard:
+            List {
+                TeamLeaderboardSections(team: team, showsSquadLink: false)
+                if team.refreshProblem != nil {
+                    Section {} footer: { refreshNote }
                 }
             }
-            let ranked = rankedPlayers(stats.players)
-            LazyVStack(spacing: 10) {
-                ForEach(Array(ranked.enumerated()), id: \.element.name) { index, player in
-                    LeaderboardRow(
-                        player: player,
-                        rank: index + 1,
-                        metric: selectedMetric,
-                        isYou: isYou(player.name),
-                        isExpanded: expandedPlayer == player.name,
-                        onTap: { toggleExpanded(player.name) }
-                    )
-                }
-            }
-            .animation(.spring(response: 0.45, dampingFraction: 0.82), value: selectedMetric)
-        case .failed(let message):
-            failureCard(message)
+            .readableFormWidth()
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Leaderboard")
+            .refreshable { await team.load(code: settings.teamCode) }
+        case .squad:
+            TeamSquadView(team: team)
+        case .formation:
+            FormationView(teamCode: settings.teamCode)
+        case .coach:
+            CoachDashboardView(teamCode: settings.teamCode)
+        case .comparison:
+            CohortBenchmarkView()
+        case .fixtures:
+            FixturesListView()
+        case .player(let name):
+            TeamPlayerView(name: name, team: team)
         }
     }
+}
 
-    /// Sort by the selected metric (descending), tie-broken by name so ordering stays stable.
-    private func rankedPlayers(_ players: [TeamStats.Player]) -> [TeamStats.Player] {
-        players.sorted { lhs, rhs in
-            let left = selectedMetric.value(lhs)
-            let right = selectedMetric.value(rhs)
-            if left == right { return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending }
-            return left > right
+// MARK: - Model
+
+@Observable
+@MainActor
+final class TeamModel {
+    enum Phase: Equatable { case loading, loaded, failed(String) }
+
+    private(set) var phase: Phase = .loading
+    private(set) var season: TeamStats?
+    /// Nil when the server can't say what happened this week.
+    private(set) var week: TeamStats?
+    /// Set when a refresh failed but there's something older to show.
+    private(set) var refreshProblem: String?
+    @ObservationIgnored private var code = ""
+
+    func load(code newCode: String) async {
+        guard !newCode.isEmpty else { return }
+        if newCode != code {
+            code = newCode
+            season = nil
+            week = nil
+            refreshProblem = nil
         }
-    }
-
-    private func toggleExpanded(_ name: String) {
-        Haptics.selection()
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-            expandedPlayer = expandedPlayer == name ? nil : name
-        }
-    }
-
-    private func isYou(_ name: String) -> Bool {
-        let mine = settings.playerName.trimmingCharacters(in: .whitespaces)
-        guard !mine.isEmpty else { return false }
-        return name.localizedCaseInsensitiveCompare(mine) == .orderedSame
-    }
-
-    // MARK: - State cards
-
-    private var emptyRosterCard: some View {
-        VStack {
-            ContentUnavailableView(
-                "No Teammates Yet",
-                systemImage: "person.crop.circle.badge.questionmark",
-                description: Text("Stats appear once teammates upload matches.")
-            )
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .themedCard()
-    }
-
-    private func failureCard(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label {
-                Text("Can't reach your team right now")
-                    .font(.system(.headline, design: .rounded))
-            } icon: {
-                Image(systemName: "wifi.exclamationmark").foregroundStyle(Theme.sprint)
-            }
-            Text("Your local stats are below.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            localFallback
-            // Keep the raw diagnostic available but demoted well below the primary copy.
-            Text(message)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .themedCard()
-    }
-
-    /// Local-only aggregates from this device's matches when the backend is unavailable.
-    private var localFallback: some View {
-        let count = matches.matches.count
-        let distance = matches.matches.reduce(0.0) { $0 + $1.distanceMeters }
-        let goals = matches.matches.reduce(0) { total, summary in
-            total + (summary.record?.events.filter { $0.kind == .goalMine }.count ?? 0)
-        }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Your local totals").captionLabel()
-            HStack(spacing: 18) {
-                fallbackStat("\(count)", "matches")
-                fallbackStat(MatchFormat.distance(distance), "distance")
-                fallbackStat("\(goals)", "goals")
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    private func fallbackStat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .monospacedDigit()
-            Text(label).captionLabel()
-        }
-    }
-
-    // MARK: - Derived state
-
-    private var loadedMemberCount: Int? {
-        if case .loaded(let stats) = loadState { return stats.players.count }
-        return nil
-    }
-
-    private var isLoading: Bool {
-        if case .loading = loadState { return true }
-        return false
-    }
-
-    /// True once a roster fetch has failed — drives the header's "Offline" treatment so it stops
-    /// contradicting the error card below.
-    private var isOffline: Bool {
-        if case .failed = loadState { return true }
-        return false
-    }
-
-    // MARK: - Actions
-
-    /// Star a different membership as the upload/watch default and reload its roster.
-    private func selectTeam(_ code: String) {
-        settings.teamCode = code
-        teamCode = code
-        environment.settingsChanged()
-        expandedPlayer = nil
-        Task { await load() }
-    }
-
-    private func commitAndLoad() {
-        settings.playerName = playerName
-        let code = teamCode.uppercased()
-        settings.teamCode = code
-        teamCode = code
-        // Mirror the joined code into memberships so it appears in My Teams for switching/removal.
-        if !settings.teamMemberships.contains(where: { $0.code == code }) {
-            settings.teamMemberships.append(TeamMembership(code: code, name: nil, displayInitialsOnly: false))
-        }
-        environment.settingsChanged()
-        Task { await load() }
-    }
-
-    private func load() async {
-        guard !teamCode.isEmpty else { loadState = .idle; return }
-        loadState = .loading
+        if season == nil { phase = .loading }
         do {
-            let stats = try await uploads.fetchTeamStats(code: teamCode)
-            loadState = .loaded(stats)
+            async let seasonStats = TeamService.stats(code: newCode, since: Self.seasonStart)
+            async let weekStats = TeamService.stats(code: newCode, since: Self.weekStart)
+            let (newSeason, newWeek) = try await (seasonStats, weekStats)
+            guard newCode == code else { return }
+            season = newSeason
+            week = Self.isOneWeek(newWeek) ? newWeek : nil
+            refreshProblem = nil
+            phase = .loaded
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
-            loadState = .failed(error.localizedDescription)
+            guard newCode == code else { return }
+            if season == nil {
+                phase = .failed(TeamService.explain(error))
+            } else {
+                refreshProblem = TeamService.explain(error)
+            }
         }
+    }
+
+    static var weekStart: Date { Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date() }
+
+    static var seasonStart: Date {
+        let term = SeasonSummary.Term(containing: Date())
+        return Calendar.current.date(from: DateComponents(year: term.year, month: term.isFall ? 7 : 1, day: 1)) ?? .distantPast
+    }
+
+    static var seasonTitle: String { SeasonSummary.Term(containing: Date()).title }
+
+    /// A server that ignores `since` sends everything ever recorded; don't call that a week.
+    private static func isOneWeek(_ stats: TeamStats) -> Bool {
+        stats.players.allSatisfy { ($0.minutesPlayed ?? 0) < 14 * 60 && $0.matchesPlayed <= 10 }
+    }
+}
+
+// MARK: - Settings
+
+extension SettingsStore {
+    /// The current team's name: what this player calls it, else what the server calls it.
+    func teamName(orNil sharedName: String?) -> String? {
+        let own = teamMemberships.first { $0.code == teamCode }?.name
+        return [own, sharedName].compactMap { $0 }.first { !$0.isEmpty }
+    }
+
+    /// Never the code: a code isn't a name.
+    func teamName(sharedName: String?) -> String { teamName(orNil: sharedName) ?? "Your team" }
+
+    func isMe(_ name: String) -> Bool {
+        let mine = playerName.trimmingCharacters(in: .whitespaces)
+        return !mine.isEmpty && name.localizedCaseInsensitiveCompare(mine) == .orderedSame
+    }
+
+    /// Makes a team the current one, adding it if it's new.
+    func enterTeam(code: String, name: String?) {
+        var memberships = teamMemberships
+        if let index = memberships.firstIndex(where: { $0.code == code }) {
+            if let name { memberships[index].name = name }
+        } else {
+            memberships.append(TeamMembership(code: code, name: name))
+        }
+        teamMemberships = memberships
+        teamCode = code
     }
 }
