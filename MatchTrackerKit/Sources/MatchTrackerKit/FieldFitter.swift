@@ -247,13 +247,13 @@ private struct GridKey: Hashable {
 
 public enum PlayIntervalDeriver {
     /// Replay the geometry sub-detection rule over a finished track, so that correcting a field
-    /// recomputes time-on-pitch offline. Semantics mirror the live `AutoSubDetector` geometry rule:
-    /// staying continuously beyond touchline + `marginMeters` for over 30 s opens a bench spell;
-    /// stepping back inside (held briefly to debounce GPS blips) closes it. Returns the on-pitch
-    /// intervals between `matchStart` and `matchEnd`. With no bench spell the whole match is one
-    /// interval.
+    /// recomputes time-on-pitch offline: a spell beyond touchline + `marginMeters` that outlasts
+    /// `AutoSubDetector`'s dwell is off the pitch, and so is one the wearer logged. Returns the
+    /// on-pitch intervals between `matchStart` and `matchEnd`. With no such spell the whole match
+    /// is one interval.
     public static func playingIntervals(track: [TrackPoint],
                                         field: OrientedRectangle,
+                                        events: [MatchEvent] = [],
                                         matchStart: Date,
                                         matchEnd: Date,
                                         marginMeters: Double) -> [DateInterval] {
@@ -263,12 +263,13 @@ public enum PlayIntervalDeriver {
         configuration.exitDistanceMeters = marginMeters   // "outside touchline + margin" == off pitch
 
         let projector = FieldProjector(rectangle: field)
-        let events = AutoSubDetector.detectEvents(
+        let manualSubs = events.filter { $0.source == .manual && ($0.kind == .subIn || $0.kind == .subOut) }
+        let transitions = AutoSubDetector.transitions(
             track: track,
             projector: projector,
-            existingEvents: [],
+            existingEvents: manualSubs,
             configuration: configuration
         )
-        return SubstitutionTracker.playingIntervals(events: events, matchStart: matchStart, matchEnd: matchEnd)
+        return SubstitutionTracker.playingIntervals(events: manualSubs + transitions, matchStart: matchStart, matchEnd: matchEnd)
     }
 }

@@ -8,31 +8,25 @@ import Foundation
 /// blend tuned to our product bands, these six numbers are the raw, named quantities a coach can
 /// compare directly against a vest-pod readout.
 ///
-/// ## Why the thresholds are absolute (not scaled by `MatchContext` / `pitchScale`)
-/// `RunDetector`/`WorkrateAnalyzer` scale their speed thresholds by `pitchScale` so a hard burst on
-/// a short turf pitch still reads as a "sprint" relative to that pitch. These metrics do the
-/// opposite on purpose: they use the fixed FIFA/GPS-industry convention thresholds regardless of
-/// pitch size, because a coach's whole reason for wanting *named* metrics is cross-context
-/// comparison — "12 m/s and 240 m of sprint distance" must mean the same thing whether it was
-/// recorded on a full pitch, a 5-a-side cage, or against a STATSports number from last season. A
-/// pitch-relative "sprint" would quietly break that promise. Sprint distance measured on a small
-/// pitch will simply, and correctly, be lower.
+/// The speed bands are the app's own (`SpeedThresholds`), so a sprint here is the same sprint the
+/// run list counts. That is lower than the 7.0 m/s professional convention, which most amateur
+/// matches never reach.
 ///
-/// ## Definitions (industry convention)
-/// - **Sprint distance** — distance covered at speed **> 7.0 m/s** (25.2 km/h).
-/// - **High-speed running (HSR)** — distance covered in the **5.5…7.0 m/s** band (19.8–25.2 km/h).
+/// ## Definitions
+/// - **Sprint distance** — distance covered at sprint speed (**≥ 5.5 m/s**).
+/// - **High-speed running** — distance covered at running speed, **4.0…5.5 m/s**.
 /// - **Accelerations** — discrete efforts exceeding **+3.0 m/s²** sustained for **≥ 0.5 s**.
 /// - **Decelerations** — discrete efforts below **−3.0 m/s²** sustained for **≥ 0.5 s**.
 /// - **Distance per minute** — total on-pitch distance ÷ on-pitch minutes (0 with no on-pitch time).
-/// - **Top speed** — peak instantaneous speed, with teleport/glitch outliers rejected.
+/// - **Top speed** — the best speed held for about a second (see `sustainedTopSpeed`).
 ///
 /// All distance and speed accumulation is restricted to `playingIntervals` (bench time excluded).
 /// An empty `playingIntervals` means "no substitution data" and is treated as the whole track being
 /// on-pitch, matching the convention used elsewhere in the Kit.
 public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
-    /// Distance (m) covered at speed > 7.0 m/s (25.2 km/h).
+    /// Distance (m) covered at sprint speed.
     public let sprintDistanceMeters: Double
-    /// Distance (m) covered in the 5.5…7.0 m/s band (19.8–25.2 km/h).
+    /// Distance (m) covered at running speed, below a sprint.
     public let highSpeedRunningMeters: Double
     /// Discrete efforts exceeding +3.0 m/s² for ≥ 0.5 s.
     public let accelerationCount: Int
@@ -40,7 +34,7 @@ public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
     public let decelerationCount: Int
     /// Total on-pitch distance ÷ on-pitch minutes (0 if no on-pitch time).
     public let distancePerMinuteMeters: Double
-    /// Peak instantaneous speed (m/s), outliers rejected.
+    /// Best sustained speed (m/s) on the pitch; 0 when none was held.
     public let topSpeedMetersPerSecond: Double
 
     public init(sprintDistanceMeters: Double, highSpeedRunningMeters: Double,
@@ -60,21 +54,20 @@ public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
         accelerationCount: 0, decelerationCount: 0,
         distancePerMinuteMeters: 0, topSpeedMetersPerSecond: 0)
 
-    // MARK: - Absolute FIFA/GPS-industry thresholds (never pitch-scaled — see type doc)
+    // MARK: - Thresholds
 
-    /// Speed threshold (m/s) at/above which distance counts as sprinting. Strictly greater-than.
-    public static let sprintSpeedMetersPerSecond = 7.0
+    /// Speed (m/s) at which distance counts as sprinting.
+    public static let sprintSpeedMetersPerSecond = SpeedThresholds.sprinting
     /// Lower bound (m/s) of the high-speed-running band; the upper bound is `sprintSpeedMetersPerSecond`.
-    public static let highSpeedRunningLowerMetersPerSecond = 5.5
+    public static let highSpeedRunningLowerMetersPerSecond = SpeedThresholds.running
     /// Acceleration magnitude (m/s²) an effort must exceed to be counted.
     public static let accelerationThresholdMetersPerSecondSquared = 3.0
     /// Minimum time (s) an effort must stay past threshold to count (rejects single-sample spikes).
     public static let minimumEffortSeconds = 0.5
     /// Minimum time (s) between two counted efforts of the same sign (debounce; one burst == one effort).
     public static let effortDebounceSeconds = 2.0
-    /// Speed (m/s) above which an instantaneous value is treated as a GPS glitch/teleport and rejected.
-    /// Comfortably above elite human top speed (~12.4 m/s), so real play is never clipped.
-    public static let outlierSpeedCapMetersPerSecond = 12.0
+    /// Speed (m/s) above which a value is treated as a GPS glitch and rejected.
+    public static let outlierSpeedCapMetersPerSecond = SpeedThresholds.plausibleMaximum
     /// Half-width (s) of the moving-average window applied to speed before differentiating for
     /// acceleration. ~1 s total window keeps GPS jitter from manufacturing phantom accel spikes.
     private static let speedSmoothingHalfWindowSeconds = 0.5
@@ -94,8 +87,9 @@ public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
         func onPitch(_ date: Date) -> Bool { intervals.isEmpty || isWithin(date, intervals: intervals) }
 
         // Per-point instantaneous speed with outliers rejected, then a ~1 s moving average used for
-        // band classification and acceleration (the second teleport guard lives in the loops below).
+        // band classification and acceleration.
         let instantaneous = sanitizedSpeeds(points)
+        let steps = trackStepDistances(points)
         let smoothed = movingAverage(instantaneous, timestamps: timestamps,
                                      halfWindow: speedSmoothingHalfWindowSeconds)
 
@@ -105,28 +99,21 @@ public struct SoccerLoadMetrics: Codable, Sendable, Equatable {
         var totalDistance = 0.0
         for index in 0..<(points.count - 1) {
             guard onPitch(timestamps[index]), onPitch(timestamps[index + 1]) else { continue }
-            let dt = timestamps[index + 1].timeIntervalSince(timestamps[index])
-            guard dt > 0 else { continue }
-            let stepDistance = haversineMeters(points[index].coordinate, points[index + 1].coordinate)
-            // Teleport guard: a step whose implied speed exceeds the cap is a GPS jump, not travel.
-            guard stepDistance / dt <= outlierSpeedCapMetersPerSecond else { continue }
-
+            let stepDistance = steps[index + 1]
             totalDistance += stepDistance
             // A point's speed reflects the motion arriving at it (speed[i] ≈ dist(i-1,i)/dt), so the
             // step ending at `index + 1` is classified by that point's smoothed speed.
             let stepSpeed = smoothed[index + 1]
-            if stepSpeed > sprintSpeedMetersPerSecond {
+            if stepSpeed >= sprintSpeedMetersPerSecond {
                 sprintDistance += stepDistance
             } else if stepSpeed >= highSpeedRunningLowerMetersPerSecond {
                 highSpeedDistance += stepDistance
             }
         }
 
-        // Top speed over on-pitch points (instantaneous, already outlier-capped).
-        var topSpeed = 0.0
-        for index in points.indices where onPitch(timestamps[index]) {
-            topSpeed = max(topSpeed, instantaneous[index])
-        }
+        let onPitchFlags = timestamps.map(onPitch)
+        let topSpeed = sustainedTopSpeed(speeds: peakSpeeds(points), timestamps: timestamps,
+                                         in: points.indices, where: { onPitchFlags[$0] }) ?? 0
 
         // Discrete, debounced accel/decel efforts from the smoothed speed signal.
         let accelerationCount = countEfforts(smoothed: smoothed, timestamps: timestamps,

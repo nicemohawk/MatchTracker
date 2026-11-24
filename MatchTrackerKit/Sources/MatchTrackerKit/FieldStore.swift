@@ -56,6 +56,22 @@ public final class FieldStore {
     /// Tolerance (meters) used when scoring how much of a track falls inside a candidate field.
     private static let matchToleranceMeters = 10.0
 
+    /// The saved field a match was played on: the one its record names, else the best match.
+    /// Either must hold most of the track. The watch pins a field from one fix at kickoff, which
+    /// can be a neighbor, and a field the play doesn't sit inside is worse than none.
+    public func resolve(recordFieldID: UUID?, track: [TrackPoint]) -> FieldModel? {
+        // A few hundred samples settle a coverage fraction.
+        let samples = stride(from: 0, to: track.count, by: max(1, track.count / 300)).map { track[$0].coordinate }
+        func holds(_ field: FieldModel) -> Bool {
+            let projector = FieldProjector(rectangle: field.rectangle)
+            return samples.filter { projector.isOnField($0, marginMeters: 10) }.count * 2 >= samples.count
+        }
+        let named = fields.first { $0.id == recordFieldID }
+        guard !samples.isEmpty else { return named }
+        if let named, holds(named) { return named }
+        return bestMatch(for: samples).flatMap { holds($0) ? $0 : nil }
+    }
+
     /// Which field is this track being played on? Scores candidate fields by the fraction
     /// of samples inside (with 10 m tolerance), tie-breaking by mean distance to center — this
     /// disambiguates side-by-side and rotated/overlapping fields. Returns nil if best < 0.5.

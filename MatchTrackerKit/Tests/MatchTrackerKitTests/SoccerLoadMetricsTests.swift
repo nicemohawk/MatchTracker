@@ -42,15 +42,15 @@ final class SoccerLoadMetricsTests: XCTestCase {
     // MARK: - 1. Band accumulation
 
     func testConstantSpeedSegmentsAccumulateBandDistances() {
-        // 10 s below HSR (3 m/s), 10 s in HSR (6 m/s), 10 s sprinting (8 m/s), sampled at 1 Hz so
-        // no smoothing blurs the constant segments. Expected: HSR ≈ 60 m, sprint ≈ 80 m.
-        let points = track(segments: [(3, 10), (6, 10), (8, 10)], dt: 1.0)
+        // 10 s below HSR (3 m/s), 10 s in HSR (5 m/s), 10 s sprinting (8 m/s), sampled at 1 Hz so
+        // no smoothing blurs the constant segments. Expected: HSR ≈ 50 m, sprint ≈ 80 m.
+        let points = track(segments: [(3, 10), (5, 10), (8, 10)], dt: 1.0)
         let metrics = SoccerLoadMetrics.compute(track: points, playingIntervals: [])
 
-        XCTAssertEqual(metrics.highSpeedRunningMeters, 60, accuracy: 8,
-                       "10 s at 6 m/s lands in the 5.5–7.0 band")
+        XCTAssertEqual(metrics.highSpeedRunningMeters, 50, accuracy: 8,
+                       "10 s at 5 m/s is running, not sprinting")
         XCTAssertEqual(metrics.sprintDistanceMeters, 80, accuracy: 8,
-                       "10 s at 8 m/s is above the 7.0 sprint threshold")
+                       "10 s at 8 m/s is sprinting")
         XCTAssertEqual(metrics.topSpeedMetersPerSecond, 8, accuracy: 0.5)
     }
 
@@ -100,31 +100,31 @@ final class SoccerLoadMetricsTests: XCTestCase {
         // the closely-spaced A/B pair counts once, not twice.
         var profile: [(Double, Double)] = []
         profile.append((0, 1))                              // rest
-        profile.append(contentsOf: linearRamp(from: 0, to: 6, over: 1))   // A
-        profile.append((6, 1))                              // micro-plateau (< 2 s)
-        profile.append(contentsOf: linearRamp(from: 6, to: 12, over: 1))  // B: debounced into A
-        profile.append((12, 3))                             // long hold (> 2 s since A)
-        profile.append(contentsOf: linearRamp(from: 12, to: 6, over: 1))  // decel reset
-        profile.append((6, 1))                              // plateau
-        profile.append(contentsOf: linearRamp(from: 6, to: 12, over: 1))  // C: counted
-        profile.append((12, 1))
+        profile.append(contentsOf: linearRamp(from: 0, to: 4.5, over: 0.5)) // A
+        profile.append((4.5, 1))                            // micro-plateau (< 2 s)
+        profile.append(contentsOf: linearRamp(from: 4.5, to: 9, over: 0.5)) // B: debounced into A
+        profile.append((9, 3))                              // long hold (> 2 s since A)
+        profile.append(contentsOf: linearRamp(from: 9, to: 4.5, over: 0.5)) // decel reset
+        profile.append((4.5, 1))                            // plateau
+        profile.append(contentsOf: linearRamp(from: 4.5, to: 9, over: 0.5)) // C: counted
+        profile.append((9, 1))
         let points = track(segments: profile, dt: 0.5)
         let metrics = SoccerLoadMetrics.compute(track: points, playingIntervals: [])
 
         XCTAssertEqual(metrics.accelerationCount, 2,
                        "the A/B pair collapses to one; C is the second counted acceleration")
-        XCTAssertEqual(metrics.decelerationCount, 1, "the single 12→6 reset is one deceleration")
+        XCTAssertEqual(metrics.decelerationCount, 1, "the single 9→4.5 reset is one deceleration")
     }
 
     // MARK: - 4. Bench intervals excluded
 
     func testBenchTimeExcludedFromDistanceAndPerMinute() {
-        // 6 m/s (HSR) for the whole 100 s, but only the first 50 s is on-pitch.
+        // 6 m/s (sprinting) for the whole 100 s, but only the first 50 s is on-pitch.
         let points = track(segments: [(6, 100)], dt: 1.0)
         let playing = [DateInterval(start: start, end: start.addingTimeInterval(50))]
         let metrics = SoccerLoadMetrics.compute(track: points, playingIntervals: playing)
 
-        XCTAssertEqual(metrics.highSpeedRunningMeters, 300, accuracy: 12,
+        XCTAssertEqual(metrics.sprintDistanceMeters, 300, accuracy: 12,
                        "only the on-pitch 50 s (≈300 m) counts, not the full 600 m")
         // 300 m over 50 s on pitch = 360 m/min.
         XCTAssertEqual(metrics.distancePerMinuteMeters, 360, accuracy: 20)
@@ -189,6 +189,39 @@ final class SoccerLoadMetricsTests: XCTestCase {
         // Sprint distance stays near the true 8 m/s × ~12 s, not inflated by the 100 m jump.
         XCTAssertLessThan(metrics.sprintDistanceMeters, 120,
                           "the teleport step is excluded from sprint distance")
+    }
+
+    func testTopSpeedIsHeldForASecond() {
+        // A lone 9 m/s sample between 6s is noise; two in a row a second apart are a sprint.
+        var lone = track(segments: [(6, 10)], dt: 1)
+        lone[5].speedMetersPerSecond = 9
+        XCTAssertEqual(SoccerLoadMetrics.compute(track: lone, playingIntervals: []).topSpeedMetersPerSecond, 6, accuracy: 0.01)
+        var held = lone
+        held[6].speedMetersPerSecond = 8.5
+        XCTAssertEqual(SoccerLoadMetrics.compute(track: held, playingIntervals: []).topSpeedMetersPerSecond, 8.5, accuracy: 0.01)
+    }
+
+    func testTopSpeedIgnoresACarRide() {
+        let points = track(segments: [(6, 10), (14, 60)], dt: 1)
+        XCTAssertEqual(SoccerLoadMetrics.compute(track: points, playingIntervals: []).topSpeedMetersPerSecond, 6, accuracy: 0.01)
+    }
+
+    func testTopSpeedAtTwiceTheSampleRateStillNeedsASecond() {
+        var points = track(segments: [(6, 10)], dt: 0.5)
+        points[8].speedMetersPerSecond = 9
+        points[9].speedMetersPerSecond = 9
+        XCTAssertEqual(SoccerLoadMetrics.compute(track: points, playingIntervals: []).topSpeedMetersPerSecond, 6, accuracy: 0.01)
+    }
+
+    func testDistanceIgnoresGPSJitter() {
+        // Walking at 1 m/s with every fix a few meters off its place: the fixes zigzag, the player doesn't.
+        let frame = ENUFrame(reference: origin)
+        let points = (0..<600).map { second in
+            TrackPoint(coordinate: frame.unproject(CGPoint(x: Double(second), y: second.isMultiple(of: 2) ? 2 : -2)),
+                       timestamp: start.addingTimeInterval(Double(second)),
+                       speedMetersPerSecond: 1, courseDegrees: -1, horizontalAccuracy: 5)
+        }
+        XCTAssertEqual(routeDistanceMeters(points), 600, accuracy: 5)
     }
 
     // MARK: - Degenerate inputs

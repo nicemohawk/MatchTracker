@@ -12,15 +12,21 @@ import Foundation
 
 public struct AutoSubDetectorConfiguration: Sendable {
     public var exitDistanceMeters: Double         // beyond-touchline distance that counts as off-pitch, default 5.0
-    public var exitDwell: TimeInterval            // continuous off-pitch time before subOut, default 30
-    public var enterDwell: TimeInterval           // continuous on-pitch time before subIn, default 15
+    /// Off-pitch time before subOut, and on-pitch time before subIn. These are also the shortest
+    /// bench spell and shortest stint that can be detected: anything briefer is fetching a ball,
+    /// a drink, or a wandering fix. Events are still dated at the crossing.
+    public var exitDwell: TimeInterval            // default 150
+    public var enterDwell: TimeInterval           // default 120
+    /// Share of contrary samples a pending transition survives; GPS strays at the touchline.
+    public var contradictionTolerance: Double     // default 0.2
     public var maximumFixAccuracy: Double         // ignore worse fixes for boundary calls, default 20
     public var manualOverrideCooldown: TimeInterval // auto suppressed after a manual sub event, default 60
 
     public init() {
         exitDistanceMeters = 5.0
-        exitDwell = 30
-        enterDwell = 15
+        exitDwell = 150
+        enterDwell = 120
+        contradictionTolerance = 0.2
         maximumFixAccuracy = 20
         manualOverrideCooldown = 60
     }
@@ -40,6 +46,11 @@ public final class AutoSubDetector {
     private let projector: FieldProjector
     private let configuration: AutoSubDetectorConfiguration
     private var state: State
+
+    /// Samples seen, and how many contradicted it, since the pending transition began.
+    private var candidateSamples = 0
+    private var contradictions = 0
+    private static let minimumSamplesToContradict = 10
 
     /// Auto emissions are swallowed until this instant after a manual sub event (manual wins).
     private var suppressUntil: Date?
@@ -75,13 +86,11 @@ public final class AutoSubDetector {
 
         switch state {
         case .onPitch:
-            if isClearlyOff {
-                state = .candidateOff(since: point.timestamp)
-            }
+            if isClearlyOff { begin(.candidateOff(since: point.timestamp)) }
             return nil
 
         case .candidateOff(let since):
-            if isInside {
+            if isContradicted(by: isInside) {
                 state = .onPitch                       // stepped back in before the dwell elapsed
                 return nil
             }
@@ -95,24 +104,33 @@ public final class AutoSubDetector {
             return nil
 
         case .offPitch:
-            if isInside {
-                state = .candidateOn(since: point.timestamp)
-            }
+            if isInside { begin(.candidateOn(since: point.timestamp)) }
             return nil
 
         case .candidateOn(let since):
-            if isInside {
-                if point.timestamp.timeIntervalSince(since) >= configuration.enterDwell {
-                    state = .onPitch
-                    return emit(.subIn, at: since, detectedAt: point.timestamp)
-                }
+            if isContradicted(by: isClearlyOff) {
+                state = .offPitch
                 return nil
             }
-            // Re-entry requires being continuously inside the touchline proper; any sample back
-            // outside (ambiguous or clearly off) cancels the pending sub-in.
-            state = .offPitch
+            if isInside, point.timestamp.timeIntervalSince(since) >= configuration.enterDwell {
+                state = .onPitch
+                return emit(.subIn, at: since, detectedAt: point.timestamp)
+            }
             return nil
         }
+    }
+
+    private func begin(_ candidate: State) {
+        state = candidate
+        candidateSamples = 1
+        contradictions = 0
+    }
+
+    private func isContradicted(by isContrary: Bool) -> Bool {
+        candidateSamples += 1
+        if isContrary { contradictions += 1 }
+        return candidateSamples >= Self.minimumSamplesToContradict
+            && Double(contradictions) > configuration.contradictionTolerance * Double(candidateSamples)
     }
 
     /// Manual events win: re-sync detector state to the logged event and suppress auto output for
@@ -126,13 +144,10 @@ public final class AutoSubDetector {
         suppressUntil = event.date.addingTimeInterval(configuration.manualOverrideCooldown)
     }
 
-    /// Offline pass over a complete track (iOS post-match reconciliation for matches with a
-    /// resolved field and no manual sub events). Replays the track through a fresh instance,
-    /// respecting any existing manual sub events (their state + cooldown window), and returns only
-    /// the new automatic events, sorted by date.
-    public static func detectEvents(track: [TrackPoint], projector: FieldProjector,
-                                    existingEvents: [MatchEvent],
-                                    configuration: AutoSubDetectorConfiguration) -> [MatchEvent] {
+    /// Every transition in a complete track: a replay through a fresh instance, respecting any
+    /// existing manual sub events (their state + cooldown window). Sorted by date.
+    static func transitions(track: [TrackPoint], projector: FieldProjector, existingEvents: [MatchEvent],
+                            configuration: AutoSubDetectorConfiguration) -> [MatchEvent] {
         let orderedTrack = track.sorted { $0.timestamp < $1.timestamp }
         let manualSubs = existingEvents
             .filter { $0.kind == .subIn || $0.kind == .subOut }
@@ -159,6 +174,50 @@ public final class AutoSubDetector {
         }
         return newEvents.sorted { $0.date < $1.date }
     }
+
+    /// The substitutions in a finished match worth putting in its timeline. Being off the pitch at
+    /// halftime, before kickoff or after the final whistle isn't a substitution, and a track that
+    /// is mostly off the pitch is on the wrong pitch.
+    public static func detectEvents(track: [TrackPoint], projector: FieldProjector,
+                                    existingEvents: [MatchEvent], halftime: DateInterval? = nil,
+                                    configuration: AutoSubDetectorConfiguration = .init()) -> [MatchEvent] {
+        let accurate = track.filter { $0.horizontalAccuracy <= configuration.maximumFixAccuracy }
+        let inside = accurate.filter {
+            projector.isOnField($0.coordinate, marginMeters: configuration.exitDistanceMeters)
+        }
+        guard let start = track.map(\.timestamp).min(), let end = track.map(\.timestamp).max(),
+              inside.count * 2 >= accurate.count else { return [] }
+
+        let events = transitions(track: track, projector: projector,
+                                 existingEvents: existingEvents, configuration: configuration)
+        var kept: [MatchEvent] = []
+        var index = 0
+        while index < events.count {
+            let event = events[index]
+            guard event.kind == .subOut else {
+                kept.append(event)
+                index += 1
+                continue
+            }
+            let back = index + 1 < events.count ? events[index + 1] : nil
+            index += back == nil ? 1 : 2
+
+            let isHalftime = halftime.map { event.date < $0.end && (back?.date ?? end) > $0.start } ?? false
+            let isAfterTheWhistle = back == nil && end.timeIntervalSince(event.date) < edgeOfMatch
+            if isHalftime || isAfterTheWhistle { continue }
+            if event.date.timeIntervalSince(start) < 120 {
+                // Off from the start: on the bench if it lasted, still arriving if it didn't.
+                if let back, back.date.timeIntervalSince(start) >= edgeOfMatch { kept.append(back) }
+                continue
+            }
+            kept.append(event)
+            if let back { kept.append(back) }
+        }
+        return kept
+    }
+
+    /// How close to the start or end of a recording being off the pitch means nothing.
+    private static let edgeOfMatch: TimeInterval = 600
 
     // MARK: - Emission / heart-rate helpers
 

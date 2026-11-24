@@ -244,7 +244,6 @@ final class MatchTrackerKitTests: XCTestCase {
     func testSpeedThresholdsDriveRunAndWorkrateConfig() {
         // Run detector defaults derive from the shared thresholds.
         let config = RunDetectorConfiguration()
-        XCTAssertEqual(config.jogThreshold, SpeedThresholds.jogging)
         XCTAssertEqual(config.runThreshold, SpeedThresholds.running)
         XCTAssertEqual(config.sprintThreshold, SpeedThresholds.sprinting)
 
@@ -628,7 +627,7 @@ final class MatchTrackerKitTests: XCTestCase {
         XCTAssertEqual(separate.count, 2, "3 s gap exceeds the default merge gap")
 
         var merging = RunDetectorConfiguration()
-        merging.mergeGap = 6
+        merging.mergeGap = 7
         let merged = RunDetector.detectRuns(in: track, configuration: merging)
         XCTAssertEqual(merged.count, 1, "a larger merge gap joins the two runs")
     }
