@@ -7,102 +7,92 @@ import SwiftUI
 import WatchKit
 import MatchTrackerKit
 
-/// Page 1 of the live session: End, Pause/Resume, Water Lock and the Sub Out/In toggle.
+/// The live session's controls: four tiles that fill the screen, so each can be hit without
+/// looking for it.
 struct ControlsView: View {
     @Environment(WorkoutManager.self) private var workoutManager
+    @State private var confirmingEnd = false
 
     private var isPaused: Bool { workoutManager.sessionState == .paused }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                HStack(spacing: 14) {
-                    controlTile(title: "End", systemImage: "xmark", tint: WatchTheme.loss) {
-                        WatchHaptics.stop()
-                        logTap("End")
-                        Task { await endMatch() }
-                    }
-                    controlTile(title: isPaused ? "Resume" : "Pause",
-                                systemImage: isPaused ? "play.fill" : "pause",
-                                tint: WatchTheme.sprint) {
-                        WatchHaptics.notify()
-                        logTap(isPaused ? "Resume" : "Pause")
-                        if isPaused { workoutManager.resume() } else { workoutManager.pause() }
-                    }
-                }
-
-                HStack(spacing: 14) {
-                    controlTile(title: "Lock", systemImage: "drop.fill", tint: WatchTheme.pace) {
-                        WatchHaptics.click()
-                        WKInterfaceDevice.current().enableWaterLock()
-                    }
-                    subButton
-                }
-
-                if WatchSettings.refereeMode {
-                    HStack(spacing: 14) {
-                        controlTile(title: "Start Half", systemImage: "play.circle", tint: WatchTheme.turf) {
+        GeometryReader { proxy in
+            let tileHeight = (proxy.size.height - 8) / 2
+            ScrollView {
+                Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                    GridRow {
+                        tile("End", systemImage: "xmark", tint: WatchTheme.loss, height: tileHeight) {
+                            logTap("End")
                             WatchHaptics.click()
-                            workoutManager.log(.periodStart)
+                            confirmingEnd = true
                         }
-                        controlTile(title: "End Half", systemImage: "stop.circle", tint: WatchTheme.sprint) {
+                        tile(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill",
+                             tint: WatchTheme.sprint, height: tileHeight) {
+                            logTap(isPaused ? "Resume" : "Pause")
+                            WatchHaptics.notify()
+                            if isPaused { workoutManager.resume() } else { workoutManager.pause() }
+                        }
+                    }
+                    GridRow {
+                        tile("Lock", systemImage: "drop.fill", tint: WatchTheme.pace, height: tileHeight) {
                             WatchHaptics.click()
-                            workoutManager.log(.periodEnd)
+                            WKInterfaceDevice.current().enableWaterLock()
+                        }
+                        if WatchSettings.refereeMode {
+                            tile("Half", systemImage: "flag.fill", tint: WatchTheme.turf, height: tileHeight) {
+                                WatchHaptics.click()
+                                workoutManager.log(workoutManager.periodInProgress ? .periodEnd : .periodStart)
+                            }
+                        } else {
+                            subTile(height: tileHeight)
                         }
                     }
                 }
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 6)
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .scenePadding(.horizontal)
+        // An accidental End costs the rest of the match, and End is one sleeve-brush away.
+        .confirmationDialog("End this match?", isPresented: $confirmingEnd, titleVisibility: .visible) {
+            Button("End Match", role: .destructive) {
+                WatchHaptics.stop()
+                Task { await workoutManager.endMatch() }
+            }
+            Button("Keep Playing", role: .cancel) {}
         }
     }
 
     @ViewBuilder
-    private var subButton: some View {
+    private func subTile(height: CGFloat) -> some View {
         let onPitch = workoutManager.onPitch
-        // Sub Out reads neutral bench-gray so it can't be mistaken for Pause's amber; Sub In
-        // keeps turf to signal "back on the pitch".
-        let tint = onPitch ? WatchTheme.bench : WatchTheme.turf
-        let button = controlTile(title: onPitch ? "Sub Out" : "Sub In",
-                                 systemImage: onPitch ? "figure.walk.motion" : "figure.seated.side",
-                                 tint: tint) {
-            WatchHaptics.click()
+        let button = tile(onPitch ? "Sub Out" : "Back On",
+                          systemImage: onPitch ? "figure.walk.departure" : "figure.run",
+                          tint: onPitch ? WatchTheme.bench : WatchTheme.turf, height: height) {
             workoutManager.toggleSub()
         }
-
-        // Optional hands-free double-tap mapping (Settings > Double Tap). Referees are never
-        // subbed, so the gesture stays unmapped here in referee mode.
-        if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .subToggle,
-           !WatchSettings.refereeMode {
+        if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .subToggle {
             button.handGestureShortcut(.primaryAction)
         } else {
             button
         }
     }
 
-    /// One Apple-Workout-style control: a round tinted button with its label beneath.
-    private func controlTile(title: String, systemImage: String, tint: Color,
-                             action: @escaping () -> Void) -> some View {
-        VStack(spacing: 6) {
-            Button(action: action) {
+    private func tile(_ title: String, systemImage: String, tint: Color, height: CGFloat,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
                 Image(systemName: systemImage)
+                    .font(.title2.weight(.semibold))
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            .buttonStyle(WatchControlButtonStyle(tint: tint))
-
-            Text(title)
-                .watchCaptionLabel()
-                .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func endMatch() async {
-        await workoutManager.endMatch()
+        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: height))
     }
 
     /// Journal the tap before the manager sees it, with the state the button was rendered from.
-    /// A control that buzzes and changes nothing is either not reaching the manager, not changing
-    /// the state, or not redrawing — and only the device can say which.
     private func logTap(_ name: String) {
         MatchLog.info("user: tapped \(name) (phase \(workoutManager.phase), sessionState \(workoutManager.sessionState.rawValue))",
                       category: "ui")

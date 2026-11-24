@@ -17,14 +17,23 @@ struct CountdownView: View {
     private let tick = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ZStack {
-            Color.green.opacity(0.15).ignoresSafeArea()
-            Text("\(remaining)")
-                .font(.system(size: 96, weight: .bold, design: .rounded))
-                .foregroundStyle(.green)
-                .contentTransition(.numericText(countsDown: true))
-                .transaction { $0.animation = .snappy }
+        TimelineView(.animation) { context in
+            let left = workoutManager.countdownDeadline.timeIntervalSince(context.date)
+            ZStack {
+                Circle().stroke(WatchTheme.turf.opacity(0.22), lineWidth: 12)
+                Circle()
+                    .trim(from: 0, to: max(0, min(1, left / 3)))
+                    .stroke(WatchTheme.turf, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(remaining)")
+                    .font(.system(size: 84, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.snappy, value: remaining)
+            }
+            .padding(10)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { workoutManager.skipCountdown() }
         .accessibilityElement(children: .combine)

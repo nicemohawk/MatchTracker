@@ -82,13 +82,23 @@ final class RouteRecorder: NSObject {
             refreshSignal()
             return
         }
+        // Restarted even when warm: background delivery has to be allowed before updates begin.
+        if isUpdating { manager.stopUpdatingLocation() } else { monitor = GPSSignalMonitor(startedAt: Date()) }
         manager.allowsBackgroundLocationUpdates = true
         holdBackgroundActivity()
-        if !isUpdating {
-            monitor = GPSSignalMonitor(startedAt: Date())
-            startUpdates()
-        }
+        startUpdates()
         startWatchdog()
+    }
+
+    /// Carry a match's background activity over a relaunch, until it's known whether it resumes.
+    func reclaimBackgroundActivity() {
+        guard isAuthorized else { return }
+        holdBackgroundActivity()
+    }
+
+    func releaseBackgroundActivity() {
+        backgroundActivity?.invalidate()
+        backgroundActivity = nil
     }
 
     /// Start keeping fixes taken at or after `start`. With `resuming`, reload what an earlier
@@ -110,8 +120,7 @@ final class RouteRecorder: NSObject {
         isArmed = false
         stopUpdates()
         manager.allowsBackgroundLocationUpdates = false
-        backgroundActivity?.invalidate()
-        backgroundActivity = nil
+        releaseBackgroundActivity()
         journal = nil
         recordingStart = nil
         fixes = []
@@ -131,6 +140,7 @@ final class RouteRecorder: NSObject {
         guard isArmed, isAuthorized else { return }
         manager.allowsBackgroundLocationUpdates = true
         holdBackgroundActivity()
+        startWatchdog()
         if !isUpdating {
             startUpdates()
         } else if monitor.shouldRetry(at: Date(), force: true) {
@@ -280,6 +290,7 @@ extension RouteRecorder: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         // Granted after Start was already tapped: pick up where `arm()` had to stop.
         if isArmed, isAuthorized, !isUpdating {
+            monitor = GPSSignalMonitor(startedAt: Date())
             manager.allowsBackgroundLocationUpdates = true
             holdBackgroundActivity()
             startUpdates()

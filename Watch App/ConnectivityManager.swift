@@ -113,7 +113,12 @@ final class ConnectivityManager: NSObject {
             func modified(_ url: URL) -> Date {
                 (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             }
+            // Already queued from an earlier launch: a second copy can arrive after the phone has
+            // renamed the first, and come back as a duplicate match.
+            let queued = Set(WCSession.default.outstandingFileTransfers
+                .compactMap { $0.file.metadata?[TransferType.recordID] as? String })
             let pending = urls.filter { $0.pathExtension == "json" }
+                .filter { !queued.contains($0.deletingPathExtension().lastPathComponent) }
                 .sorted { modified($0) > modified($1) }
                 .prefix(limit)
             guard !pending.isEmpty else { return }

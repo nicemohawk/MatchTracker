@@ -6,107 +6,100 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Page 3 of the live session: event logging. Players get the giant Flag button plus
-/// goal/assist logging; referee mode swaps to cards and fouls; other sports get their own
-/// vocabulary from the sport profile. Every log gives a semantic haptic and a brief flash so
-/// the player knows it registered without looking closely.
+/// Score and moments. The two halves of the scoreline are the buttons — the biggest targets the
+/// screen can hold — and the detail ("who scored?") is asked afterwards, when there's a second to
+/// answer it. Every log can be undone from its own confirmation.
 struct EventsView: View {
     @Environment(WorkoutManager.self) private var workoutManager
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @State private var confirmation: Confirmation?
+    @State private var scorerPrompt: MatchEvent?
 
-    private var refereeMode: Bool { WatchSettings.refereeMode }
     private var sport: SportProfile { WatchSettings.sportProfile }
 
-    /// A single event confirmation: the label to flash plus the tint that colors its checkmark.
     private struct Confirmation: Equatable {
+        let eventID: UUID
         let text: String
         let tint: Color
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                scoreHeader
-                if refereeMode {
-                    refereeButtons
-                } else if sport.id == SportProfile.soccer.id {
-                    soccerButtons
-                } else {
-                    sportButtons
-                    flagButton
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 8) {
+                    // Leaves the top of the next row in view: there is more below.
+                    HStack(spacing: 8) {
+                        scoreTile("Us", value: workoutManager.score.us, kind: .goalForUs,
+                                  tint: WatchTheme.turf, height: proxy.size.height * 0.62)
+                        scoreTile("Them", value: workoutManager.score.them, kind: .goalAgainstUs,
+                                  tint: WatchTheme.loss, height: proxy.size.height * 0.62)
+                    }
+                    if WatchSettings.refereeMode {
+                        HStack(spacing: 8) {
+                            eventTile(.yellowCard, title: "Yellow")
+                            eventTile(.redCard, title: "Red")
+                        }
+                        eventTile(.foul, title: "Foul")
+                    } else {
+                        ForEach(secondaryKinds, id: \.self) { kind in
+                            eventTile(kind, title: kind.watchTitle)
+                        }
+                    }
+                    flagTile
                 }
             }
-            .padding(.horizontal, 4)
         }
+        .scenePadding(.horizontal)
         .overlay { confirmationOverlay }
-    }
-
-    private var scoreHeader: some View {
-        VStack(spacing: 3) {
-            // Digits carry a small US / THEM caption so the score isn't encoded by color alone.
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                scoreColumn(value: workoutManager.score.us, caption: "US", tint: WatchTheme.turf)
-                Text("–")
-                    .foregroundStyle(.secondary)
-                scoreColumn(value: workoutManager.score.them, caption: "THEM", tint: WatchTheme.loss)
-            }
-            .font(.system(size: 34, weight: .bold, design: .rounded))
-            .monospacedDigit()
-            .animation(.snappy, value: workoutManager.score.us)
-            .animation(.snappy, value: workoutManager.score.them)
-
-            Text("\(workoutManager.loggedEventCount) events")
-                .watchCaptionLabel()
-                .foregroundStyle(.secondary)
-            if autoSubCount > 0 {
-                Label("\(autoSubCount) auto", systemImage: "wand.and.stars")
-                    .font(.caption2)
-                    .foregroundStyle(WatchTheme.signal)
+        .sheet(item: $scorerPrompt) { goal in
+            ScorerSheet { choice in
+                switch choice {
+                case .me: workoutManager.changeEvent(goal.id, to: .goalMine)
+                case .myAssist: workoutManager.log(.assist)
+                case .teammate: break
+                }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 2)
-        .padding(.bottom, 4)
     }
 
-    /// One side of the scoreline: the big colored digit with a small uppercase side caption
-    /// beneath, so US/THEM reads without relying on turf-vs-loss color.
-    private func scoreColumn(value: Int, caption: String, tint: Color) -> some View {
-        VStack(spacing: 1) {
-            Text("\(value)")
-                .foregroundStyle(tint)
-                .contentTransition(.numericText())
-            Text(caption)
-                .watchCaptionLabel()
-                .foregroundStyle(.secondary)
+    /// Sports other than soccer bring their own vocabulary; goals, subs and flags are already here.
+    private var secondaryKinds: [MatchEventKind] {
+        guard sport.id != SportProfile.soccer.id else { return [] }
+        return sport.eventVocabulary.filter {
+            ![.matchStart, .matchEnd, .periodStart, .periodEnd, .subIn, .subOut, .flag,
+              .goalForUs, .goalAgainstUs, .goalMine, .assist].contains($0)
         }
     }
 
-    /// Automatic substitutions detected so far this match.
-    private var autoSubCount: Int {
-        workoutManager.events.filter {
-            $0.source == .automatic && ($0.kind == .subIn || $0.kind == .subOut)
-        }.count
-    }
-
-    /// Flag is a secondary action now — same fat-finger tile size as My Goal / Assist, no longer
-    /// the biggest control on the page (goals lead).
     @ViewBuilder
-    private var flagButton: some View {
+    private func scoreTile(_ side: String, value: Int, kind: MatchEventKind, tint: Color, height: CGFloat) -> some View {
         let button = Button {
-            logEvent(.flag, label: "Flagged", tint: WatchTheme.signal)
+            log(kind, text: kind == .goalForUs ? "Goal!" : "They scored", tint: tint)
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "flag.fill")
-                    .font(.title3)
-                Text("Flag")
-                    .font(.caption2.weight(.semibold))
+            VStack(spacing: 0) {
+                Text("\(value)")
+                    .font(.system(size: height * 0.55, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text(side)
+                    .font(.headline)
             }
         }
-        .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.signal))
+        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: height))
+        .accessibilityLabel(kind == .goalForUs ? "Goal Us" : "Goal Them")
+        .accessibilityValue("\(value)")
+        .accessibilityHint("Adds a goal")
+        .animation(.snappy, value: value)
 
-        // Hands-free double-tap triggers the user's chosen action; Flag is the default.
+        if #available(watchOS 11.0, *), kind == .goalForUs, WatchSettings.doubleTapAction == .goalUs {
+            button.handGestureShortcut(.primaryAction)
+        } else {
+            button
+        }
+    }
+
+    @ViewBuilder
+    private var flagTile: some View {
+        let button = eventTile(.flag, title: "Flag")
         if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .flag {
             button.handGestureShortcut(.primaryAction)
         } else {
@@ -114,122 +107,92 @@ struct EventsView: View {
         }
     }
 
-    private var soccerButtons: some View {
-        VStack(spacing: 8) {
-            // Goals are the most frequent action, so they lead as the prominent top row.
-            HStack(spacing: 8) {
-                goalUsButton(prominent: true)
-                eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs, prominent: true)
-            }
-            // Secondary actions, all equal fat-finger tiles including the demoted Flag.
-            HStack(spacing: 8) {
-                eventButton("My Goal", systemImage: "star.fill", kind: .goalMine)
-                eventButton("Assist", systemImage: "hand.thumbsup.fill", kind: .assist)
-                flagButton
-            }
-        }
-    }
-
-    /// Referee layout, brought to the wave-4 bar: cards are the hero actions — big prominent tiles
-    /// (Yellow=cardYellow, Red=loss) leading the page, exactly like goals lead for players. Fouls,
-    /// the scoreline and Flag are equal secondary tiles beneath.
-    private var refereeButtons: some View {
-        VStack(spacing: 8) {
-            // Cards lead as the prominent top row — the referee's most frequent, most decisive call.
-            HStack(spacing: 8) {
-                eventButton("Yellow", systemImage: "rectangle.portrait.fill", kind: .yellowCard, prominent: true)
-                eventButton("Red", systemImage: "rectangle.portrait.fill", kind: .redCard, prominent: true)
-            }
-            // Secondary: a foul and the demoted Flag, equal fat-finger tiles.
-            HStack(spacing: 8) {
-                eventButton("Foul", systemImage: "exclamationmark.triangle", kind: .foul)
-                flagButton
-            }
-            // Secondary: the scoreline, so the referee can still keep goals.
-            HStack(spacing: 8) {
-                goalUsButton()
-                eventButton("Goal Them", systemImage: "soccerball.inverse", kind: .goalAgainstUs)
-            }
-        }
-    }
-
-    /// Generic grid for non-soccer sports, driven by the profile's event vocabulary.
-    private var sportButtons: some View {
-        let kinds = sport.eventVocabulary.filter { kind in
-            switch kind {
-            case .matchStart, .matchEnd, .periodStart, .periodEnd, .subIn, .subOut, .flag:
-                return false
-            default:
-                return true
-            }
-        }
-        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-            ForEach(kinds, id: \.self) { kind in
-                if kind == .goalForUs {
-                    goalUsButton()
-                } else {
-                    eventButton(kind.watchTitle, systemImage: kind.watchSymbol, kind: kind)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func goalUsButton(prominent: Bool = false) -> some View {
-        let button = eventButton("Goal Us", systemImage: "soccerball", kind: .goalForUs, prominent: prominent)
-        if #available(watchOS 11.0, *), WatchSettings.doubleTapAction == .goalUs {
-            button.handGestureShortcut(.primaryAction)
-        } else {
-            button
-        }
-    }
-
-    private func eventButton(_ title: String, systemImage: String, kind: MatchEventKind, prominent: Bool = false) -> some View {
-        let tint = kind.watchTint
-        return Button {
-            logEvent(kind, label: title, tint: tint)
+    private func eventTile(_ kind: MatchEventKind, title: String) -> some View {
+        Button {
+            log(kind, text: kind == .flag ? "Moment flagged" : title, tint: kind.watchTint)
         } label: {
-            VStack(spacing: prominent ? 5 : 4) {
-                Image(systemName: systemImage)
-                    .font(prominent ? .title : .title3)
-                Text(title)
-                    .font(prominent ? .footnote.weight(.bold) : .caption2.weight(.semibold))
-            }
+            Label(title, systemImage: kind.watchSymbol)
+                .font(.headline)
         }
-        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: prominent ? 68 : 56))
+        .buttonStyle(WatchTileButtonStyle(tint: kind.watchTint, minHeight: 52))
     }
 
     @ViewBuilder
     private var confirmationOverlay: some View {
         if let confirmation {
-            ZStack {
-                // Opaque scrim so the score digits behind the flash don't poke above its edge —
-                // the confirmation fully takes over the page for its brief moment.
-                Rectangle()
-                    .fill(.black.opacity(0.85))
-                    .ignoresSafeArea()
-                ConfirmationFlash(text: confirmation.text, tint: confirmation.tint)
+            VStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(confirmation.tint)
+                Text(confirmation.text)
+                    .font(.title3.weight(.semibold))
+                Button("Undo") {
+                    workoutManager.removeEvent(confirmation.eventID)
+                    WatchHaptics.click()
+                    withAnimation(.easeOut) { self.confirmation = nil }
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: .white, minHeight: 44))
             }
-            .transition(.scale(scale: 0.85).combined(with: .opacity))
+            .scenePadding(.horizontal)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black.opacity(0.9))
+            .transition(.opacity)
         }
     }
 
-    /// Log the event, fire its semantic haptic, and flash a tinted confirmation. Respects
-    /// always-on: under reduced luminance the flash fades in plainly without the spring.
-    private func logEvent(_ kind: MatchEventKind, label: String, tint: Color) {
-        workoutManager.log(kind)
+    /// Log, buzz and confirm. A goal for us then asks who, once the confirmation has had its moment.
+    private func log(_ kind: MatchEventKind, text: String, tint: Color) {
+        let event = workoutManager.log(kind)
         WatchHaptics.forEvent(positive: kind.isPositiveMoment,
                               caution: kind.isCaution,
                               negative: kind.isNegativeMoment)
-        let flash = Confirmation(text: label, tint: tint)
-        withAnimation(isLuminanceReduced ? .easeIn(duration: 0.15)
-                                         : .spring(response: 0.3, dampingFraction: 0.7)) {
-            confirmation = flash
-        }
+        let shown = Confirmation(eventID: event.id, text: text, tint: tint)
+        withAnimation(.snappy) { confirmation = shown }
         Task {
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(2))
+            guard confirmation == shown else { return }
             withAnimation(.easeOut) { confirmation = nil }
+            if kind == .goalForUs, !WatchSettings.refereeMode, workoutManager.events.contains(where: { $0.id == event.id }) {
+                scorerPrompt = event
+            }
         }
+    }
+}
+
+/// "Who scored?" — three full-width answers. Dismissing means a teammate.
+private struct ScorerSheet: View {
+    enum Choice { case me, myAssist, teammate }
+
+    let onChoose: (Choice) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                choice("I scored", systemImage: "star.fill", tint: WatchTheme.sprint, .me)
+                choice("My assist", systemImage: "hand.thumbsup.fill", tint: WatchTheme.pace, .myAssist)
+                choice("Teammate", systemImage: "person.2.fill", tint: WatchTheme.bench, .teammate)
+            }
+            .scenePadding(.horizontal)
+        }
+        .navigationTitle("Who scored?")
+        .task {
+            // Left unanswered — play restarted — it gets out of the way by itself.
+            try? await Task.sleep(for: .seconds(12))
+            dismiss()
+        }
+    }
+
+    private func choice(_ title: String, systemImage: String, tint: Color, _ choice: Choice) -> some View {
+        Button {
+            WatchHaptics.click()
+            onChoose(choice)
+            dismiss()
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+        }
+        .buttonStyle(WatchTileButtonStyle(tint: tint, minHeight: 52))
     }
 }
 
@@ -260,6 +223,7 @@ extension MatchEventKind {
         case .foul: return "exclamationmark.triangle"
         case .turnover: return "arrow.triangle.2.circlepath"
         case .timeout: return "pause.circle"
+        case .flag: return "flag.fill"
         default: return "circle"
         }
     }

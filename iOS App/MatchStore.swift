@@ -533,13 +533,31 @@ final class MatchStore: ObservableObject {
         let orphans = records.values.filter { !workoutIDs.contains($0.id) }
         guard !orphans.isEmpty else { return records }
 
+        // The watch writes the match's own id into the workout, so identity beats any guess.
+        let workoutsByMatchID = Dictionary(
+            workouts.compactMap { workout in
+                (workout.metadata?[HKMetadataKeyExternalUUID] as? String)
+                    .flatMap(UUID.init(uuidString:)).map { ($0, workout) }
+            }, uniquingKeysWith: { first, _ in first })
+
         for var record in orphans {
+            if let workout = workoutsByMatchID[record.id], records[workout.uuid] != nil {
+                // A second copy of a match that already has its record.
+                try? FileManager.default.removeItem(at: AppGroup.matchRecordURL(for: record.id))
+                records.removeValue(forKey: record.id)
+                MatchLog.info("dropped duplicate record \(record.id) of workout \(workout.uuid)", category: "matchstore")
+                continue
+            }
             guard let recordEnd = record.endDate else { continue }
             let recordDuration = recordEnd.timeIntervalSince(record.startDate)
-            let candidate = workouts
+            let candidate = workoutsByMatchID[record.id] ?? workouts
                 .filter { records[$0.uuid] == nil }
                 .filter { abs($0.startDate.timeIntervalSince(record.startDate)) <= 180 }
-                .filter { abs($0.duration - recordDuration) <= max(60, $0.duration * 0.1) }
+                // Start to end, not `duration`: that excludes pauses, and the record doesn't.
+                .filter { workout in
+                    let span = workout.endDate.timeIntervalSince(workout.startDate)
+                    return abs(span - recordDuration) <= max(60, span * 0.1)
+                }
                 .filter { workout in
                     // Never pair across an explicit indoor/outdoor mismatch.
                     guard let workoutIsIndoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool

@@ -63,7 +63,7 @@ struct MatchTrackerWatchApp: App {
                     guard url.scheme == "matchtracker", url.host == "start",
                           workoutManager.phase == .idle else { return }
                     workoutManager.beginCountdown(field: workoutManager.detectedField,
-                                                  format: workoutManager.matchFormat)
+                                                  format: WatchSettings.predictedFormat)
                 }
         }
     }

@@ -34,6 +34,9 @@ struct SessionView: View {
         .tabViewStyle(.verticalPage)
         .overlay(alignment: .top) { autoSubBanner }
         .animation(.snappy, value: workoutManager.autoSubBanner)
+        .sheet(isPresented: Bindable(workoutManager).askingStillPlaying) {
+            StillPlayingSheet()
+        }
         .onChange(of: scenePhase) { _, phase in
             phase == .active ? returnToRestingPage() : noteLeftActive()
         }
@@ -73,6 +76,37 @@ struct SessionView: View {
                 .background(.thinMaterial, in: Capsule())
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .padding(.top, 4)
+        }
+    }
+}
+
+/// Shown when the match looks over but was never ended. A forgotten match once ran for 32 hours;
+/// ending from here also trims it back to the last time the wearer was actually moving.
+private struct StillPlayingSheet: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Still playing?")
+                    .font(.title3.weight(.bold))
+                if let lastMoving = workoutManager.lastMovingDate {
+                    Text("You stopped moving at \(lastMoving.formatted(date: .omitted, time: .shortened)).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Button("End Match") {
+                    WatchHaptics.stop()
+                    dismiss()
+                    Task { await workoutManager.endMatch(at: workoutManager.lastMovingDate ?? Date()) }
+                }
+                .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.loss, minHeight: 52))
+                Button("Still Playing") { dismiss() }
+                    .buttonStyle(WatchTileButtonStyle(tint: WatchTheme.turf, minHeight: 52))
+            }
+            .font(.headline)
+            .scenePadding(.horizontal)
         }
     }
 }

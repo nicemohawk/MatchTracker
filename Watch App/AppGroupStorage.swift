@@ -87,6 +87,30 @@ enum AppGroupStorage {
         return try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: data)
     }
 
+    /// When the in-progress match was last known to be recording.
+    static var inProgressTouched: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: inProgressMatchURL.path))?[.modificationDate] as? Date
+    }
+
+    static func touchInProgress() {
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: inProgressMatchURL.path)
+    }
+
+    static func hasFinished(id: UUID) -> Bool {
+        FileManager.default.fileExists(
+            atPath: finishedMatchesDirectory.appendingPathComponent("\(id.uuidString).json").path)
+    }
+
+    /// A finished record still on the watch for the match that kicked off around `start`.
+    static func finishedRecord(startingNear start: Date) -> MatchRecord? {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: finishedMatchesDirectory,
+                                                                 includingPropertiesForKeys: nil)) ?? []
+        return urls.lazy
+            .compactMap { try? Data(contentsOf: $0) }
+            .compactMap { try? MatchTrackerJSON.decoder().decode(MatchRecord.self, from: $0) }
+            .first { abs($0.startDate.timeIntervalSince(start)) < 180 }
+    }
+
     static func clearInProgress() {
         try? FileManager.default.removeItem(at: inProgressMatchURL)
     }

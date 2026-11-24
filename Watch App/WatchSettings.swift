@@ -32,7 +32,7 @@ enum WatchSettings {
         static let refereeMode = "refereeMode"
         static let doubleTapAction = "doubleTapAction"
         static let sportID = "sportID"
-        static let matchFormat = "matchFormat"
+        static let formatHistory = "formatHistory"
     }
 
     /// The mirrored values. Guarded by `lock` — read from the main thread, written from whichever
@@ -41,7 +41,7 @@ enum WatchSettings {
         var refereeMode = false
         var doubleTapAction = DoubleTapAction.flag
         var sportID = SportProfile.soccer.id
-        var matchFormat = MatchFormat.match
+        var formatHistory = FormatHistory()
     }
 
     private static let lock = NSLock()
@@ -67,12 +67,12 @@ enum WatchSettings {
         loaded.doubleTapAction = defaults.string(forKey: Key.doubleTapAction)
             .flatMap(DoubleTapAction.init(rawValue:)) ?? .flag
         loaded.sportID = defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id
-        loaded.matchFormat = defaults.string(forKey: Key.matchFormat)
-            .flatMap(MatchFormat.init(rawValue:)) ?? .match
+        loaded.formatHistory = defaults.data(forKey: Key.formatHistory)
+            .flatMap { try? JSONDecoder().decode(FormatHistory.self, from: $0) } ?? FormatHistory()
         lock.lock()
         snapshot = loaded
         lock.unlock()
-        MatchLog.info("settings primed (referee \(loaded.refereeMode), sport \(loaded.sportID), format \(loaded.matchFormat.rawValue))",
+        MatchLog.info("settings primed (referee \(loaded.refereeMode), sport \(loaded.sportID), next format \(loaded.formatHistory.predicted(on: Date()).rawValue))",
                       category: "settings")
     }
 
@@ -121,13 +121,17 @@ enum WatchSettings {
         return profile
     }
 
-    /// Last-chosen match format for the start-screen quick pick (Match / Pickup / Indoor).
-    static var matchFormat: MatchFormat {
-        get { read(\.matchFormat) }
-        set {
-            MatchLog.info("user: format -> \(newValue.rawValue)", category: "settings")
-            write(\.matchFormat, newValue)
-            store(newValue.rawValue, forKey: Key.matchFormat)
+    /// The format most likely to be played now: last time's on this weekday.
+    static var predictedFormat: MatchFormat {
+        read(\.formatHistory).predicted(on: Date())
+    }
+
+    static func recordFormat(_ format: MatchFormat, on date: Date) {
+        var history = read(\.formatHistory)
+        history.record(format, on: date)
+        write(\.formatHistory, history)
+        if let data = try? JSONEncoder().encode(history) {
+            store(data, forKey: Key.formatHistory)
         }
     }
 }

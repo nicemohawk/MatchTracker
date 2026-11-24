@@ -114,8 +114,8 @@ final class WatchSmokeTests: XCTestCase {
         let startButton = app.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
         // Metrics-page marker: the "BPM" unit label is present whenever a live session is on screen.
-        let metricsMarker = app.staticTexts.matching(
-            NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        let metricsMarker = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
         if startButton.waitForExistence(timeout: 30) {
             startButton.tap()
         } else if !metricsMarker.waitForExistence(timeout: 8) {
@@ -176,7 +176,7 @@ final class WatchSmokeTests: XCTestCase {
         // ---- 64: Controls page (round End/Pause/Lock/Sub buttons). swipeDown pages Metrics →
         // Controls. The tiles carry their titles as sibling captions ("End", "Pause", …). ----
         app.swipeDown()
-        let endCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        let endCaption = app.buttons.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
         _ = endCaption.waitForExistence(timeout: 12)
         sleep(1)
         screenshot("64-watch-controls")
@@ -184,12 +184,7 @@ final class WatchSmokeTests: XCTestCase {
         // ---- 66: Summary. Tap the round End button (top-left control tile). Its Button wraps only
         // an xmark image, so its label isn't "End"; tap the tile by coordinate, with a label-based
         // fallback. Then wait for the summary's "Done" button and capture. ----
-        let endButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'End'")).firstMatch
-        if endButton.exists && endButton.isHittable {
-            endButton.tap()
-        } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
-        }
+        endMatch(app)
 
         // A newly-inferred field can raise a save sheet over the summary; dismiss it if present.
         let notNow = app.buttons.matching(NSPredicate(format: "label ==[c] 'Not Now'")).firstMatch
@@ -217,8 +212,8 @@ final class WatchSmokeTests: XCTestCase {
 
         let startButton = app.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
-        let metricsMarker = app.staticTexts.matching(
-            NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        let metricsMarker = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
         if startButton.waitForExistence(timeout: 45) {
             startButton.tap()
         } else if !metricsMarker.waitForExistence(timeout: 8) {
@@ -230,26 +225,22 @@ final class WatchSmokeTests: XCTestCase {
 
         // Metrics → Controls (see the pager recipe in testWalkInGamePages).
         app.swipeDown()
-        let pauseCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'Pause'")).firstMatch
-        let resumeCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'Resume'")).firstMatch
+        let pauseCaption = app.buttons.matching(NSPredicate(format: "label ==[c] 'Pause'")).firstMatch
         guard pauseCaption.waitForExistence(timeout: 20) else {
             XCTFail("Controls page did not render the Pause tile")
             return
         }
 
-        // The tiles wrap bare SF Symbols, so their Buttons aren't labelled — tap by position
-        // (Pause is top-right, End top-left), matching the recipe the other tests use.
-        let pauseTile = app.coordinate(withNormalizedOffset: CGVector(dx: 0.73, dy: 0.30))
-        pauseTile.tap()
-        XCTAssertTrue(resumeCaption.waitForExistence(timeout: 10),
+        let pauseButton = app.buttons.matching(NSPredicate(format: "label ==[c] 'Pause'")).firstMatch
+        let resumeButton = app.buttons.matching(NSPredicate(format: "label ==[c] 'Resume'")).firstMatch
+        pauseButton.tap()
+        XCTAssertTrue(resumeButton.waitForExistence(timeout: 10),
                       "Pause should flip the tile to Resume — a haptic with no state change is the bug")
-
-        pauseTile.tap()
-        XCTAssertTrue(pauseCaption.waitForExistence(timeout: 10),
+        resumeButton.tap()
+        XCTAssertTrue(pauseButton.waitForExistence(timeout: 10),
                       "Resume should flip the tile back to Pause")
 
-        // End: this session is well under 30s, so it discards and returns to the start screen.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
+        endMatch(app)
         let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
         let leftTheLiveScreen = startButton.waitForExistence(timeout: 30) || done.exists
         XCTAssertTrue(leftTheLiveScreen, "End should leave the live session screen")
@@ -265,7 +256,7 @@ final class WatchSmokeTests: XCTestCase {
         _ = handleWatchHealthKitPrompt(timeout: 15)
         handleWatchLocationPrompt(timeout: 8)
         let startButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
-        let metricsMarker = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        let metricsMarker = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
         // A match interrupted minutes ago resumes straight into the live screen instead.
         if startButton.waitForExistence(timeout: 20) { startButton.tap() }
         XCTAssertTrue(metricsMarker.waitForExistence(timeout: 30))
@@ -277,9 +268,7 @@ final class WatchSmokeTests: XCTestCase {
         sleep(20)
 
         app.swipeDown()
-        let endCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
-        XCTAssertTrue(endCaption.waitForExistence(timeout: 15))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
+        endMatch(app)
         let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 20), "End should show the summary at once")
         // Let the live screen finish leaving and the list scroll to rest before tapping.
@@ -291,6 +280,95 @@ final class WatchSmokeTests: XCTestCase {
         done.tap()
         XCTAssertTrue(startButton.waitForExistence(timeout: 20))
         sleep(12)
+    }
+
+    /// An unnoticed pause in the first seconds must not make the whole match look accidental.
+    func testEarlyPauseDoesNotDiscardTheMatch() {
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 10)
+        handleWatchLocationPrompt(timeout: 5)
+        let startButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        let heartRate = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
+        XCTAssertTrue(startButton.waitForExistence(timeout: 40))
+        startButton.tap()
+        XCTAssertTrue(heartRate.waitForExistence(timeout: 20))
+        sleep(1)
+        app.swipeDown()
+        let pause = app.buttons.matching(NSPredicate(format: "label ==[c] 'Pause'")).firstMatch
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        pause.tap()
+        sleep(35)
+        endMatch(app)
+        let done = app.buttons.matching(NSPredicate(format: "label ==[c] 'Done'")).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 20), "A 40-second match that was mostly paused is still a match")
+        sleep(8)
+    }
+
+    /// Captures every redesigned screen of a real match, for design review.
+    func testCaptureMatchDesign() {
+        let app = XCUIApplication()
+        app.launch()
+        _ = handleWatchHealthKitPrompt(timeout: 10)
+        handleWatchLocationPrompt(timeout: 5)
+        let startButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Start Match'")).firstMatch
+        let heartRate = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
+        XCTAssertTrue(startButton.waitForExistence(timeout: 40))
+        sleep(3)
+        screenshot("80-start")
+        startButton.tap()
+        usleep(900_000)
+        screenshot("81-countdown")
+        XCTAssertTrue(heartRate.waitForExistence(timeout: 20))
+        sleep(6)
+        screenshot("82-live")
+        app.swipeUp()
+        sleep(1)
+        screenshot("83-score")
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Goal Us'")).firstMatch.tap()
+        usleep(600_000)
+        screenshot("84-goal")
+        sleep(3)
+        screenshot("85-scorer")
+        let scored = app.buttons.matching(NSPredicate(format: "label ==[c] 'I scored'")).firstMatch
+        if scored.waitForExistence(timeout: 5) { scored.tap() }
+        sleep(1)
+        for _ in 0..<4 where !heartRate.exists { app.swipeDown(); usleep(700_000) }
+        screenshot("86-live-score")
+        app.swipeDown()
+        sleep(1)
+        screenshot("87-controls")
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'Sub Out'")).firstMatch.tap()
+        sleep(1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)))
+        sleep(2)
+        screenshot("88-bench")
+        sleep(14)
+        app.swipeDown()
+        sleep(1)
+        let end = app.buttons.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        _ = end.waitForExistence(timeout: 8)
+        end.tap()
+        sleep(1)
+        screenshot("89-confirm")
+        app.buttons.matching(NSPredicate(format: "label ==[c] 'End Match'")).firstMatch.tap()
+        sleep(1)
+        screenshot("90-summary-saving")
+        sleep(6)
+        screenshot("91-summary")
+        app.swipeUp()
+        sleep(1)
+        screenshot("92-summary-stats")
+    }
+
+    /// Taps End on the Controls page and confirms.
+    private func endMatch(_ app: XCUIApplication) {
+        let end = app.buttons.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        if end.waitForExistence(timeout: 12) { end.tap() }
+        let confirm = app.buttons.matching(NSPredicate(format: "label ==[c] 'End Match'")).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "End should ask first")
+        confirm.tap()
     }
 
     /// Opens the touchline-training flow from the start screen, captures its themed idle screen
@@ -373,8 +451,8 @@ final class WatchSmokeTests: XCTestCase {
 
         // ---- Start the match and page Metrics → Events (same recipe as testWalkInGamePages). ----
         startButton.tap()
-        let metricsMarker = app.staticTexts.matching(
-            NSPredicate(format: "label ==[c] 'BPM'")).firstMatch
+        let metricsMarker = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label ==[c] 'Heart rate'")).firstMatch
         _ = metricsMarker.waitForExistence(timeout: 30)
         sleep(2)
 
@@ -409,14 +487,9 @@ final class WatchSmokeTests: XCTestCase {
         sleep(1)
 
         app.swipeDown()
-        let endCaption = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
+        let endCaption = app.buttons.matching(NSPredicate(format: "label ==[c] 'End'")).firstMatch
         _ = endCaption.waitForExistence(timeout: 12)
-        let endButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'End'")).firstMatch
-        if endButton.exists && endButton.isHittable {
-            endButton.tap()
-        } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.27, dy: 0.30)).tap()
-        }
+        endMatch(app)
 
         // Clear any post-match sheet, then finish the summary back to the start screen.
         let notNow = app.buttons.matching(NSPredicate(format: "label ==[c] 'Not Now'")).firstMatch

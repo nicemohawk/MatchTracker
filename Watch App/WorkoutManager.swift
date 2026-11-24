@@ -140,12 +140,20 @@ final class WorkoutManager: NSObject {
     /// HealthKit refused or dropped the session mid-match. GPS keeps recording; the session is
     /// retried whenever the app is frontmost.
     @ObservationIgnored private var sessionLost = false
-    @ObservationIgnored private var sessionStarting = false
+    /// Identifies the session start in progress; a start that finds itself superseded cleans up
+    /// after itself instead of touching the match that replaced it.
+    @ObservationIgnored private var startToken: UUID?
+    @ObservationIgnored private var pausesKnownOnlyToBuilder = false
     @ObservationIgnored private var sessionAttempts = 0
     /// Earlier matches still being saved. A new session waits (briefly) for them: starting one
     /// ends any session still open.
     @ObservationIgnored private var healthSavesInFlight = 0
     @ObservationIgnored private var recoveryInFlight = false
+    /// HealthKit hasn't answered whether an earlier session is still open. Until it does, a new
+    /// session would displace the old one.
+    @ObservationIgnored private var recoveryOutstanding = false
+    /// Matches that have ended and are being saved: on disk, but not interrupted.
+    @ObservationIgnored private var savingIDs: Set<UUID> = []
 
     /// Geometry-first automatic substitution detector. Non-nil only when a field was resolved for
     /// this match (no field → no boundary to reason about → detection disabled, everything else
@@ -178,6 +186,7 @@ final class WorkoutManager: NSObject {
     /// Whether this session runs without GPS (indoor court/dome): no location, route, field
     /// detection, auto-sub or heading capture — HR/energy collection is unchanged.
     private var isIndoor: Bool { matchFormat == .indoor }
+    var usesGPS: Bool { !isIndoor }
 
     /// Analytics context for scaling run/period detection to the format and field size.
     var matchContext: MatchContext {
@@ -218,15 +227,11 @@ final class WorkoutManager: NSObject {
         }.count
     }
 
-    /// Live elapsed time at a given instant.
-    ///
-    /// The builder is the source of truth while HealthKit is collecting (it honors pauses for
-    /// us); without it the wall clock takes over, minus time spent paused. A session that never
-    /// reached `beginCollection` used to read a frozen 0:00 that was indistinguishable from a
-    /// timer that had never started.
+    /// Live elapsed time at a given instant: the wall clock minus time paused. Only a recovered
+    /// session asks the builder, because the pauses before the relaunch aren't known here.
     func elapsedTime(at date: Date) -> TimeInterval {
-        if collectionBegan, let builder { return builder.elapsedTime(at: date) }
-        guard phase == .active else { return elapsedAtPause }
+        if pausesKnownOnlyToBuilder, collectionBegan, let builder { return builder.elapsedTime(at: date) }
+        guard isRecording else { return elapsedAtPause }
         let paused = pausedTotal + (pauseStarted.map { date.timeIntervalSince($0) } ?? 0)
         return max(0, date.timeIntervalSince(matchStartDate) - paused)
     }
@@ -278,6 +283,7 @@ final class WorkoutManager: NSObject {
         detectedField = field
         resetForNewMatch(field: field)
         let start = Date()
+        WatchSettings.recordFormat(format, on: start)
         matchStartDate = start
         countdownDeadline = start.addingTimeInterval(seconds)
         phase = .countdown
@@ -294,6 +300,7 @@ final class WorkoutManager: NSObject {
         }
         startWorkoutSession()
         log(.matchStart, haptic: false)
+        startHeartbeat()
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
 
         Task { @MainActor [weak self] in
@@ -326,12 +333,25 @@ final class WorkoutManager: NSObject {
 
     private var isRecording: Bool { phase == .countdown || phase == .active }
 
+    /// Marks the in-progress record as alive, so a match with no GPS and no taps still has a known
+    /// last moment if the app dies.
+    private func startHeartbeat() {
+        let id = matchID
+        Task { @MainActor [weak self] in
+            while let self, self.matchID == id, self.isRecording {
+                self.persistQueue.async { AppGroupStorage.touchInProgress() }
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
     /// Create and start the HealthKit session for the current match, dated from the Start tap.
     /// Also the retry path: the match (and its GPS) carries on without a session until one takes.
     @MainActor
     private func startWorkoutSession() {
-        guard !sessionStarting else { return }
-        sessionStarting = true
+        guard startToken == nil else { return }
+        let token = UUID()
+        startToken = token
         sessionLost = false
         sessionAttempts += 1
         let id = matchID
@@ -351,8 +371,8 @@ final class WorkoutManager: NSObject {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { sessionStarting = false }
-            let patience = Date().addingTimeInterval(5)
+            func isCurrent() -> Bool { startToken == token && matchID == id && isRecording }
+            let patience = Date().addingTimeInterval(3)
             while healthSavesInFlight > 0, Date() < patience {
                 try? await Task.sleep(for: .milliseconds(100))
             }
@@ -364,32 +384,57 @@ final class WorkoutManager: NSObject {
                                                                  workoutConfiguration: configuration)
                     session.delegate = self
                     builder.delegate = self
-                    session.startActivity(with: start)
                     return (session, builder)
                 }.value
-                // Ended (or replaced) while HealthKit was working: don't leave a session running.
-                guard matchID == id, isRecording else {
-                    session.end()
-                    builder.discardWorkout()
-                    return
-                }
+                // Checked before starting: a stale start would end the next match's session.
+                guard isCurrent() else { return }
                 self.session = session
                 self.builder = builder
+                await Task.detached(priority: .userInitiated) { session.startActivity(with: start) }.value
                 try await builder.beginCollection(at: start)
-                guard matchID == id, isRecording else { return }
+                guard isCurrent() else {
+                    Self.discard(session, builder)
+                    return
+                }
                 // A refused session fails asynchronously, and collection still "begins" on it.
                 guard session.state != .ended, session.state != .stopped else {
                     sessionFailed(nil, matchID: id)
                     return
                 }
+                startToken = nil
                 collectionBegan = true
                 healthCollectionStalled = false
-                applySessionState(session.state)
+                if sessionState == .paused { session.pause() } else { applySessionState(session.state) }
                 MatchLog.info("session: collecting (attempt \(attempt), \(Int(Date().timeIntervalSince(start))) s after the tap)",
                               category: "workout")
+                await addMetadata(to: builder)
             } catch {
+                guard isCurrent() else { return }
                 sessionFailed(error, matchID: id)
             }
+        }
+    }
+
+    /// Lets the phone (and anything else reading Health) tie the workout to its match by identity
+    /// rather than by guessing from times. Never worth failing over.
+    @MainActor
+    private func addMetadata(to builder: HKLiveWorkoutBuilder) async {
+        do {
+            try await builder.addMetadata([
+                HKMetadataKeyExternalUUID: matchID.uuidString,
+                HKMetadataKeyWorkoutBrandName: "MatchTracker",
+                HKMetadataKeyIndoorWorkout: matchFormat == .indoor
+            ])
+        } catch {
+            MatchLog.error("session: metadata failed: \(error.localizedDescription)", category: "workout")
+        }
+    }
+
+    /// End a session whose workout isn't wanted, off the main thread.
+    private static func discard(_ session: HKWorkoutSession?, _ builder: HKLiveWorkoutBuilder?) {
+        Task.detached(priority: .userInitiated) {
+            session?.end()
+            builder?.discardWorkout()
         }
     }
 
@@ -402,25 +447,36 @@ final class WorkoutManager: NSObject {
         MatchLog.error("session failed (attempt \(sessionAttempts)): \(error?.localizedDescription ?? "ended before collecting")",
                        category: "workout")
         let code = (error as? HKError)?.code
+        startToken = nil
+        healthCollectionStalled = true
+
+        // It had been collecting: keep both, so End still saves the workout up to here. The clock
+        // carries on by the wall.
+        if collectionBegan {
+            collectionBegan = false
+            return
+        }
+        Self.discard(session, builder)
         session = nil
         builder = nil
-        collectionBegan = false
 
         switch code {
         case .errorAuthorizationDenied, .errorAuthorizationNotDetermined, .errorRequiredAuthorizationDenied,
              .errorHealthDataUnavailable, .errorHealthDataRestricted, .errorWorkoutActivityNotAllowed:
-            startFailure = error.map { StartFailure($0) }
-            abandonMatch()
+            // Only at the start is this "couldn't start". Later it is a match in progress, which
+            // GPS and the event log can still record.
+            if Date().timeIntervalSince(matchStartDate) < minimumMatchDuration {
+                startFailure = error.map { StartFailure($0) }
+                abandonMatch()
+            }
             return
-        case .errorAnotherWorkoutSessionStarted:
+        case .errorAnotherWorkoutSessionStarted where !recoveryOutstanding && healthSavesInFlight == 0:
             // The wearer chose the other app; taking the session back would end their workout.
-            healthCollectionStalled = true
             return
         default:
             break
         }
         sessionLost = true
-        healthCollectionStalled = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
             self?.retryWorkoutSessionIfNeeded()
@@ -430,7 +486,7 @@ final class WorkoutManager: NSObject {
     /// Only from the foreground (HealthKit's rule), and not forever.
     @MainActor
     private func retryWorkoutSessionIfNeeded() {
-        guard isRecording, sessionLost, sessionAttempts < 6,
+        guard isRecording, sessionLost, !recoveryOutstanding, sessionAttempts < 6,
               WKApplication.shared().applicationState == .active else { return }
         MatchLog.info("session: retrying", category: "workout")
         startWorkoutSession()
@@ -448,10 +504,7 @@ final class WorkoutManager: NSObject {
         liveStreamer.stop()
         clearInProgress(matchID: abandonedID)
         reset()
-        Task.detached(priority: .userInitiated) {
-            endingSession?.end()
-            endingBuilder?.discardWorkout()
-        }
+        Self.discard(endingSession, endingBuilder)
     }
 
     // MARK: - App state
@@ -556,8 +609,63 @@ final class WorkoutManager: NSObject {
     }
 
     /// Append a manually-logged event, give feedback and persist the crash-safe record.
-    func log(_ kind: MatchEventKind, note: String? = nil, haptic: Bool = true) {
-        append(MatchEvent(kind: kind, date: Date(), note: note, source: .manual), haptic: haptic)
+    @discardableResult
+    func log(_ kind: MatchEventKind, note: String? = nil, haptic: Bool = true) -> MatchEvent {
+        let event = MatchEvent(kind: kind, date: Date(), note: note, source: .manual)
+        append(event, haptic: haptic)
+        return event
+    }
+
+    /// Take back a logged event.
+    func removeEvent(_ id: UUID) {
+        guard let index = events.firstIndex(where: { $0.id == id }) else { return }
+        MatchLog.info("event: \(events[index].kind.rawValue) undone", category: "events")
+        events.remove(at: index)
+        persistInProgress()
+    }
+
+    /// Say more about an event already logged ("that goal was mine").
+    func changeEvent(_ id: UUID, to kind: MatchEventKind) {
+        guard let index = events.firstIndex(where: { $0.id == id }) else { return }
+        MatchLog.info("event: \(events[index].kind.rawValue) -> \(kind.rawValue)", category: "events")
+        events[index].kind = kind
+        persistInProgress()
+    }
+
+    // MARK: Forgotten matches
+
+    /// Raised when the match looks over but was never ended.
+    var askingStillPlaying = false
+    /// Last time GPS saw real movement; where a forgotten match is trimmed back to.
+    @ObservationIgnored private(set) var lastMovingDate: Date?
+    @ObservationIgnored private var lastAskedStillPlaying: Date?
+
+    private let stillnessBeforeAsking: TimeInterval = 20 * 60
+    /// Long enough that even a match with breaks, or indoors without GPS, is worth asking about.
+    private let durationBeforeAsking: TimeInterval = 150 * 60
+
+    /// Called with every fix and heart-rate sample: both keep arriving in the background.
+    private func askIfStillPlaying(now: Date = Date()) {
+        guard phase == .active, !askingStillPlaying else { return }
+        let stillSince = lastMovingDate ?? matchStartDate
+        let looksOver = (usesGPS && now.timeIntervalSince(stillSince) > stillnessBeforeAsking)
+            || now.timeIntervalSince(matchStartDate) > durationBeforeAsking
+        let askedRecently = lastAskedStillPlaying.map { now.timeIntervalSince($0) < 30 * 60 } ?? false
+        guard looksOver, !askedRecently else { return }
+        lastAskedStillPlaying = now
+        askingStillPlaying = true
+        MatchLog.info("still playing? asked at \(Int(now.timeIntervalSince(matchStartDate) / 60)) min", category: "workout")
+        WKInterfaceDevice.current().play(.notification)
+    }
+
+    /// When the wearer last went off, while they're off.
+    var benchedSince: Date? {
+        onPitch ? nil : events.last { $0.kind == .subOut }?.date
+    }
+
+    /// Whether a manually-tagged half is running (referee mode).
+    var periodInProgress: Bool {
+        events.last { $0.kind == .periodStart || $0.kind == .periodEnd }?.kind == .periodStart
     }
 
     /// Append an already-built event (preserving its date and source), optionally give a success
@@ -598,14 +706,14 @@ final class WorkoutManager: NSObject {
         let elapsed: TimeInterval
         let distanceMeters: Double
         let score: (us: Int, them: Int)
+        let sportID: String
+        let teamCode: String?
 
         var track: [TrackPoint] { fixes.map(\.point) }
 
         func record(id: UUID, events: [MatchEvent]) -> MatchRecord {
             var record = MatchRecord(id: id, startDate: start, endDate: end, fieldID: fieldID, events: events,
-                                     teamCode: AppGroupStorage.teamCode,
-                                     sportID: WatchSettings.sportProfile.id,
-                                     headings: headings)
+                                     teamCode: teamCode, sportID: sportID, headings: headings)
             // Set explicitly so a formal match records `.match` rather than relying on nil.
             record.format = format
             // The full-resolution track travels with the record too, so the phone can analyze the
@@ -619,32 +727,37 @@ final class WorkoutManager: NSObject {
     /// Sessions shorter than `minimumMatchDuration` are discarded without saving or transferring.
     @MainActor
     @discardableResult
-    func endMatch() async -> MatchOutcome {
-        let end = Date()
+    func endMatch(at requestedEnd: Date = Date()) async -> MatchOutcome {
+        let end = min(max(requestedEnd, matchStartDate), Date())
         guard isRecording else { return .discardedTooShort }
         MatchLog.info("endMatch: begun (collectionBegan \(collectionBegan), session \(session == nil ? "absent" : "live"))",
                       category: "workout")
 
-        // `elapsedTime` falls back to the wall clock when HealthKit never began collecting, so a
-        // real match isn't discarded as an accident on the builder's meaningless 0.
         let elapsed = elapsedTime(at: end)
-        if elapsed < minimumMatchDuration {
-            MatchLog.info("endMatch: discarding too-short session (\(Int(elapsed))s)", category: "workout")
+        // By the wall clock, never the paused one: an unnoticed early pause must not make a whole
+        // match look like an accidental start.
+        let age = end.timeIntervalSince(matchStartDate)
+        if age < minimumMatchDuration {
+            MatchLog.info("endMatch: discarding too-short session (\(Int(age))s)", category: "workout")
             abandonMatch()
             return .discardedTooShort
         }
 
-        log(.matchEnd, haptic: false)
+        askingStillPlaying = false
+        events.removeAll { $0.date > end }
+        append(MatchEvent(kind: .matchEnd, date: end, source: .manual), haptic: false)
         elapsedAtPause = elapsed
         // Built while the match is still live, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
         headingRecorder.stop()
         let match = FinishingMatch(
             id: matchID, start: matchStartDate, end: end, format: matchFormat, fieldID: fieldID,
-            events: events, fixes: isIndoor ? [] : routeRecorder.finish(),
+            events: events, fixes: isIndoor ? [] : routeRecorder.finish().filter { $0.point.timestamp <= end },
             headings: headingRecorder.collected, context: matchContext,
             session: session, builder: builder, elapsed: elapsed,
-            distanceMeters: distanceMeters, score: score)
+            distanceMeters: distanceMeters, score: score,
+            sportID: WatchSettings.sportProfile.id, teamCode: AppGroupStorage.teamCode)
+        savingIDs.insert(match.id)
         session = nil
         builder = nil
         collectionBegan = false
@@ -679,13 +792,12 @@ final class WorkoutManager: NSObject {
         // regardless. A save that lands later still pairs up there, by time.
         healthSavesInFlight += 1
         let saving = Task { () -> HKWorkout? in
-            let workout = await self.saveWorkout(match) { average in
+            await self.saveWorkout(match) { average in
                 publish { self.summaryAverageHeartRate = average }
             }
-            self.healthSavesInFlight -= 1
-            return workout
         }
-        let workout = await Self.value(of: saving, within: 30)
+        let workout = await Self.value(of: saving, within: 30).value
+        healthSavesInFlight -= 1
 
         // Automatic period detection: no-op when the wearer tagged periods manually. A formal
         // match expects two halves; pickup/indoor sessions have variable breaks (expectedPeriods 0).
@@ -710,14 +822,19 @@ final class WorkoutManager: NSObject {
             }
             let record = match.record(id: recordID, events: (match.events + periods).sorted { $0.date < $1.date })
             let saved = AppGroupStorage.persistFinished(record) != nil
+            // At once: two copies on disk at the next launch would reach the phone as two matches.
+            if saved, recordID != match.id { AppGroupStorage.removeFinished(id: match.id) }
             let runs = RunDetector.detectRuns(in: track, configuration: runConfiguration)
             let counts = (runs: runs.filter { $0.intensity == .run }.count,
                           sprints: runs.filter { $0.intensity == .sprint }.count)
             return (record, counts, saved)
         }.value
 
-        if recordSaved, recordID != match.id { AppGroupStorage.removeFinished(id: match.id) }
-        if recordSaved || provisionalSaved { routeRecorder.removeJournal(matchID: match.id) }
+        if recordSaved || provisionalSaved {
+            clearInProgress(matchID: match.id)
+            routeRecorder.removeJournal(matchID: match.id)
+            savingIDs.remove(match.id)
+        }
         MatchLog.info("endMatch: saved (record \(recordSaved), workout \(workout != nil), fixes \(match.fixes.count))",
                       category: "workout")
         ConnectivityManager.shared.send(matchRecord: record)
@@ -780,30 +897,38 @@ final class WorkoutManager: NSObject {
             MatchLog.error("Finishing workout failed: \(error.localizedDescription)", category: "workout")
         }
         if let workout, !match.fixes.isEmpty {
-            await saveRoute(match.fixes, to: workout)
+            await Self.saveRoute(match.fixes, to: workout, in: healthStore)
         }
         return workout
     }
 
-    /// A task's value, or nil if it takes longer than `seconds` (the task itself carries on).
-    private static func value<Value>(of task: Task<Value?, Never>, within seconds: TimeInterval) async -> Value? {
+    private enum Bounded<Value> {
+        case finished(Value?), timedOut
+        var value: Value? {
+            if case .finished(let value) = self { return value }
+            return nil
+        }
+    }
+
+    /// A task's value, if it arrives within `seconds` (the task itself carries on regardless).
+    private static func value<Value>(of task: Task<Value?, Never>, within seconds: TimeInterval) async -> Bounded<Value> {
         await withCheckedContinuation { continuation in
             let lock = NSLock()
             var resumed = false
-            func resume(_ value: Value?, timedOut: Bool) {
+            func resume(_ result: Bounded<Value>) {
                 lock.lock()
                 defer { lock.unlock() }
                 guard !resumed else { return }
                 resumed = true
-                if timedOut {
+                if case .timedOut = result {
                     MatchLog.error("HealthKit hasn't answered after \(Int(seconds)) s, moving on", category: "workout")
                 }
-                continuation.resume(returning: value)
+                continuation.resume(returning: result)
             }
-            Task { resume(await task.value, timedOut: false) }
+            Task { resume(.finished(await task.value)) }
             Task {
                 try? await Task.sleep(for: .seconds(seconds))
-                resume(nil, timedOut: true)
+                resume(.timedOut)
             }
         }
     }
@@ -813,7 +938,7 @@ final class WorkoutManager: NSObject {
     /// Not inserted live: a route builder loses everything if the app goes away, and a single
     /// failed insert is fatal to it (per its header) — the rest of the match then goes nowhere,
     /// silently. From a complete copy, a failure costs one retry with a fresh builder.
-    private func saveRoute(_ fixes: [RouteFix], to workout: HKWorkout) async {
+    private static func saveRoute(_ fixes: [RouteFix], to workout: HKWorkout, in healthStore: HKHealthStore) async {
         let locations = fixes.map(\.location)
         for attempt in 1...2 {
             do {
@@ -891,10 +1016,14 @@ final class WorkoutManager: NSObject {
         startFailure = nil
         sessionState = .notStarted
         sessionLost = false
-        sessionStarting = false
+        startToken = nil
+        pausesKnownOnlyToBuilder = false
         sessionAttempts = 0
         healthCollectionStalled = false
         collectionBegan = false
+        askingStillPlaying = false
+        lastMovingDate = nil
+        lastAskedStillPlaying = nil
         autoSubDetector = field.flatMap(makeAutoSubDetector)
         autoSubBanner = nil
         events = []
@@ -965,6 +1094,11 @@ final class WorkoutManager: NSObject {
         if recentLocations.count > 10 {
             recentLocations.removeFirst(recentLocations.count - 10)
         }
+        // Faster than a stroll: walking off to the car shouldn't count as playing.
+        if let moving = points.last(where: { $0.speedMetersPerSecond > 1.8 }) {
+            lastMovingDate = moving.timestamp
+        }
+        askIfStillPlaying()
         recomputeCurrentSpeed()
         resolveFieldIfNeeded()
         runAutoSubDetection(on: points)
@@ -1000,36 +1134,135 @@ final class WorkoutManager: NSObject {
         guard phase == .idle, session == nil, !recoveryInFlight else { return }
         recoveryInFlight = true
         defer { recoveryInFlight = false }
+        // Core Location only lets a background activity carry over a relaunch if it's reclaimed
+        // straight away, not after HealthKit has had its say.
+        let mayResume = interruptedMatch().map { $0.record.format != .indoor && isResumable($0) } ?? false
+        if mayResume { routeRecorder.reclaimBackgroundActivity() }
+        defer { if phase == .idle { routeRecorder.releaseBackgroundActivity() } }
+
         let store = healthStore
         let recovering = Task { try? await store.recoverActiveWorkoutSession() }
-        let recovered = await Self.value(of: recovering, within: 4)
+        let answer = await Self.value(of: recovering, within: 4)
+        if case .timedOut = answer {
+            recoveryOutstanding = true
+            Task { @MainActor [weak self] in
+                let late = await recovering.value
+                self?.recoveryOutstanding = false
+                if let late { self?.handleLateRecovery(late) }
+                self?.retryWorkoutSessionIfNeeded()
+            }
+            // Long enough without an answer and the old session is presumed gone.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                self?.recoveryOutstanding = false
+                self?.retryWorkoutSessionIfNeeded()
+            }
+        }
         // Start was tapped while HealthKit was answering: that match owns the session now.
         guard phase == .idle, session == nil else {
             MatchLog.info("recovery: skipped, a match is already under way", category: "workout")
+            if let recovered = answer.value { handleLateRecovery(recovered) }
             return
         }
-        if let recovered, recovered.state == .running || recovered.state == .paused {
-            restore(recovered)
-        } else {
-            recovered?.end()
-            // The session is gone (or HealthKit isn't answering), but the match may not be.
-            if let interrupted = interruptedMatch(), Date().timeIntervalSince(interrupted.lastSeen) < resumableInterval {
-                restore(nil)
+        if let recovered = answer.value {
+            if belongsToInterruptedMatch(recovered) {
+                restore(recovered)
             } else {
+                settle(recovered)
                 salvageInterruptedMatch()
             }
+        } else if let interrupted = interruptedMatch(), isResumable(interrupted) {
+            // The session is gone (or HealthKit isn't answering), but the match isn't.
+            restore(nil)
+        } else {
+            salvageInterruptedMatch()
+        }
+    }
+
+    /// A session HealthKit returned after the wait was given up on.
+    @MainActor
+    private func handleLateRecovery(_ late: HKWorkoutSession) {
+        guard late !== session else { return }
+        if isRecording, session == nil, let start = late.startDate,
+           abs(start.timeIntervalSince(matchStartDate)) < 180, late.state == .running || late.state == .paused {
+            MatchLog.info("recovery: late session adopted", category: "workout")
+            startToken = nil
+            sessionLost = false
+            attach(late)
+        } else {
+            settle(late)
+        }
+    }
+
+    /// Whether a recovered session is the match on disk, still being played.
+    private func belongsToInterruptedMatch(_ recovered: HKWorkoutSession) -> Bool {
+        guard recovered.state == .running || recovered.state == .paused,
+              let interrupted = interruptedMatch(), !interrupted.hasEnded else { return false }
+        return abs(interrupted.record.startDate.timeIntervalSince(recovered.startDate ?? Date())) < 180
+    }
+
+    /// A recovered session whose match is already over: save its workout, never reopen it.
+    @MainActor
+    private func settle(_ recovered: HKWorkoutSession) {
+        let builder = recovered.associatedWorkoutBuilder()
+        // A field walk's throwaway session, or one that never collected: nothing to save.
+        guard recovered.workoutConfiguration.activityType != .walking, builder.startDate != nil,
+              recovered.state != .ended else {
+            Self.discard(recovered, builder)
+            return
+        }
+        let start = recovered.startDate ?? builder.startDate ?? Date()
+        let healthStore = healthStore
+        MatchLog.info("recovery: finishing the workout of a match that already ended", category: "workout")
+        Task.detached(priority: .userInitiated) {
+            let record = AppGroupStorage.finishedRecord(startingNear: start)
+                ?? AppGroupStorage.loadInProgress().flatMap { abs($0.startDate.timeIntervalSince(start)) < 180 ? $0 : nil }
+            let end = record?.endDate ?? recovered.endDate ?? Date()
+            recovered.stopActivity(with: end)
+            try? await Task.sleep(for: .seconds(2))
+            do {
+                if let id = record?.id {
+                    try? await builder.addMetadata([HKMetadataKeyExternalUUID: id.uuidString])
+                }
+                try await builder.endCollection(at: end)
+                if let workout = try await builder.finishWorkout(), let track = record?.track, !track.isEmpty {
+                    let fixes = track.map { RouteFix(point: $0, altitude: 0, verticalAccuracy: -1) }
+                    await Self.saveRoute(fixes, to: workout, in: healthStore)
+                }
+            } catch {
+                MatchLog.error("recovery: finishing failed: \(error.localizedDescription)", category: "workout")
+            }
+            recovered.end()
         }
     }
 
     /// An interrupted match seen this recently is still being played.
     private let resumableInterval: TimeInterval = 15 * 60
 
-    /// The match on disk that was never ended, with its route and when it last recorded anything.
-    private func interruptedMatch() -> (record: MatchRecord, track: [TrackPoint], lastSeen: Date)? {
-        guard let record = AppGroupStorage.loadInProgress() else { return nil }
+    private struct InterruptedMatch {
+        let record: MatchRecord
+        let track: [TrackPoint]
+        let lastSeen: Date
+        /// End was tapped, but the app died before the save got going.
+        var hasEnded: Bool { record.events.contains { $0.kind == .matchEnd } }
+    }
+
+    private func isResumable(_ match: InterruptedMatch) -> Bool {
+        !match.hasEnded && Date().timeIntervalSince(match.lastSeen) < resumableInterval
+    }
+
+    /// The match on disk that was never finished, with its route and when it was last known alive.
+    private func interruptedMatch() -> InterruptedMatch? {
+        guard let record = AppGroupStorage.loadInProgress(), !savingIDs.contains(record.id) else { return nil }
+        // Saved already; only the cleanup was missed.
+        guard !AppGroupStorage.hasFinished(id: record.id) else {
+            clearInProgress(matchID: record.id)
+            return nil
+        }
         let track = RouteJournal(directory: AppGroupStorage.containerURL, matchID: record.id).load().map(\.point)
-        let lastSeen = [track.last?.timestamp, record.events.map(\.date).max()].compactMap { $0 }.max()
-        return (record, track, lastSeen ?? record.startDate)
+        let lastSeen = [track.last?.timestamp, record.events.map(\.date).max(), AppGroupStorage.inProgressTouched]
+            .compactMap { $0 }.max()
+        return InterruptedMatch(record: record, track: track, lastSeen: lastSeen ?? record.startDate)
     }
 
     /// Reattach delegates/metrics to a recovered session and pick the match back up from disk —
@@ -1037,29 +1270,13 @@ final class WorkoutManager: NSObject {
     /// Without a session, the match carries on from disk alone and asks HealthKit for a new one.
     @MainActor
     private func restore(_ recovered: HKWorkoutSession?) {
-        // Only if it's this session's record, not one an earlier match left behind.
-        var saved = AppGroupStorage.loadInProgress()
+        let saved = AppGroupStorage.loadInProgress()
         let sessionStart = recovered?.startDate ?? saved?.startDate ?? Date()
-        if let record = saved, abs(record.startDate.timeIntervalSince(sessionStart)) > 180 {
-            salvageInterruptedMatch()
-            saved = nil
-        }
 
         // Falls back to the config's location type, which distinguishes indoor from outdoor.
         matchFormat = saved?.format
             ?? (recovered?.workoutConfiguration.locationType == .indoor ? .indoor : .match)
         resetForNewMatch(field: nil)
-        if let recovered {
-            let builder = recovered.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
-                                                         workoutConfiguration: recovered.workoutConfiguration)
-            recovered.delegate = self
-            builder.delegate = self
-            session = recovered
-            self.builder = builder
-            collectionBegan = true
-            sessionState = recovered.state
-        }
         matchID = saved?.id ?? matchID
         matchStartDate = saved?.startDate ?? sessionStart
         fieldID = saved?.fieldID
@@ -1078,10 +1295,45 @@ final class WorkoutManager: NSObject {
         }
         liveStreamer.start { [weak self] in self?.makeLiveUpdate() }
         phase = .active
-        persistInProgress()
-        if recovered == nil { startWorkoutSession() }
+        startHeartbeat()
+        if let recovered {
+            attach(recovered)
+        } else if recoveryOutstanding {
+            sessionLost = true
+            healthCollectionStalled = true
+        } else {
+            startWorkoutSession()
+        }
         MatchLog.info("recovery: match restored (session \(recovered == nil ? "gone" : "recovered"), \(Int(Date().timeIntervalSince(matchStartDate))) s in, \(events.count) events, \(track.count) fixes)",
                       category: "workout")
+    }
+
+    /// Take over a session HealthKit still has running for this match.
+    @MainActor
+    private func attach(_ recovered: HKWorkoutSession) {
+        let builder = recovered.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore,
+                                                     workoutConfiguration: recovered.workoutConfiguration)
+        recovered.delegate = self
+        builder.delegate = self
+        session = recovered
+        self.builder = builder
+        healthCollectionStalled = false
+        sessionState = recovered.state
+        let id = matchID
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                // Killed between starting the activity and collecting from it.
+                if builder.startDate == nil { try await builder.beginCollection(at: matchStartDate) }
+                guard matchID == id, isRecording, self.builder === builder else { return }
+                collectionBegan = true
+                pausesKnownOnlyToBuilder = true
+                await addMetadata(to: builder)
+            } catch {
+                sessionFailed(error, matchID: id)
+            }
+        }
     }
 
     /// Turn a match that was never ended — the app and its session both died — into a finished
@@ -1093,7 +1345,7 @@ final class WorkoutManager: NSObject {
         let track = interrupted.track
         let lastSeen = interrupted.lastSeen
         if lastSeen.timeIntervalSince(record.startDate) >= minimumMatchDuration {
-            record.endDate = lastSeen
+            record.endDate = record.events.last { $0.kind == .matchEnd }?.date ?? lastSeen
             record.track = track.isEmpty ? nil : track
             guard AppGroupStorage.persistFinished(record) != nil else { return }
             MatchLog.info("recovery: salvaged an interrupted match (\(record.events.count) events, \(track.count) fixes)",
@@ -1160,6 +1412,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
         DispatchQueue.main.async {
             guard workoutBuilder === self.builder else { return }
+            self.askIfStillPlaying()
             if let newHeartRate { self.heartRate = newHeartRate }
             if let newCalories { self.activeCalories = newCalories }
             if let newDistance { self.distanceMeters = newDistance }
