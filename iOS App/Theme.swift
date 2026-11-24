@@ -1,12 +1,9 @@
 // Theme.swift
 // MatchTracker
 //
-// Single source of truth for the app's visual identity: an athlete-tracker look that is
-// performance-first and dark-first — near-black backgrounds, elevated cards with big radii
-// and thin hairline strokes, Apple-system-anchored accents on tinted-translucent chips, and
-// glassy overlays. Glow is rare (reserved for the hero workrate ring and the live pulse dot).
-// Colors resolve per trait so both color schemes stay legible (dark is the identity; light
-// deepens saturation rather than washing out to pastels).
+// The app's visual identity, kept small on purpose: system backgrounds, system type, one green.
+// Dark is the identity; light is the same layout on system grouped backgrounds. Several helpers
+// here predate DESIGN.md and survive only so call sites compile. They are marked "Legacy".
 
 import SwiftUI
 
@@ -44,43 +41,43 @@ enum Theme {
         })
     }
 
-    /// Tint-on-translucent chip fill: the hue at a low alpha over the surface. The house style for
-    /// every status chip/capsule — never a solid saturated fill. Dark ~22%, light ~14%.
+    /// Legacy: tinted chip fill. DESIGN.md has no chips.
     static func chipFill(_ color: Color) -> Color {
         tintWash(color, dark: 0.22, light: 0.14)
     }
 
-    /// Hairline stroke to match `chipFill` — the same hue, a touch stronger.
+    /// Legacy: stroke to match `chipFill`.
     static func chipStroke(_ color: Color) -> Color {
         tintWash(color, dark: 0.45, light: 0.30)
     }
 
-    /// Near-black canvas in dark (#0C0D10), soft off-white in light.
-    static let background = dynamic(dark: (0.047, 0.051, 0.063),
-                                    light: (0.949, 0.957, 0.969))
-    /// Elevated card fill (#16181D dark).
-    static let surface = dynamic(dark: (0.086, 0.094, 0.114),
-                                 light: (1.0, 1.0, 1.0))
-    /// Slightly higher elevation (nested tiles on top of a surface, #1D2026 dark).
-    static let surfaceElevated = dynamic(dark: (0.114, 0.125, 0.149),
-                                         light: (0.965, 0.973, 0.984))
-    /// Hairline stroke around cards.
-    static let surfaceStroke = Color.white.opacity(0.08)
+    /// The canvas behind cards and forms.
+    static let background = Color(.systemGroupedBackground)
+    /// A card or form row on `background`.
+    static let surface = Color(.secondarySystemGroupedBackground)
+    /// One step above `surface`.
+    static let surfaceElevated = Color(.tertiarySystemGroupedBackground)
+    /// Hairlines and empty tracks. Visible in both schemes, unlike white at 8%.
+    static let surfaceStroke = Color(.separator)
+    /// Labels that support a value. A concrete color rather than the hierarchical `.secondary`,
+    /// so an outer tint can't turn it into a faint wash of itself.
+    static let secondaryLabel = Color(.secondaryLabel)
+    /// Text on a filled `turf` button: black on the bright dark-mode green, white on the deep one.
+    static let onTurf = dynamic(dark: (0, 0, 0), light: (1, 1, 1))
 
-    // Semantic accents — anchored to Apple system hues so the palette reads premium, not arcade.
-    /// Emerald (#30D158) — the app's primary tint / turf energy.
+    /// You and your team, and the app's tint. The light value holds 4.5:1 as text on white.
     static let turf = dynamic(dark: (0.188, 0.820, 0.345),
-                              light: (0.024, 0.588, 0.239))
-    /// Quiet teal-mint (#66D4CF) signal.
+                              light: (0.0, 0.490, 0.200))
+    /// Legacy: teal. DESIGN.md gives color three jobs and this isn't one of them.
     static let signal = dynamic(dark: (0.400, 0.831, 0.812),
                                 light: (0.0, 0.478, 0.463))
     /// Rose (#FF375F) — heart rate.
     static let heart = dynamic(dark: (1.0, 0.216, 0.373),
                                light: (0.835, 0.075, 0.243))
-    /// Blue (#409CFF) — distance / pace.
+    /// Legacy: blue, as `signal`.
     static let pace = dynamic(dark: (0.251, 0.612, 1.0),
                               light: (0.078, 0.412, 0.882))
-    /// Amber-orange (#FF9F0A) — sprints.
+    /// Legacy: amber, as `signal`. Still the warm end of intensity ramps.
     static let sprint = dynamic(dark: (1.0, 0.624, 0.039),
                                 light: (0.812, 0.451, 0.0))
     /// Goals / positive. Aliased to `turf` — wins are green — but kept as a named symbol for
@@ -98,23 +95,19 @@ enum Theme {
 
     // MARK: - Signature gradients
 
-    /// Turf → signal linear flow, used for hero accents and live borders.
+    /// Legacy: flat green. Was a turf-to-teal gradient.
     static var turfFlow: LinearGradient {
-        LinearGradient(colors: [turf, signal], startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [turf, turf], startPoint: .top, endPoint: .bottom)
     }
 
-    /// Faint turf → signal wash for the detail hero card. Dark keeps the ~10% tinted glow; light
-    /// drops to ~5% over the white surface so the card reads as a neutral panel, not mint.
+    /// Legacy: no wash.
     static var heroWash: LinearGradient {
-        LinearGradient(colors: [tintWash(turf, dark: 0.10, light: 0.05),
-                                tintWash(signal, dark: 0.10, light: 0.05)],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [surface, surface], startPoint: .top, endPoint: .bottom)
     }
 
-    /// Angular sweep for the workrate score ring.
+    /// Legacy: flat green sweep.
     static var scoreRing: AngularGradient {
-        AngularGradient(colors: [turf, signal, pace, turf],
-                        center: .center)
+        AngularGradient(colors: [turf, turf], center: .center)
     }
 
     // MARK: - Pitch canvas colors
@@ -131,27 +124,15 @@ enum Theme {
                        startPoint: .top, endPoint: .bottom)
     }
 
-    // MARK: - Section header gradients
+    // MARK: - Section headers
 
-    /// Subtle top-anchored wash in a semantic hue — the signature "gradient header" that opens
-    /// each detail section, so users learn to read the app by color.
+    /// Legacy: no wash behind headers; scroll edges belong to the system.
     static func headerGradient(_ tint: Color) -> LinearGradient {
-        LinearGradient(colors: [tintWash(tint, dark: 0.28, light: 0.07), tint.opacity(0.0)],
-                       startPoint: .top, endPoint: .bottom)
+        LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom)
     }
 
-    /// Semantic hue for each match-detail section.
-    static func sectionTint(_ section: String) -> Color {
-        switch section {
-        case "Heatmap": return sprint
-        case "Runs": return sprint
-        case "Workrate": return turf
-        case "Position": return pace
-        case "Events": return goal
-        case "Video": return signal
-        default: return turf
-        }
-    }
+    /// Legacy: sections no longer have their own hues.
+    static func sectionTint(_ section: String) -> Color { turf }
 }
 
 // MARK: - Haptics
@@ -168,17 +149,18 @@ enum Haptics {
 
 // MARK: - Section header
 
-/// The signature section opener: an uppercase title over a soft semantic gradient wash.
+/// A section title with an optional line under it.
 struct SectionHeaderBar: View {
     let title: String
+    /// Legacy: titles are primary text; the tint is unused.
     var tint: Color = Theme.turf
     var subtitle: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).captionLabel().foregroundStyle(tint)
+            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
             if let subtitle {
-                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+                Text(subtitle).font(.footnote).foregroundStyle(Theme.secondaryLabel)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -188,24 +170,34 @@ struct SectionHeaderBar: View {
 // MARK: - Typography helpers
 
 extension Text {
-    /// Big rounded hero numeral (score, headline metric).
+    /// The one big number on a screen.
     func heroNumeral() -> some View {
-        self.font(.system(size: 56, weight: .bold, design: .rounded))
-            .monospacedDigit()
+        modifier(HeroNumeral())
     }
 
-    /// Medium rounded stat numeral.
+    /// A supporting number.
     func statNumeral() -> some View {
-        self.font(.system(size: 26, weight: .bold, design: .rounded))
+        font(.system(.title2, design: .rounded).weight(.bold))
             .monospacedDigit()
     }
 
-    /// Uppercase, tracked caption label used above/below numerals.
+    /// The label beside or under a number.
     func captionLabel() -> some View {
-        self.font(.system(size: 11, weight: .semibold, design: .rounded))
-            .textCase(.uppercase)
-            .tracking(1.2)
-            .foregroundStyle(.secondary)
+        font(.subheadline)
+            .foregroundStyle(Theme.secondaryLabel)
+    }
+}
+
+/// Larger than any text style, so it scales by `ScaledMetric` and shrinks before it wraps.
+private struct HeroNumeral: ViewModifier {
+    @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = 52
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: min(size, 96), weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
     }
 }
 
@@ -238,25 +230,39 @@ extension View {
         modifier(ReadableFormWidth(maxWidth: maxWidth))
     }
 
-    /// Elevated card: surface fill, 22pt radius, hairline stroke, soft shadow.
+    /// A flat card. No stroke and no shadow; the background contrast is the edge.
     func themedCard(cornerRadius: CGFloat = 22) -> some View {
         modifier(ThemedCard(cornerRadius: cornerRadius))
     }
 
-    /// Glassy overlay card (.ultraThinMaterial) for sheets and floating panels.
+    /// A panel floating over imagery.
     func glassCard(cornerRadius: CGFloat = 20) -> some View {
         modifier(GlassCard(cornerRadius: cornerRadius))
     }
 
-    /// Metric tile: elevated surface with a semantic tint wash and thin tinted stroke.
+    /// Legacy: a plain surface. The tint is unused.
     func metricTile(tint: Color, cornerRadius: CGFloat = 16) -> some View {
         modifier(MetricTile(tint: tint, cornerRadius: cornerRadius))
     }
 
-    /// Colored glow shadow. Use sparingly — reserved for the hero workrate ring and the live
-    /// pulse dot; status chips, badges, and pitch marks take a plain faint shadow instead.
+    /// A screen's main action, pinned below scrolling content. The system's scroll edge on iOS 26,
+    /// a bar before that.
+    @ViewBuilder
+    func bottomActionBar<Bar: View>(@ViewBuilder content: () -> Bar) -> some View {
+        let bar = content()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .readableWidth(560)
+        if #available(iOS 26.0, *) {
+            safeAreaBar(edge: .bottom) { bar }
+        } else {
+            safeAreaInset(edge: .bottom, spacing: 0) { bar.background(.bar) }
+        }
+    }
+
+    /// Legacy: nothing glows.
     func glow(_ color: Color, radius: CGFloat = 8) -> some View {
-        shadow(color: color.opacity(0.5), radius: radius)
+        self
     }
 }
 
@@ -308,11 +314,6 @@ struct ThemedCard: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 6)
     }
 }
 
@@ -320,11 +321,7 @@ struct GlassCard: ViewModifier {
     var cornerRadius: CGFloat = 20
     func body(content: Content) -> some View {
         content
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Theme.surfaceStroke, lineWidth: 1)
-            )
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
@@ -333,17 +330,30 @@ struct MetricTile: ViewModifier {
     var cornerRadius: CGFloat = 16
     func body(content: Content) -> some View {
         content
-            .background(
-                ZStack {
-                    Theme.surfaceElevated
-                    // Light: near-white tile with only a hint of tint; dark keeps the 12% wash.
-                    Theme.tintWash(tint, dark: 0.12, light: 0.06)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Theme.tintWash(tint, dark: 0.35, light: 0.20), lineWidth: 1)
-            )
+            .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
+}
+
+// MARK: - Buttons
+
+/// The one filled action on a screen: full width, 50 points or taller, legible on either green.
+struct PrimaryActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(isEnabled ? Theme.onTurf : Theme.secondaryLabel)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .background(isEnabled ? Theme.turf : Color(.tertiarySystemFill), in: Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .contentShape(Capsule())
+    }
+}
+
+extension ButtonStyle where Self == PrimaryActionStyle {
+    static var primaryAction: PrimaryActionStyle { PrimaryActionStyle() }
 }

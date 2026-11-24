@@ -581,10 +581,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "iOS App/Info-Debug.plist";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "MatchTracker reads your soccer workouts to show routes, heatmaps, and workrate.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "MatchTracker saves your recorded matches as workouts in Health.";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MatchTracker uses your location during a match to record your position and movement on the pitch.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MatchTracker uses your location to record your route on the pitch.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "MatchTracker reads your soccer workouts, routes, distance, energy and heart rate to show your matches.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "MatchTracker saves the matches you record to Health, and removes ones you delete.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MatchTracker centers the map on you so you can find the fields you play on, and looks for fields nearby.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -616,10 +615,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "iOS App/Info.plist";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "MatchTracker reads your soccer workouts to show routes, heatmaps, and workrate.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "MatchTracker saves your recorded matches as workouts in Health.";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "MatchTracker uses your location during a match to record your position and movement on the pitch.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MatchTracker uses your location to record your route on the pitch.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "MatchTracker reads your soccer workouts, routes, distance, energy and heart rate to show your matches.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "MatchTracker saves the matches you record to Health, and removes ones you delete.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "MatchTracker centers the map on you so you can find the fields you play on, and looks for fields nearby.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

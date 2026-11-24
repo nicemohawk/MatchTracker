@@ -31,9 +31,25 @@ final class HealthKitService {
 
     var isHealthDataAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
-    func requestAuthorization() async throws {
+    /// Shows the Health permission sheet if anything is still undecided. Background callers do
+    /// nothing until onboarding has explained why; only the screens that explain it pass
+    /// `userInitiated`.
+    func requestAuthorization(userInitiated: Bool = false) async throws {
         guard isHealthDataAvailable else { return }
+        guard userInitiated || UserDefaults.standard.bool(forKey: "hasOnboarded") else { return }
         try await healthStore.requestAuthorization(toShare: shareTypes, read: readTypes)
+    }
+
+    /// Whether the Health sheet would show anything. False once the player has answered, either way.
+    func hasUnansweredPermissions() async -> Bool {
+        guard isHealthDataAvailable else { return false }
+        let status = try? await healthStore.statusForAuthorizationRequest(toShare: shareTypes, read: readTypes)
+        return status == .shouldRequest
+    }
+
+    /// Permission to save workouts, the only part of Health access iOS lets an app see.
+    var canSaveWorkouts: Bool {
+        healthStore.authorizationStatus(for: .workoutType()) == .sharingAuthorized
     }
 
     // MARK: - Workouts

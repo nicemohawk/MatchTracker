@@ -1,7 +1,7 @@
 // BacklogImporter.swift
 // MatchTracker
 //
-// Premium batch import that mines the HealthKit backlog. The app already surfaces EVERY historic
+// Batch import that mines the HealthKit backlog. The app already surfaces EVERY historic
 // `.soccer` workout as a workout-only match with lazy per-match analytics; this feature turns that
 // backlog into durable state: it builds the field database chronologically (oldest → newest, so a
 // pitch inferred from an early match refines against later ones), primes season baselines by
@@ -20,7 +20,7 @@ import MatchTrackerKit
 @MainActor
 @Observable
 final class BacklogImporter {
-    // MARK: - Scan results (free tier)
+    // MARK: - Scan results
 
     /// Workout-only `.soccer` matches (no `MatchRecord` on disk) available to import.
     private(set) var pendingCount = 0
@@ -32,7 +32,7 @@ final class BacklogImporter {
     /// Oldest pending workout's date, for the "since <month year>" span copy.
     private(set) var earliestDate: Date?
 
-    // MARK: - Import progress (gated)
+    // MARK: - Import progress
 
     private(set) var isImporting = false
     private(set) var completed = 0
@@ -80,7 +80,7 @@ final class BacklogImporter {
         self.hasImported = defaults.object(forKey: Self.completedKey) != nil
     }
 
-    // MARK: - Scan (free)
+    // MARK: - Scan
 
     /// Runs `scan()` once per launch; safe to attach to a view's `.task`. Re-enabled after an import
     /// so the numbers refresh.
@@ -146,7 +146,7 @@ final class BacklogImporter {
         earliestDate = nil
     }
 
-    // MARK: - Import (gated — callers must confirm entitlement before invoking)
+    // MARK: - Import
 
     func cancel() { isCancelled = true }
 
@@ -155,10 +155,7 @@ final class BacklogImporter {
     /// minimal `MatchRecord` so subsequent loads join it. Analytics stay lazy — nothing here forces
     /// a detail-model load. Serial with a yield between items so the UI breathes; cancellable;
     /// failures are logged and skipped. When `includeDisguisedRuns` is set it additionally rescues
-    /// outdoor runs/walks whose GPS track fits a pitch.
-    ///
-    /// Gating lives with the caller (mirroring how CoachDashboard is gated in `MatchesView`): the
-    /// import sheet only reaches this when `entitlements.entitledToTeam`.
+    /// outdoor runs/walks whose GPS track fits a pitch. Free: it's the first thing worth doing.
     func importAll(includeDisguisedRuns: Bool) async {
         guard !isImporting, healthKit.isHealthDataAvailable else { return }
         isImporting = true
@@ -213,7 +210,7 @@ final class BacklogImporter {
                         fieldsRefined += 1
                     case .proposed(var field):
                         fieldsCreated += 1
-                        field.name = "Imported field \(fieldsCreated)"   // source is already .inferred
+                        field.name = "New Field"   // a placeholder `FieldsModel` replaces with the place's name
                         fields.save(field, pushToWatch: false)
                         fieldID = field.id
                     case .none:
@@ -250,7 +247,7 @@ final class BacklogImporter {
                 fieldsRefined += 1
             case .proposed(var field):
                 fieldsCreated += 1
-                field.name = "Imported field \(fieldsCreated)"
+                field.name = "New Field"
                 fields.save(field, pushToWatch: false)
             case .none:
                 break

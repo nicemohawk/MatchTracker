@@ -1,323 +1,324 @@
 // OnboardingView.swift
 // MatchTracker
 //
-// First-run onboarding: a three-page full-screen cover, dark-first and confident (Apple
-// Fitness / Strava first-run DNA). Shown once — gated by `@AppStorage("hasOnboarded")` — so
-// existing installs (and the UI tests that walk them) never see it. Interactive controls carry
-// obvious accessibility labels ("Skip", "Continue", "Enable Health Access") so tests can drive
-// straight through to the tab bar.
+// First run, three screens: what you get, the one permission it needs, and your first match. Shown
+// once, gated by `@AppStorage("hasOnboarded")`.
 
 import SwiftUI
+import MatchTrackerKit
 
 struct OnboardingView: View {
-    /// Persisted flag the app reads to decide whether to present this cover. Written on finish.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
 
     @EnvironmentObject private var environment: AppEnvironment
-    @Environment(BacklogImporter.self) private var backlogImporter
+    @Environment(BacklogImporter.self) private var importer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var page = 0
-    @State private var playerName = ""
-    @State private var teamCode = ""
+    private enum Step: Int { case payoff, health, firstMatch }
+    @State private var step = Step.payoff
     @State private var isRequestingHealth = false
-
-    private let pageCount = 3
+    @State private var isImporting = false
+    @State private var importFailed = false
 
     var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                header
-                TabView(selection: $page) {
-                    IdentityPage(reduceMotion: reduceMotion).tag(0)
-                    HowItWorksPage().tag(1)
-                    SetupPage(playerName: $playerName,
-                              teamCode: $teamCode,
-                              backlogCount: backlogImporter.pendingCount)
-                        .tag(2)
+        ScrollView {
+            Group {
+                switch step {
+                case .payoff: PayoffPage()
+                case .health: HealthPage()
+                case .firstMatch: FirstMatchPage(isImporting: isImporting)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .animation(.snappy, value: page)
-
-                progressDots
-                    .padding(.top, 4)
-                    .padding(.bottom, 20)
-
-                primaryButton
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 28)
-                    // iPad: keep the CTA a tappable single-column width, not a stretched banner.
-                    .readableWidth(560)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+            .readableWidth(560)
         }
-        .task { await backlogImporter.scanIfNeeded() }
-        .preferredColorScheme(.dark)
+        .id(step)
+        .transition(.opacity)
+        .scrollBounceBehavior(.basedOnSize)
+        .bottomActionBar { actions }
+        .background(Theme.background.ignoresSafeArea())
+        .sensoryFeedback(.selection, trigger: step)
+        .sensoryFeedback(.success, trigger: importer.summary) { _, summary in summary?.cancelled == false }
+        .alert("Couldn’t Import", isPresented: $importFailed) {
+            Button("Try Again", action: importHistory)
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("MatchTracker couldn’t read your workouts from Health. You can import them later from Settings.")
+        }
     }
 
-    // MARK: - Chrome
+    // MARK: Actions
 
-    private var header: some View {
-        HStack {
-            Spacer()
-            Button("Skip") { finish() }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Skip")
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-    }
-
-    private var progressDots: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<pageCount, id: \.self) { index in
-                Capsule()
-                    .fill(index == page ? AnyShapeStyle(Theme.turf) : AnyShapeStyle(Color.white.opacity(0.18)))
-                    .frame(width: index == page ? 22 : 7, height: 7)
-                    .animation(.snappy, value: page)
+    private var actions: some View {
+        VStack(spacing: 4) {
+            switch step {
+            case .payoff:
+                Button("Continue") { advance(to: .health) }
+                    .buttonStyle(.primaryAction)
+            case .health:
+                Button("Continue", action: connectHealth)
+                    .buttonStyle(.primaryAction)
+                    .disabled(isRequestingHealth)
+            case .firstMatch:
+                firstMatchActions
             }
         }
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder
-    private var primaryButton: some View {
-        if page < pageCount - 1 {
-            Button { advance() } label: {
-                primaryLabel("Continue")
-            }
-            .accessibilityLabel("Continue")
+    private var firstMatchActions: some View {
+        if importer.summary != nil || importer.pendingCount == 0 {
+            Button("Done", action: finish).buttonStyle(.primaryAction)
+        } else if isImporting {
+            Button("Continue While Importing", action: finish).buttonStyle(.primaryAction)
         } else {
-            Button { requestHealthAndFinish() } label: {
-                primaryLabel(isRequestingHealth ? "Requesting…" : "Enable Health Access",
-                             showsProgress: isRequestingHealth)
-            }
-            .accessibilityLabel("Enable Health Access")
-            .disabled(isRequestingHealth)
+            Button(importer.pendingCount == 1 ? "Import 1 Match" : "Import \(importer.pendingCount) Matches",
+                   action: importHistory)
+                .buttonStyle(.primaryAction)
+            Button("Not Now", action: finish)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
     }
 
-    private func primaryLabel(_ title: String, showsProgress: Bool = false) -> some View {
-        HStack(spacing: 8) {
-            if showsProgress {
-                ProgressView().tint(.black)
-            }
-            Text(title)
-                .font(.system(.headline, design: .rounded).weight(.semibold))
-        }
-        .foregroundStyle(.black)
-        .frame(maxWidth: .infinity)
-        .frame(height: 54)
-        .background(Theme.turf, in: Capsule())
-        .glow(Theme.turf, radius: 10)
+    private func advance(to next: Step) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { step = next }
     }
 
-    // MARK: - Flow
-
-    private func advance() {
-        Haptics.selection()
-        withAnimation(.snappy) { page = min(page + 1, pageCount - 1) }
-    }
-
-    private func requestHealthAndFinish() {
-        // Persist setup fields to the shared store the watch reads too.
-        commitSetup()
+    private func connectHealth() {
         isRequestingHealth = true
         Task {
-            // Best-effort: onboarding continues whether the user grants or denies.
-            try? await environment.matches.healthKit.requestAuthorization()
+            // Onward either way: iOS doesn't say whether reading was allowed, and the app works
+            // from the watch regardless.
+            try? await environment.matches.healthKit.requestAuthorization(userInitiated: true)
+            await importer.scan()
             isRequestingHealth = false
-            finish()
+            advance(to: .firstMatch)
         }
     }
 
-    private func commitSetup() {
-        let trimmedName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedName.isEmpty { SettingsStore.shared.playerName = trimmedName }
-        let trimmedCode = teamCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if !trimmedCode.isEmpty { SettingsStore.shared.teamCode = trimmedCode }
-        environment.settingsChanged()
+    private func importHistory() {
+        isImporting = true
+        Task {
+            await importer.importAll(includeDisguisedRuns: false)
+            isImporting = false
+            importFailed = importer.summary == nil
+        }
     }
 
     private func finish() {
-        commitSetup()
-        Haptics.impact(.medium)
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-            hasOnboarded = true
+        hasOnboarded = true
+        Task { await environment.matches.refresh() }
+    }
+}
+
+// MARK: - 1. What you get
+
+private struct PayoffPage: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            ExampleHeatPitch()
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 240 : 400)
+                .frame(maxWidth: .infinity)
+            OnboardingHeading(title: "See where you played",
+                              detail: "Wear your Apple Watch in a match. Afterward you get your heat map, your best runs and the score.")
         }
     }
 }
 
-// MARK: - Page 1 · Identity
-
-private struct IdentityPage: View {
-    let reduceMotion: Bool
-    @State private var pulse = false
+/// Title and one paragraph, the same on every page.
+private struct OnboardingHeading: View {
+    let title: String
+    let detail: String
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer()
-            appMark
-            VStack(spacing: 12) {
-                Text("Track every match")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center)
-                Text("Every match your Apple Watch records becomes heatmaps, runs, and a workrate score — automatically.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 36)
-            }
-            Spacer()
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+            Text(detail).font(.title3).foregroundStyle(Theme.secondaryLabel)
         }
-        .frame(maxWidth: .infinity)
-        .readableWidth(560)
-        .onAppear { if !reduceMotion { pulse = true } }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private var appMark: some View {
+/// A portrait pitch, attacking up, with one player's match on it.
+private struct ExampleHeatPitch: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isVisible = false
+
+    var body: some View {
         ZStack {
-            // Slow ambient glow — a single looping pulse, disabled under Reduce Motion.
-            Circle()
-                .fill(Theme.turf.opacity(0.22))
-                .frame(width: 150, height: 150)
-                .blur(radius: 26)
-                .scaleEffect(pulse ? 1.15 : 0.9)
-                .opacity(pulse ? 0.9 : 0.5)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 2.6).repeatForever(autoreverses: true),
-                           value: pulse)
-            Circle()
-                .fill(Theme.chipFill(Theme.turf))
-                .overlay(Circle().strokeBorder(Theme.chipStroke(Theme.turf), lineWidth: 1))
-                .frame(width: 128, height: 128)
-            Image(systemName: "figure.soccer")
-                .font(.system(size: 58, weight: .semibold))
-                .foregroundStyle(Theme.turf)
+            Canvas { context, size in
+                var context = context
+                let field = CGRect(origin: .zero, size: size)
+                SoccerPitch.fillTurf(&context, rect: field)
+            }
+            Image(decorative: Self.heat, scale: 1)
+                .resizable()
+                .interpolation(.high)
+                .padding(10)
+                .opacity(isVisible ? 1 : 0)
+            Canvas { context, size in
+                // SoccerPitch draws lengthwise along x; stand it up.
+                var upright = context
+                upright.translateBy(x: size.width / 2, y: size.height / 2)
+                upright.rotate(by: .degrees(-90))
+                let length = size.height - 20, width = size.width - 20
+                SoccerPitch.draw(in: &upright, rect: CGRect(x: -length / 2, y: -width / 2, width: length, height: width))
+            }
         }
-        .accessibilityHidden(true)
+        .aspectRatio(CGSize(width: 68 + 6, height: 105 + 6), contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onAppear {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 1.1).delay(0.2)) { isVisible = true }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Example heat map. A right winger, mostly along the right side in the attacking half.")
+        .accessibilityAddTraits(.isImage)
+    }
+
+    /// A right winger's match, summed from a few spots and blurred by its own size.
+    private static let heat: CGImage = {
+        let width = 68, height = 105
+        // x across (0 left), y up the field (0 own goal), spread and weight, in field fractions.
+        let spots: [(x: Double, y: Double, spread: Double, weight: Double)] = [
+            (0.80, 0.68, 0.13, 1.0), (0.74, 0.55, 0.15, 0.75), (0.83, 0.42, 0.13, 0.55), (0.66, 0.80, 0.11, 0.65),
+            (0.52, 0.86, 0.09, 0.45), (0.58, 0.62, 0.16, 0.35), (0.70, 0.27, 0.14, 0.28), (0.42, 0.50, 0.18, 0.16)
+        ]
+        var values = [Double](repeating: 0, count: width * height)
+        for row in 0..<height {
+            for column in 0..<width {
+                let x = (Double(column) + 0.5) / Double(width)
+                let y = 1 - (Double(row) + 0.5) / Double(height)
+                values[row * width + column] = spots.reduce(0) { sum, spot in
+                    let dx = x - spot.x, dy = (y - spot.y) * 105 / 68
+                    return sum + spot.weight * exp(-(dx * dx + dy * dy) / (2 * spot.spread * spot.spread))
+                }
+            }
+        }
+        let peak = values.max() ?? 1
+        let pixels = values.flatMap { value -> [UInt8] in
+            let t = value / peak
+            // Clear, through green, to almost white.
+            let alpha = min(1, max(0, (t - 0.04) / 0.5))
+            let glow = max(0, (t - 0.45) / 0.55)
+            let red = 0.10 + 0.85 * glow, green = 0.72 + 0.28 * min(1, t * 1.2), blue = 0.28 + 0.48 * glow
+            return [red, green, blue, 1].map { UInt8(($0 * alpha * 255).rounded()) }
+        }
+        let provider = CGDataProvider(data: Data(pixels) as CFData)!
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)!
+    }()
+}
+
+// MARK: - 2. Health
+
+private struct HealthPage: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(Theme.heart)
+                .accessibilityHidden(true)
+                .padding(.top, 32)
+            OnboardingHeading(title: "Connect Health",
+                              detail: "Your matches are workouts in Apple Health. MatchTracker needs to see them to show them.")
+            VStack(alignment: .leading, spacing: 20) {
+                OnboardingRow(symbol: "eye", title: "Reads your soccer",
+                              detail: "Workouts, routes, distance, energy and heart rate.")
+                OnboardingRow(symbol: "square.and.arrow.down", title: "Saves your matches",
+                              detail: "So the ones you record count in Health and Fitness.")
+                OnboardingRow(symbol: "switch.2", title: "Tap Turn On All",
+                              detail: "On the next screen. Anything left off goes missing from your matches.")
+            }
+            Text("Matches you record are also sent to the MatchTracker server, where your team can see them. You can delete them in Settings.")
+                .font(.footnote)
+                .foregroundStyle(Theme.secondaryLabel)
+        }
     }
 }
 
-// MARK: - Page 2 · How it works
+private struct OnboardingRow: View {
+    let symbol: String
+    let title: String
+    let detail: String
 
-private struct HowItWorksPage: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Spacer()
-            Text("How it works")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(spacing: 14) {
-                row(icon: "applewatch", tint: Theme.turf,
-                    title: "Record on your watch",
-                    detail: "Start a soccer workout — no phone needed on the pitch.")
-                row(icon: "map", tint: Theme.pace,
-                    title: "Auto field + analysis",
-                    detail: "Your pitch is detected and the match is analyzed for you.")
-                row(icon: "person.3.fill", tint: Theme.signal,
-                    title: "Team stats",
-                    detail: "Share a team code to compare workrate and build the roster.")
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail).font(.body).foregroundStyle(Theme.secondaryLabel)
             }
-            Spacer()
-            Spacer()
+            .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(Theme.turf)
         }
-        .padding(.horizontal, 28)
-        .readableWidth(560)
-    }
-
-    private func row(icon: String, tint: Color, title: String, detail: String) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(tint)
-                .frame(width: 52, height: 52)
-                .background(Theme.chipFill(tint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Theme.chipStroke(tint), lineWidth: 1))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(.headline, design: .rounded).weight(.semibold))
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .themedCard(cornerRadius: 18)
+        .labelStyle(AlignedLabelStyle())
+        .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Page 3 · Setup
+// MARK: - 3. First match
 
-private struct SetupPage: View {
-    @Binding var playerName: String
-    @Binding var teamCode: String
-    let backlogCount: Int
+private struct FirstMatchPage: View {
+    let isImporting: Bool
+    @Environment(BacklogImporter.self) private var importer
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Spacer()
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Set up your profile")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text("Enable Health access so MatchTracker can read your soccer workouts.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 32) {
+            history
+            VStack(alignment: .leading, spacing: 20) {
+                Text("For your next match").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                OnboardingRow(symbol: "applewatch", title: "Wear it snug",
+                              detail: "Above the wrist bone, so it can read your heart rate.")
+                OnboardingRow(symbol: "play", title: "Start at kickoff",
+                              detail: "Open MatchTracker on your watch and tap the match you’re playing. Your iPhone can stay in your bag.")
+                OnboardingRow(symbol: "soccerball", title: "Log goals when play stops",
+                              detail: "End the match at the whistle and it shows up here.")
             }
-
-            VStack(spacing: 12) {
-                field(title: "Your name") {
-                    TextField("Player name", text: $playerName)
-                        .textInputAutocapitalization(.words)
-                        .accessibilityLabel("Player name")
-                }
-                field(title: "Team code (optional)") {
-                    TextField("ABC123", text: $teamCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .onChange(of: teamCode) { _, newValue in
-                            let upper = newValue.uppercased()
-                            if upper != newValue { teamCode = upper }
-                        }
-                        .accessibilityLabel("Team code")
-                }
-            }
-
-            if backlogCount >= 5 {
-                HStack(spacing: 10) {
-                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(Theme.turf)
-                    Text("We found \(backlogCount) past matches — import them later in Settings.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(Theme.chipFill(Theme.turf), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            Spacer()
-            Spacer()
         }
-        .padding(.horizontal, 28)
-        .readableWidth(560)
+        .padding(.top, 16)
     }
 
-    private func field<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).captionLabel()
-            content()
-                .font(.body)
-                .padding(.horizontal, 14)
-                .frame(height: 50)
-                .background(Theme.surfaceElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Theme.surfaceStroke, lineWidth: 1))
+    @ViewBuilder
+    private var history: some View {
+        if let summary = importer.summary {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(summary.totalMatches.formatted()).heroNumeral().foregroundStyle(Theme.turf)
+                Text(summary.totalMatches == 1 ? "match imported" : "matches imported").font(.title2.bold())
+                if summary.fieldsCreated > 0 {
+                    Text(summary.fieldsCreated == 1 ? "On 1 field" : "On \(summary.fieldsCreated) fields")
+                        .font(.title3).foregroundStyle(Theme.secondaryLabel)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else if importer.pendingCount > 0 {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(importer.pendingCount.formatted()).heroNumeral().foregroundStyle(Theme.turf)
+                Text(importer.pendingCount == 1 ? "match already in Health" : "matches already in Health")
+                    .font(.title2.bold())
+                if let earliest = importer.earliestDate {
+                    Text("Going back to \(earliest.formatted(.dateTime.month(.wide).year())). Start with a history.")
+                        .font(.title3).foregroundStyle(Theme.secondaryLabel)
+                }
+                if isImporting {
+                    ProgressView(value: Double(importer.completed), total: Double(max(importer.total, 1)))
+                        .tint(Theme.turf)
+                        .padding(.top, 12)
+                    Text("\(importer.completed) of \(importer.total)")
+                        .font(.subheadline).monospacedDigit().foregroundStyle(Theme.secondaryLabel)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+        } else {
+            OnboardingHeading(title: "You’re ready",
+                              detail: "No past matches turned up in Health, so your first one starts here. If you expected some, check Health in Settings.")
         }
     }
 }

@@ -4,8 +4,7 @@
 import SwiftUI
 import MatchTrackerKit
 
-/// Shared metric chip: big rounded numeral over an uppercase label, on a tinted metric tile.
-/// Used in header stat rows across the app.
+/// A number over its label.
 struct StatTile: View {
     let title: String
     let value: String
@@ -13,61 +12,43 @@ struct StatTile: View {
     var tint: Color = Theme.turf
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 4) {
             if let systemImage {
-                Image(systemName: systemImage).font(.caption).foregroundStyle(tint)
+                Image(systemName: systemImage).font(.footnote).foregroundStyle(tint)
+                    .accessibilityHidden(true)
             }
-            Text(value).statNumeral().foregroundStyle(.primary)
-            Text(title).captionLabel()
+            Text(value).statNumeral().lineLimit(1).minimumScaleFactor(0.6)
+            Text(title).captionLabel().multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .metricTile(tint: tint)
+        .accessibilityElement(children: .combine)
     }
 }
 
-/// Rounded summary chip (e.g. "12 runs").
+/// A count and what it counts (e.g. "12 runs").
 struct SummaryChip: View {
     let value: String
     let label: String
     var tint: Color = Theme.turf
 
     var body: some View {
-        VStack(spacing: 3) {
-            Text(value).statNumeral().foregroundStyle(tint)
-            Text(label).captionLabel()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .metricTile(tint: tint)
+        StatTile(title: label, value: value)
     }
 }
 
-/// Abbreviated position badge ("LM", "CF", "GK") derived from role + side.
+/// Abbreviated position ("LM", "CF", "GK") derived from role + side.
 struct PositionBadge: View {
     let role: PositionRole
     let side: PositionSide
+    /// Legacy: confidence is never shown.
     var confidence: Double?
 
     var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(role.tint)
-                .frame(width: 6, height: 6)
-            Text(Self.abbreviation(role: role, side: side))
-                .font(.system(.caption, design: .rounded).weight(.bold))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(Theme.surfaceElevated, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.surfaceStroke, lineWidth: 1))
-        .opacity(confidenceOpacity)
-    }
-
-    private var confidenceOpacity: Double {
-        guard let confidence else { return 1 }
-        return 0.45 + 0.55 * min(1, max(0, confidence))
+        Text(Self.abbreviation(role: role, side: side))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.secondaryLabel)
+            .accessibilityLabel(Self.fullName(role: role, side: side))
     }
 
     static func abbreviation(role: PositionRole, side: PositionSide) -> String {
@@ -172,11 +153,9 @@ extension MatchEventKind {
     var tint: Color {
         switch self {
         case .goalForUs, .goalMine: return Theme.goal
-        case .goalAgainstUs: return Theme.heart
-        case .assist: return Theme.signal
-        case .flag: return Theme.sprint
+        case .goalAgainstUs, .redCard: return Theme.loss
+        case .assist: return Theme.goal
         case .yellowCard: return Theme.cardYellow
-        case .redCard: return Theme.heart
         default: return .secondary
         }
     }
