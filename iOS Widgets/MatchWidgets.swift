@@ -11,7 +11,8 @@ struct SnapshotEntry: TimelineEntry {
 /// Reads what the app last wrote. The app reloads timelines when that changes, so nothing here polls.
 struct SnapshotProvider: TimelineProvider {
     private func snapshot() -> WidgetSnapshot? {
-        FileManager.default
+        KitColors.refresh()
+        return FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: MatchTrackerKit.AppGroup.identifier)
             .flatMap(WidgetSnapshot.load)
     }

@@ -17,7 +17,7 @@ public struct EffortStripView: View {
     public var body: some View {
         Canvas { context, size in
             if hasTurf {
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.043, green: 0.231, blue: 0.173)))
+                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Cloth.shirt))
             }
             let along = axis == .vertical ? size.height : size.width
             let across = axis == .vertical ? size.width : size.height
@@ -40,10 +40,10 @@ public struct EffortStripView: View {
     /// The knit's yarns: the harder, the paler.
     private func color(_ level: Float) -> Color {
         switch level {
-        case ...0: return Color(red: 0.961, green: 0.933, blue: 0.867).opacity(0.35)
-        case ..<0.6: return Color(red: 0.180, green: 0.490, blue: 0.333)
-        case ..<0.85: return Color(red: 0.553, green: 0.733, blue: 0.447)
-        default: return Color(red: 0.961, green: 0.933, blue: 0.867)
+        case ...0: return Cloth.ivory.opacity(0.35)
+        case ..<0.6: return Color(cgColor: Knit.yarns[1])
+        case ..<0.85: return Color(cgColor: Knit.yarns[2])
+        default: return Cloth.ivory
         }
     }
 }

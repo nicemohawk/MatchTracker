@@ -8,10 +8,10 @@ public enum Knit {
     /// A finer stitch than this shimmers in the sun rather than reading as cloth.
     private static let finest: CGFloat = 9
 
-    public static let cloth = color(0.043, 0.231, 0.173)
+    public static var cloth: CGColor { KitColors.current.cloth.cgColor }
     /// The weave itself, where nobody went.
-    public static let ground = color(0.055, 0.263, 0.200)
-    public static let yarns = [color(0.078, 0.341, 0.251), color(0.180, 0.490, 0.333), color(0.553, 0.733, 0.447), color(0.961, 0.933, 0.867)]
+    public static var ground: CGColor { KitColors.current.ground.cgColor }
+    public static var yarns: [CGColor] { KitColors.current.yarns.map(\.cgColor) }
 
     public static func columns(across pixels: CGFloat) -> Int { min(mostColumns, max(6, Int(pixels / finest))) }
 
@@ -34,9 +34,5 @@ public enum Knit {
             CGPoint(x: x + width * 0.5, y: y + height), CGPoint(x: x + width * 0.06, y: y + height * 0.34)
         ])
         path.closeSubpath()
-    }
-
-    private static func color(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> CGColor {
-        CGColor(srgbRed: red, green: green, blue: blue, alpha: 1)
     }
 }

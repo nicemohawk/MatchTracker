@@ -170,6 +170,7 @@ final class AppEnvironment: ObservableObject {
 
 struct RootTabView: View {
     @Environment(LiveMatchStore.self) private var liveMatches
+    @EnvironmentObject private var settings: SettingsStore
     @State private var selectedTab = AppTab.summary
     @State private var showingLive = false
     @State private var openedMatch: UUID?
@@ -181,6 +182,7 @@ struct RootTabView: View {
 
     var body: some View {
         tabs
+            .id(settings.dressedKitID)
             .systemLinks(showingLive: $showingLive,
                          openMatch: { id in
                              selectedTab = .summary

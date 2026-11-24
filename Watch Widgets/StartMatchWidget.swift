@@ -6,7 +6,7 @@ import MatchTrackerKit
 
 /// The same green the watch app uses (`WatchTheme.turf`), which this process doesn't link.
 enum WidgetPalette {
-    static let turf = Color(red: 0.188, green: 0.820, blue: 0.345)
+    static var turf: Color { Color(cgColor: KitColors.current.tintOnDark.cgColor) }
 }
 
 /// What the app left in the app group.
@@ -14,7 +14,10 @@ enum WidgetStorage {
     static let containerURL = FileManager.default
         .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier)
 
-    static var lastMatch: LastMatchSnapshot? { containerURL.flatMap(LastMatchSnapshot.load) }
+    static var lastMatch: LastMatchSnapshot? {
+        KitColors.refresh()
+        return containerURL.flatMap(LastMatchSnapshot.load)
+    }
 
     /// The format a tap on Start will begin, guessed exactly as the app guesses it.
     static func likelyFormat(on date: Date) -> MatchFormat {

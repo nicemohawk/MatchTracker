@@ -48,6 +48,12 @@ final class SettingsStore: ObservableObject {
     }
 
     @Published var didChange = 0
+    /// The kit chosen, and the one everything on screen was drawn in. They differ while it's being
+    /// chosen, so the app isn't rebuilt under the picker.
+    @Published var kitID = KitColors.current.id
+    @Published private(set) var dressedKitID = KitColors.current.id
+
+    func dressEverything() { dressedKitID = kitID }
 
     var playerName: String {
         get { defaults.string(forKey: Key.playerName) ?? "" }

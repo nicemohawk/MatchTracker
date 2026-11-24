@@ -25,6 +25,17 @@ enum Theme {
         })
     }
 
+    /// From the kit being worn, which somebody can change.
+    private static func worn(_ dark: KeyPath<KitColors, KitColors.RGB>, light: KeyPath<KitColors, KitColors.RGB>) -> Color {
+        let kit = KitColors.current
+        let (dark, light) = (kit[keyPath: dark], kit[keyPath: light])
+        return dynamic(dark: (dark.red, dark.green, dark.blue), light: (light.red, light.green, light.blue))
+    }
+
+    private static func dynamic(dark: KitColors.RGB, light: (Double, Double, Double)) -> Color {
+        dynamic(dark: (dark.red, dark.green, dark.blue), light: light)
+    }
+
     /// A tint at a scheme-dependent alpha. Dark keeps the bold identity opacity; light drops far
     /// lower so tinted washes stay a whisper instead of reading as a pastel/nursery fill.
     static func tintWash(_ color: Color, dark: Double, light: Double) -> Color {
@@ -46,31 +57,30 @@ enum Theme {
     }
 
     /// The canvas behind cards and forms.
-    static let background = dynamic(dark: (0.039, 0.071, 0.055), light: (0.953, 0.933, 0.882))
+    static var background: Color { dynamic(dark: KitColors.current.canvasDark, light: (0.953, 0.933, 0.882)) }
     /// A card or form row on `background`.
-    static let surface = dynamic(dark: (0.075, 0.125, 0.102), light: (1.0, 0.988, 0.961))
+    static var surface: Color { dynamic(dark: KitColors.current.surfaceDark, light: (1.0, 0.988, 0.961)) }
     /// One step above `surface`.
-    static let surfaceElevated = dynamic(dark: (0.110, 0.169, 0.141), light: (0.965, 0.949, 0.906))
+    static var surfaceElevated: Color { dynamic(dark: KitColors.current.elevatedDark, light: (0.965, 0.949, 0.906)) }
     /// Hairlines and empty tracks. Visible in both schemes, unlike white at 8%.
     static let surfaceStroke = Color(.separator)
     /// Labels that support a value. A concrete color rather than the hierarchical `.secondary`,
     /// so an outer tint can't turn it into a faint wash of itself.
     static let secondaryLabel = dynamic(dark: (0.663, 0.710, 0.655), light: (0.333, 0.376, 0.310))
-    /// Bottle green, the same cloth by day and by night. One piece of it per screen.
-    static let cloth = Cloth.green
+    /// The shirt, the same by day and by night. One piece of it per screen.
+    static var cloth: Color { Cloth.shirt }
     /// What's written on cloth.
     static let ivory = Cloth.ivory
     /// Copper: a best, or the match being looked at. Always beside a word that says so.
-    static let trim = dynamic(dark: (0.914, 0.627, 0.400), light: (0.561, 0.278, 0.094))
+    static var trim: Color { worn(\.trimOnDark, light: \.trimOnLight) }
     /// Copper on cloth, whatever the scheme.
-    static let trimOnCloth = Cloth.copper
+    static var trimOnCloth: Color { Cloth.trim }
     static let draw = dynamic(dark: (0.784, 0.745, 0.647), light: (0.392, 0.361, 0.290))
     /// Text on a filled `turf` button: black on the bright dark-mode green, white on the deep one.
     static let onTurf = dynamic(dark: (0.039, 0.071, 0.055), light: (0.961, 0.933, 0.867))
 
     /// You and your team, and the app's tint. The light value holds 4.5:1 as text on white.
-    static let turf = dynamic(dark: (0.435, 0.827, 0.604),
-                              light: (0.039, 0.400, 0.259))
+    static var turf: Color { worn(\.tintOnDark, light: \.tintOnLight) }
     /// Legacy: teal. DESIGN.md gives color three jobs and this isn't one of them.
     static let signal = dynamic(dark: (0.400, 0.831, 0.812),
                                 light: (0.0, 0.478, 0.463))
@@ -85,12 +95,11 @@ enum Theme {
                                 light: (0.812, 0.451, 0.0))
     /// Goals / positive. Aliased to `turf` — wins are green — but kept as a named symbol for
     /// API stability so call sites reading `Theme.goal` need not change.
-    static let goal = turf
+    static var goal: Color { turf }
     /// Neutral gray (#98989D) — bench / draws read neutral, not amber.
     static let bench = draw
     /// Red (#FF453A) — a loss, distinct from `heart`'s rose so score chips don't collide.
-    static let loss = dynamic(dark: (1.0, 0.478, 0.400),
-                              light: (0.690, 0.165, 0.110))
+    static var loss: Color { worn(\.themOnDark, light: \.themOnLight) }
     /// Card yellow (#FFD60A) — reserved for yellow cards, where amber must read as a caution.
     static let cardYellow = dynamic(dark: (1.0, 0.839, 0.039),
                                     light: (0.694, 0.541, 0.0))
@@ -98,8 +107,8 @@ enum Theme {
     // MARK: - Pitch canvas colors
 
     /// Deep green-black turf top color (for a vertical gradient with `pitchTurfBottom`).
-    static let pitchTurfTop = cloth
-    static let pitchTurfBottom = Color(red: 0.031, green: 0.180, blue: 0.133)
+    static var pitchTurfTop: Color { cloth }
+    static var pitchTurfBottom: Color { cloth }
     /// Pitch markings — luminous white.
     static let pitchLines = Color.white.opacity(0.70)
 

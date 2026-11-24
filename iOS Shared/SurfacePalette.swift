@@ -5,13 +5,19 @@ import MatchTrackerKit
 /// the same values.
 enum SurfacePalette {
     /// You and your team.
-    static let us = dynamic(dark: (0.435, 0.827, 0.604), light: (0.039, 0.400, 0.259))
+    static var us: Color { worn(\.tintOnDark, light: \.tintOnLight) }
     /// The opponent.
-    static let them = dynamic(dark: (1.0, 0.478, 0.400), light: (0.690, 0.165, 0.110))
+    static var them: Color { worn(\.themOnDark, light: \.themOnLight) }
     static let heart = dynamic(dark: (1.0, 0.416, 0.573), light: (0.722, 0.094, 0.322))
 
-    static let cloth = Color(red: 0.043, green: 0.231, blue: 0.173)
-    static let ivory = Color(red: 0.961, green: 0.933, blue: 0.867)
+    static var cloth: Color { Cloth.shirt }
+    static let ivory = Cloth.ivory
+
+    private static func worn(_ dark: KeyPath<KitColors, KitColors.RGB>, light: KeyPath<KitColors, KitColors.RGB>) -> Color {
+        let kit = KitColors.current
+        let (dark, light) = (kit[keyPath: dark], kit[keyPath: light])
+        return dynamic(dark: (dark.red, dark.green, dark.blue), light: (light.red, light.green, light.blue))
+    }
 
     private static func dynamic(dark: (Double, Double, Double), light: (Double, Double, Double)) -> Color {
         Color(uiColor: UIColor { traits in

@@ -16,6 +16,7 @@ struct TeamJoinSheet: View {
 
     @State private var pasted = ""
     @State private var playerName = ""
+    @State private var wearsTeamColor = true
 
     private var joining: TeamInvite? { invite ?? TeamInvite(pasted: pasted) }
     private var trimmedPlayerName: String { playerName.trimmingCharacters(in: .whitespaces) }
@@ -45,6 +46,19 @@ struct TeamJoinSheet: View {
                         Text("Ask a teammate to send you an invite from their Team tab.")
                     }
                 }
+                if let kit = joining?.kit, kit != settings.kitID {
+                    Section {
+                        Toggle("Wear the Team’s Color", isOn: $wearsTeamColor)
+                        LabeledContent("Color") {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color(cgColor: (KitColors(id: kit) ?? .current).cloth.cgColor))
+                                .frame(width: 44, height: 28)
+                                .accessibilityLabel(KitColors.title(of: kit))
+                        }
+                    } footer: {
+                        Text("You can change it any time in Settings.")
+                    }
+                }
                 TeamPlayerNameSection(name: $playerName)
                 TeamSharingSection()
             }
@@ -63,7 +77,9 @@ struct TeamJoinSheet: View {
     private func join() {
         guard let joining else { return }
         environment.joinTeam(joining, as: trimmedPlayerName)
+        if wearsTeamColor, let kit = joining.kit.flatMap(KitColors.init), kit.id != settings.kitID { settings.wear(kit) }
         dismiss()
+        settings.dressEverything()
     }
 }
 
@@ -90,6 +106,7 @@ struct TeamCreateSheet: View {
                 form
             }
         }
+        .onDisappear { settings.dressEverything() }
     }
 
     private var form: some View {
@@ -99,6 +116,13 @@ struct TeamCreateSheet: View {
                     .textInputAutocapitalization(.words)
             } footer: {
                 Text("You're the captain. You'll get an invite to send to your teammates.")
+            }
+            Section {
+                NavigationLink { KitPickerView() } label: {
+                    LabeledContent("Team Color", value: KitColors.title(of: settings.kitID))
+                }
+            } footer: {
+                Text("The invite offers it to teammates too.")
             }
             TeamPlayerNameSection(name: $playerName)
             TeamSharingSection()

@@ -79,13 +79,13 @@ public struct KitNumber: View {
     }
 }
 
-/// The one piece of kit on a screen: bottle green, a pinstripe, and a hem.
+/// The one piece of kit on a screen: the shirt's color, a pinstripe, and a hem.
 public struct Cloth: View {
-    public static let green = Color(cgColor: Knit.cloth)
+    public static var shirt: Color { Color(cgColor: Knit.cloth) }
     /// What's written on cloth.
-    public static let ivory = Color(cgColor: Knit.yarns[3])
+    public static let ivory = Color(cgColor: KitColors.ivory.cgColor)
     /// A best, always beside a word that says so.
-    public static let copper = Color(red: 0.914, green: 0.627, blue: 0.400)
+    public static var trim: Color { Color(cgColor: KitColors.current.trimOnDark.cgColor) }
 
     let cornerRadius: CGFloat
     let hasPinstripe: Bool
@@ -104,7 +104,7 @@ public struct Cloth: View {
 
     public var body: some View {
         Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Self.green))
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Self.shirt))
             if hasPinstripe, contrast == .standard {
                 var stripes = Path()
                 for x in stride(from: CGFloat(9), to: size.width, by: 18) {
@@ -116,7 +116,7 @@ public struct Cloth: View {
             guard hasHem else { return }
             context.fill(Path(CGRect(x: 0, y: size.height - 11, width: size.width, height: 4)), with: .color(Self.ivory))
             context.fill(Path(CGRect(x: 0, y: size.height - 4, width: size.width, height: 4)),
-                         with: .color(isBest ? Self.copper : Self.ivory.opacity(0.35)))
+                         with: .color(isBest ? Self.trim : Self.ivory.opacity(0.35)))
         }
         .clipShape(.rect(cornerRadius: cornerRadius))
         .accessibilityHidden(true)

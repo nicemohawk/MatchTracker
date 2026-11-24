@@ -400,7 +400,8 @@ extension SettingsStore {
     }
 
     func invite(_ code: String, sharedName: String?) -> TeamInvite {
-        TeamInvite(code: code, name: teamName(code, sharedName: sharedName), captain: team(code)?.captainName)
+        TeamInvite(code: code, name: teamName(code, sharedName: sharedName), captain: team(code)?.captainName,
+                   kit: KitColors.isChosen ? KitColors.current.id : nil)
     }
 
     func isMe(_ name: String) -> Bool {

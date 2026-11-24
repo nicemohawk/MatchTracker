@@ -28,7 +28,7 @@ enum WatchTheme {
     static let surfaceStroke = Color.white.opacity(0.10)
 
     /// Primary tint, you and your team.
-    static let turf = Color(red: 0.435, green: 0.827, blue: 0.604)
+    static var turf: Color { Color(cgColor: KitColors.current.tintOnDark.cgColor) }
     /// What the numbers are written in.
     static let ivory = Cloth.ivory
     /// Quiet teal-mint (#66D4CF) signal.
@@ -42,11 +42,11 @@ enum WatchTheme {
     /// Undyed — bench / off-pitch reads neutral.
     static let bench = Color(red: 0.784, green: 0.745, blue: 0.647)
     /// A loss / goals-against, distinct from heart's rose.
-    static let loss = Color(red: 1.0, green: 0.478, blue: 0.400)
+    static var loss: Color { Color(cgColor: KitColors.current.themOnDark.cgColor) }
     /// Card yellow (#FFD60A) — cautions / yellow cards.
     static let cardYellow = Color(red: 1.0, green: 0.839, blue: 0.039)
     /// Goals / positive — aliased to turf for API stability.
-    static let goal = turf
+    static var goal: Color { turf }
 
     // MARK: - Tint washes (mirror iOS chip conventions, dark values)
 

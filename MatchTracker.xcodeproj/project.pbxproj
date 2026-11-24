@@ -671,6 +671,7 @@
 		0A0000000000000000000033 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-black AppIcon-claret AppIcon-gold AppIcon-navy AppIcon-orange AppIcon-purple AppIcon-red AppIcon-royal AppIcon-sky";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "iOS App/MatchTracker.entitlements";
 				CODE_SIGN_STYLE = Automatic;
@@ -705,6 +706,7 @@
 		0A0000000000000000000034 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-black AppIcon-claret AppIcon-gold AppIcon-navy AppIcon-orange AppIcon-purple AppIcon-red AppIcon-royal AppIcon-sky";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "iOS App/MatchTracker.entitlements";
 				CODE_SIGN_STYLE = Automatic;

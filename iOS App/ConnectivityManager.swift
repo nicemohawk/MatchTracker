@@ -64,6 +64,7 @@ final class ConnectivityManager: NSObject, ObservableObject {
                 "playerName": settings.playerName,
                 // "automatic", "imperial" or "metric".
                 "units": settings.units.rawValue,
+                "kit": KitColors.current.id,
                 "formatsWithoutScore": MatchTrackerKit.MatchFormat.allCases.filter { settings.playHabits[$0].keepsScore == false }.map(\.rawValue)
             ]
             if let data = fields.encodedFields() {

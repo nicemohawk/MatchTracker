@@ -156,10 +156,12 @@ final class ConnectivityManager: NSObject {
             .flatMap { try? MatchTrackerJSON.decoder().decode([FieldModel].self, from: $0) }
         let teamCode = context[ContextKey.teamCode] as? String
         let playerName = context[ContextKey.playerName] as? String
+        let kit = (context["kit"] as? String).flatMap(KitColors.init)
         let units = context[ContextKey.units] as? String
         let formatsWithoutScore = context[ContextKey.formatsWithoutScore] as? [String]
         DispatchQueue.main.async {
             // "automatic" (or anything unknown) means the region's own convention.
+            if let kit, kit != .current { KitColors.wear(kit) }
             if let units { WatchSettings.unitOverride = UnitSystem(rawValue: units) }
             if let formatsWithoutScore { WatchSettings.setFormatsWithoutScore(formatsWithoutScore) }
             if let decodedFields {

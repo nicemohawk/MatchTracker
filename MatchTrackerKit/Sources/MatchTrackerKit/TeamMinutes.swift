@@ -141,19 +141,22 @@ public struct TeamInvite: Hashable, Identifiable, Sendable {
     public let code: String
     public let name: String?
     public let captain: String?
+    /// What the team plays in, as a `KitColors` id.
+    public let kit: String?
     public var id: String { code }
 
-    public init(code: String, name: String?, captain: String? = nil) {
+    public init(code: String, name: String?, captain: String? = nil, kit: String? = nil) {
         self.code = code
         self.name = name
         self.captain = captain
+        self.kit = kit
     }
 
     public var link: URL {
         var components = URLComponents()
         components.scheme = Self.scheme
         components.host = code
-        let items = [("team", name), ("captain", captain)].compactMap { key, value in
+        let items = [("team", name), ("captain", captain), ("kit", kit)].compactMap { key, value in
             value.map { URLQueryItem(name: key, value: $0) }
         }
         if !items.isEmpty { components.queryItems = items }
@@ -178,7 +181,7 @@ public struct TeamInvite: Hashable, Identifiable, Sendable {
             let line = value.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
             return line.isEmpty ? nil : String(line.prefix(60))
         }
-        self.init(code: host.uppercased(), name: text("team"), captain: text("captain"))
+        self.init(code: host.uppercased(), name: text("team"), captain: text("captain"), kit: text("kit").flatMap(KitColors.init)?.id)
     }
 
     /// Accepts a bare code, a link, or a pasted invite message.

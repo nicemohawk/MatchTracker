@@ -224,6 +224,7 @@ enum HeatImage {
         var pixelWidth: Int
         /// The fully-hot level, or nil to use this heat's own.
         var reference: Float?
+        var kit = KitColors.current
     }
 
     private final class Box {

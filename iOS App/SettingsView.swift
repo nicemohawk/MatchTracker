@@ -93,6 +93,8 @@ struct SettingsView: View {
                 }
             }
         }
+        // The rest of the app changes once it can be seen, rather than from under this sheet.
+        .onDisappear { settings.dressEverything() }
     }
 
     // MARK: Profile
@@ -106,6 +108,9 @@ struct SettingsView: View {
                     .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
                     .submitLabel(.done)
                     .focused($isNameFocused)
+            }
+            NavigationLink { KitPickerView() } label: {
+                LabeledContent("Team Color", value: KitColors.title(of: settings.kitID))
             }
             if entitlements.entitledToTeam {
                 Button("Manage Subscription") { managingSubscription = true }

@@ -55,7 +55,7 @@ private struct PitchGlance: View {
     private var hem: some View {
         VStack(spacing: 2) {
             WatchTheme.ivory.frame(height: 2)
-            Cloth.green
+            Cloth.shirt
         }
         .opacity(isLuminanceReduced ? 0.4 : 1)
         .accessibilityHidden(true)

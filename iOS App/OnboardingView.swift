@@ -11,6 +11,7 @@ struct OnboardingView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var settings: SettingsStore
     @Environment(BacklogImporter.self) private var importer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -120,6 +121,7 @@ struct OnboardingView: View {
 
     private func finish() {
         hasOnboarded = true
+        settings.dressEverything()
         Task { await environment.matches.refresh() }
     }
 }
@@ -127,6 +129,7 @@ struct OnboardingView: View {
 // MARK: - 1. What you get
 
 private struct PayoffPage: View {
+    @EnvironmentObject private var settings: SettingsStore
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -134,12 +137,13 @@ private struct PayoffPage: View {
     /// As big as it can be with the words still on screen.
     private var pictureHeight: CGFloat {
         if dynamicTypeSize.isAccessibilitySize || verticalSizeClass == .compact { return 240 }
-        return horizontalSizeClass == .regular ? 600 : 420
+        return horizontalSizeClass == .regular ? 560 : 360
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             HeatPitch(heat: ExampleMatch.heat)
+                .id(settings.kitID)
                 .aspectRatio(HeatPitch.aspectRatio(for: .standard), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .frame(height: pictureHeight)
@@ -147,6 +151,40 @@ private struct PayoffPage: View {
                 .frame(maxWidth: .infinity)
             OnboardingHeading(title: "See where you played",
                               detail: "Wear your Apple Watch in a match. Afterward you get your heat map, your best runs and the score.")
+            KitRow()
+        }
+    }
+}
+
+/// The kits in one line. Choosing one is optional, and changes everything above it at once.
+private struct KitRow: View {
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your team’s color").font(.headline)
+            ScrollView(.horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(KitColors.presets) { preset in
+                        if let kit = KitColors(id: preset.id) {
+                            let isWorn = settings.kitID == preset.id
+                            Button { settings.wear(kit) } label: {
+                                Circle()
+                                    .fill(Color(cgColor: kit.cloth.cgColor))
+                                    .overlay { Circle().strokeBorder(Theme.ivory, lineWidth: isWorn ? 4 : 1.5) }
+                                    .frame(width: 40, height: 40)
+                                    .frame(width: 48, height: 48)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(preset.title)
+                            .accessibilityAddTraits(isWorn ? .isSelected : [])
+                        }
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .scrollClipDisabled()
+            .sensoryFeedback(.selection, trigger: settings.kitID)
         }
     }
 }
@@ -167,7 +205,7 @@ private struct OnboardingHeading: View {
 }
 
 /// A right winger's match, for the first screen to show what a match looks like.
-private enum ExampleMatch {
+enum ExampleMatch {
     static let heat: PitchHeat = {
         let columns = PitchHeat.defaultColumns, rows = PitchHeat.defaultRows
         // x across (0 left), y up the field (0 own goal), spread and weight, in field fractions.
