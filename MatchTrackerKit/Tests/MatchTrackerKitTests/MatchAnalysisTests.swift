@@ -271,7 +271,7 @@ final class MatchAnalysisTests: XCTestCase {
         }.map(\.element)
         XCTAssertLessThan(try XCTUnwrap(corner.max()), 0.05)
         XCTAssertFalse(try XCTUnwrap(analytics.pitchPath.first { $0.t > 900 }).onPitch)
-        XCTAssertEqual(analytics.workrate.timeOnPitch / 60, 80, accuracy: 1, "still on the pitch, though")
+        XCTAssertEqual(analytics.workrate.timeOnPitch / 60, 70, accuracy: 2, "ten minutes still by the touchline is off")
     }
 
     func testAGoalkeeperStandsInGoal() throws {

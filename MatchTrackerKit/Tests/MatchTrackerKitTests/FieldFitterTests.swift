@@ -131,7 +131,7 @@ final class FieldFitterTests: XCTestCase {
 
     // MARK: - (d) Halftime bench cluster
 
-    func testFitExcludesBenchClusterAndDerivesBenchInterval() {
+    func testFitExcludesBenchCluster() {
         let truth = rectangle(center: fieldCenter, length: 100, width: 64, heading: 0)
 
         var track = playFill(truth, count: 600, seed: 14, start: 0)          // first half
@@ -148,16 +148,6 @@ final class FieldFitterTests: XCTestCase {
         let fitted = try! XCTUnwrap(FieldFitter.fitFieldRectangle(track: track))
         assertMatches(fitted, true: truth, edgeTolerance: 5)
         XCTAssertLessThan(fitted.widthMeters, 74, "bench cluster must not widen the field")
-
-        // The bench spell shows up as a gap between two playing intervals.
-        let intervals = PlayIntervalDeriver.playingIntervals(
-            track: track, field: truth,
-            matchStart: Date(timeIntervalSince1970: 0),
-            matchEnd: Date(timeIntervalSince1970: 1380),
-            marginMeters: 5)
-        XCTAssertEqual(intervals.count, 2, "one bench spell splits the match into two playing intervals")
-        XCTAssertEqual(intervals[0].end.timeIntervalSince1970, 600, accuracy: 10)
-        XCTAssertEqual(intervals[1].start.timeIntervalSince1970, 780, accuracy: 10)
     }
 
     // MARK: - (e) On-field gate
@@ -184,8 +174,7 @@ final class FieldFitterTests: XCTestCase {
         let intervals = PlayIntervalDeriver.playingIntervals(
             track: track, field: truth,
             matchStart: Date(timeIntervalSince1970: 0),
-            matchEnd: Date(timeIntervalSince1970: 1199),
-            marginMeters: 5)
+            matchEnd: Date(timeIntervalSince1970: 1199))
         XCTAssertEqual(intervals.count, 1)
         XCTAssertEqual(intervals[0].start.timeIntervalSince1970, 0)
         XCTAssertEqual(intervals[0].end.timeIntervalSince1970, 1199)
@@ -207,23 +196,22 @@ final class FieldFitterTests: XCTestCase {
             for time in from..<to { track.append(point(place(truth, x: 0.5, y: benchY), Double(time))) }
         }
 
-        play(0, 300, seed: 21)
-        bench(300, 500)          // spell 1
-        play(500, 900, seed: 22)
-        bench(900, 1100)         // spell 2
-        play(1100, 1500, seed: 23)
+        play(0, 600, seed: 21)
+        bench(600, 1100)         // spell 1
+        play(1100, 1600, seed: 22)
+        bench(1600, 2100)        // spell 2
+        play(2100, 2500, seed: 23)
 
         let intervals = PlayIntervalDeriver.playingIntervals(
             track: track, field: truth,
             matchStart: Date(timeIntervalSince1970: 0),
-            matchEnd: Date(timeIntervalSince1970: 1499),
-            marginMeters: 5)
+            matchEnd: Date(timeIntervalSince1970: 2499))
         XCTAssertEqual(intervals.count, 3, "two bench spells split the match into three playing intervals")
-        XCTAssertEqual(intervals[0].end.timeIntervalSince1970, 300, accuracy: 10)
-        XCTAssertEqual(intervals[1].start.timeIntervalSince1970, 500, accuracy: 10)
-        XCTAssertEqual(intervals[1].end.timeIntervalSince1970, 900, accuracy: 10)
-        XCTAssertEqual(intervals[2].start.timeIntervalSince1970, 1100, accuracy: 10)
-        XCTAssertEqual(intervals[2].end.timeIntervalSince1970, 1499)
+        XCTAssertEqual(intervals[0].end.timeIntervalSince1970, 600, accuracy: 10)
+        XCTAssertEqual(intervals[1].start.timeIntervalSince1970, 1100, accuracy: 10)
+        XCTAssertEqual(intervals[1].end.timeIntervalSince1970, 1600, accuracy: 10)
+        XCTAssertEqual(intervals[2].start.timeIntervalSince1970, 2100, accuracy: 10)
+        XCTAssertEqual(intervals[2].end.timeIntervalSince1970, 2499)
     }
 
     // MARK: - Degenerate input

@@ -246,22 +246,18 @@ private struct GridKey: Hashable {
 // MARK: - Offline playing-interval derivation
 
 public enum PlayIntervalDeriver {
-    /// Replay the geometry sub-detection rule over a finished track, so that correcting a field
-    /// recomputes time-on-pitch offline: a spell beyond touchline + `marginMeters` that outlasts
-    /// `AutoSubDetector`'s dwell is off the pitch, and so is one the wearer logged. Returns the
-    /// on-pitch intervals between `matchStart` and `matchEnd`. With no such spell the whole match
+    /// Replay sub detection over a finished track, so that correcting a field recomputes
+    /// time-on-pitch: a spell `AutoSubDetector` calls the bench is off the pitch, and so is one the
+    /// wearer logged. Returns the on-pitch intervals between `matchStart` and `matchEnd`. With no such spell the whole match
     /// is one interval.
     public static func playingIntervals(track: [TrackPoint],
                                         field: OrientedRectangle,
                                         events: [MatchEvent] = [],
+                                        heartRate: [HeartRateSample] = [],
                                         motion: MotionTrace? = nil,
                                         matchStart: Date,
-                                        matchEnd: Date,
-                                        marginMeters: Double) -> [DateInterval] {
+                                        matchEnd: Date) -> [DateInterval] {
         guard matchEnd > matchStart else { return [] }
-
-        var configuration = AutoSubDetectorConfiguration()
-        configuration.exitDistanceMeters = marginMeters   // "outside touchline + margin" == off pitch
 
         let projector = FieldProjector(rectangle: field)
         let manualSubs = events.filter { $0.source == .manual && ($0.kind == .subIn || $0.kind == .subOut) }
@@ -269,8 +265,8 @@ public enum PlayIntervalDeriver {
             track: track,
             projector: projector,
             existingEvents: manualSubs,
-            motion: motion,
-            configuration: configuration
+            heartRate: heartRate,
+            motion: motion
         )
         return SubstitutionTracker.playingIntervals(events: manualSubs + transitions, matchStart: matchStart, matchEnd: matchEnd)
     }

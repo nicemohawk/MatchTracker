@@ -32,25 +32,45 @@ public struct MotionTrace: Codable, Equatable, Sendable {
         return known.count * 2 >= wanted ? known.map { Double($0) / 100 } : []
     }
 
-    /// What the last minute looked like. Nil without enough of it.
-    public func reading(at date: Date) -> MotionReading? {
-        let recent = levels(inLast: 60, before: date).sorted()
-        guard !recent.isEmpty else { return nil }
-        let median = recent[recent.count / 2]
-        return median <= MotionReading.stillLevel ? .still : median >= MotionReading.playingLevel ? .playing : .moving
+    /// The interval that ended at `date`. Nil when it's unknown.
+    public func level(endingAt date: Date) -> Double? {
+        let index = Int(date.timeIntervalSince(start) / Self.interval) - 1
+        guard levels.indices.contains(index), levels[index] != Self.missing else { return nil }
+        return Double(levels[index]) / 100
     }
 
-    /// Whether there was a burst of running in the last minute, as even a goalkeeper has.
-    public func isActive(at date: Date) -> Bool {
-        (levels(inLast: 60, before: date).max() ?? 0) >= MotionReading.playingLevel
+    /// Whether the last minute held any running, on a wrist known to run at `runningLevel`.
+    public func hasRun(before date: Date, runningLevel: Double) -> Bool {
+        levels(inLast: 60, before: date).contains { $0 >= runningLevel }
     }
 }
 
-/// The thresholds are published wrist figures (sitting under 0.1 g, walking around 0.3, running
-/// 0.7 and up), set wide apart so that only the obvious is ever called.
-public enum MotionReading: Sendable {
-    case still, moving, playing
+/// What running looks like on this wrist, learned from the moments GPS is sure about. Wrists differ
+/// too much for a fixed number: arms swing, hold a drink, or get held still by a captain's armband.
+public struct MotionCalibration: Sendable {
+    private var walking: [Double] = []
+    private var running: [Double] = []
+    private static let memory = 200
 
-    static let stillLevel = 0.12
-    static let playingLevel = 0.5
+    public init() {}
+
+    mutating func learn(level: Double, speed: Double) {
+        if (0.8...1.6).contains(speed) {
+            walking = Array((walking + [level]).suffix(Self.memory))
+        } else if speed >= 2.6 {
+            running = Array((running + [level]).suffix(Self.memory))
+        }
+    }
+
+    /// Nil until there's been enough of both to tell them apart.
+    public var runningLevel: Double? {
+        guard walking.count >= 20, running.count >= 10 else { return nil }
+        let walk = walking.sorted()[walking.count / 2], run = running.sorted()[running.count / 2]
+        return run > walk * 1.4 ? walk + 0.6 * (run - walk) : nil
+    }
+
+    func isRunning(_ level: Double?) -> Bool {
+        guard let level, let runningLevel else { return false }
+        return level >= runningLevel
+    }
 }

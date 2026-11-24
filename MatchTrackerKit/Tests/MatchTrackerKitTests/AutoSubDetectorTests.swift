@@ -5,6 +5,16 @@ import CoreGraphics
 /// Tests for geometry-first automatic substitution detection. A synthetic 105×68 pitch and its
 /// projector back every case; points are placed in normalized field space and mapped to world
 /// coordinates (the exact inverse of `FieldProjector.normalizedPoint`).
+/// Repeatable randomness.
+private struct Jitter: RandomNumberGenerator {
+    var state: UInt64
+
+    mutating func next() -> UInt64 {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return state ^ (state >> 29)
+    }
+}
+
 final class AutoSubDetectorTests: XCTestCase {
 
     private let fieldCenter = Coordinate2D(latitude: 40.0, longitude: -83.0)
@@ -37,145 +47,142 @@ final class AutoSubDetectorTests: XCTestCase {
                    speedMetersPerSecond: -1, courseDegrees: -1, horizontalAccuracy: accuracy)
     }
 
-    private func detector(initiallyOnPitch: Bool = true) -> AutoSubDetector {
-        AutoSubDetector(projector: projector, configuration: AutoSubDetectorConfiguration(),
-                        initiallyOnPitch: initiallyOnPitch)
+    // MARK: - A match as it's really played
+
+    /// A stretch of somebody's match. Nobody sits still on a bench or runs all the time on a pitch.
+    private enum Stretch {
+        case playing, bench, winger, keeper, resting, fetchingBall, warmingUp
     }
 
-    // MARK: - Live processing
-
-    // (a) A genuine bench spell 10 m beyond the touchline yields one subOut dated at the exit.
-    func testExitBeyondTouchlineEmitsSubOutDatedAtExit() {
-        let detector = detector()
-        var events: [MatchEvent] = []
-        // On pitch t = 0...9.
-        for t in stride(from: 0.0, through: 9.0, by: 1.0) {
-            if let e = detector.process(point: point(place(x: 0.5, y: 0.5), t: t), heartRate: nil) { events.append(e) }
+    private func match(_ stretches: [(minutes: Double, Stretch)], heart: Bool = true)
+    -> (track: [TrackPoint], heartRate: [HeartRateSample], starts: [Double]) {
+        var generator = Jitter(state: 7)
+        var track: [TrackPoint] = [], rates: [HeartRateSample] = [], starts: [Double] = []
+        var t = 0.0, rate = 150.0
+        var x = 0.5, y = 0.5
+        for (minutes, stretch) in stretches {
+            starts.append(t)
+            switch stretch {
+            case .bench, .resting, .fetchingBall, .warmingUp: break
+            default: (x, y) = (0.5, 0.5)
+            }
+            for second in 0..<Int(minutes * 60) {
+                var speed = 0.0, target = 160.0
+                switch stretch {
+                case .playing:
+                    speed = second % 50 < 8 ? 3.5 : second % 50 < 35 ? 1.1 : 0.3
+                    x = 0.5 + 0.3 * sin(t / 60); y = 0.5 + 0.2 * cos(t / 45)
+                case .winger:
+                    speed = second % 60 < 9 ? 4 : 1.2
+                    x = 0.5 + 0.35 * sin(t / 50); y = 0.97
+                case .keeper:
+                    speed = second % 170 < 5 ? 2.8 : second % 20 < 8 ? 0.9 : 0.1
+                    x = 0.03; y = 0.5 + 0.05 * sin(t / 30); target = 125
+                case .resting:    // play is at the other end
+                    speed = second % 40 < 15 ? 0.8 : 0.1; target = 150
+                case .fetchingBall:
+                    speed = 1.5; y = 1.12
+                case .bench:      // just inside the line, pacing a third of the time
+                    speed = second % 90 < 30 ? 1 : 0.1; target = 112
+                    x = 0.5 + 0.02 * sin(t / 20); y = 0.955
+                case .warmingUp:  // jogging up and down the line
+                    speed = second % 30 < 12 ? 2.8 : 1; target = 130
+                    x = 0.5 + 0.2 * sin(t / 25); y = 1.03
+                }
+                rate += (target - rate) * 0.015
+                x += Double.random(in: -0.004...0.004, using: &generator)
+                y += Double.random(in: -0.004...0.004, using: &generator)
+                var sample = point(place(x: x, y: y), t: t)
+                sample.speedMetersPerSecond = speed
+                track.append(sample)
+                if heart, second.isMultiple(of: 5) {
+                    rates.append(HeartRateSample(date: epoch.addingTimeInterval(t), bpm: rate))
+                }
+                t += 1
+            }
         }
-        // 10 m outside, t = 10...170.
-        for t in stride(from: 10.0, through: 170.0, by: 1.0) {
-            if let e = detector.process(point: point(outside(meters: 10), t: t), heartRate: nil) { events.append(e) }
-        }
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.kind, .subOut)
-        XCTAssertEqual(events.first?.source, .automatic)
-        XCTAssertEqual(events.first?.date, epoch.addingTimeInterval(10), "dated at the moment of exit, not detection")
+        return (track, rates, starts)
     }
 
-    // (b) A brief 15 s corner-taking excursion 3 m outside stays in the ambiguous band → no event.
-    func testShortShallowExcursionEmitsNothing() {
-        let detector = detector()
-        var events: [MatchEvent] = []
-        for t in stride(from: 0.0, through: 9.0, by: 1.0) {
-            if let e = detector.process(point: point(place(x: 0.5, y: 0.5), t: t), heartRate: nil) { events.append(e) }
-        }
-        for t in stride(from: 10.0, through: 24.0, by: 1.0) {   // 15 s only, 3 m out
-            if let e = detector.process(point: point(outside(meters: 3), t: t), heartRate: nil) { events.append(e) }
-        }
-        for t in stride(from: 25.0, through: 34.0, by: 1.0) {   // back on pitch
-            if let e = detector.process(point: point(place(x: 0.5, y: 0.5), t: t), heartRate: nil) { events.append(e) }
-        }
-        XCTAssertTrue(events.isEmpty)
+    private func subs(_ stretches: [(minutes: Double, Stretch)], heart: Bool = true, existing: [MatchEvent] = [])
+    -> [(kind: MatchEventKind, minute: Double)] {
+        let match = match(stretches, heart: heart)
+        return AutoSubDetector.transitions(track: match.track, projector: projector, existingEvents: existing,
+                                           heartRate: match.heartRate)
+            .map { ($0.kind, $0.date.timeIntervalSince(epoch) / 60) }
     }
 
-    // (c) Re-entry after a bench spell yields a subIn dated at the re-entry moment.
-    func testReentryEmitsSubInDatedAtReentry() {
-        let detector = detector(initiallyOnPitch: false)
-        var events: [MatchEvent] = []
-        for t in stride(from: 0.0, through: 9.0, by: 1.0) {   // off pitch, 10 m out
-            if let e = detector.process(point: point(outside(meters: 10), t: t), heartRate: nil) { events.append(e) }
-        }
-        for t in stride(from: 10.0, through: 135.0, by: 1.0) { // back inside for two minutes
-            if let e = detector.process(point: point(place(x: 0.5, y: 0.5), t: t), heartRate: nil) { events.append(e) }
-        }
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.kind, .subIn)
-        XCTAssertEqual(events.first?.source, .automatic)
-        XCTAssertEqual(events.first?.date, epoch.addingTimeInterval(10))
+    func testABenchSpellJustInsideTheLine() throws {
+        let found = subs([(20, .playing), (9, .bench), (15, .playing)])
+        XCTAssertEqual(found.map(\.kind), [.subOut, .subIn])
+        XCTAssertEqual(try XCTUnwrap(found.first).minute, 20, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(found.last).minute, 29, accuracy: 1)
     }
 
-    // (d) The explicit non-goal: a keeper standing on the goal line INSIDE the pitch for 10 min
-    // (zero movement) must never be read as a substitution.
-    func testStationaryKeeperInsidePitchEmitsNothing() {
-        let detector = detector()
-        var events: [MatchEvent] = []
-        let goalLine = place(x: 0.02, y: 0.5)   // just inside the goal-line end, centered
-        for t in stride(from: 0.0, through: 600.0, by: 2.0) {
-            if let e = detector.process(point: point(goalLine, t: t), heartRate: nil) { events.append(e) }
-        }
-        XCTAssertTrue(events.isEmpty, "standing still inside the pitch is never a sub")
+    func testABenchSpellWithoutAHeartRate() {
+        XCTAssertEqual(subs([(20, .playing), (9, .bench), (15, .playing)], heart: false).map(\.kind), [.subOut, .subIn])
     }
 
-    // (e) Boundary jitter with brief clearly-off spikes never dwells long enough → no flapping.
-    func testBoundaryJitterDoesNotFlap() {
-        let detector = detector()
-        var events: [MatchEvent] = []
-        for i in 0..<200 {
-            let t = Double(i)
-            // Every 4th sample spikes 8 m out; the samples between are inside, cancelling the
-            // candidate before the exit dwell can ever elapse.
-            let coordinate = (i % 4 == 0) ? outside(meters: 8) : place(x: 0.5, y: 0.5)
-            if let e = detector.process(point: point(coordinate, t: t), heartRate: nil) { events.append(e) }
-        }
-        XCTAssertTrue(events.isEmpty)
+    func testComingOffForGood() {
+        XCTAssertEqual(subs([(30, .playing), (25, .bench)]).map(\.kind), [.subOut])
     }
 
-    // (f) A manual subOut mutes auto detection during the cooldown window.
-    func testManualSubOutSuppressesAutoDuringCooldown() {
-        let detector = detector()
-        // Manual sub-out at t = 0 → state offPitch, cooldown until t = 60.
-        detector.recordManualEvent(MatchEvent(kind: .subOut, date: epoch, source: .manual))
-        var events: [MatchEvent] = []
-        // Player is actually inside the pitch the whole time (manual was premature). Without the
-        // cooldown this would confirm a subIn ~t=16; suppression must swallow it.
-        for t in stride(from: 1.0, through: 40.0, by: 1.0) {
-            if let e = detector.process(point: point(place(x: 0.5, y: 0.5), t: t), heartRate: nil) { events.append(e) }
-        }
-        XCTAssertTrue(events.isEmpty, "auto output is suppressed inside the manual-override cooldown")
+    func testPlayingNeverLooksLikeTheBench() {
+        XCTAssertTrue(subs([(45, .playing)]).isEmpty)
+        XCTAssertTrue(subs([(45, .winger)]).isEmpty, "hugging the line isn't leaving")
+        XCTAssertTrue(subs([(45, .keeper)]).isEmpty, "a goalkeeper stands about for a living")
+        XCTAssertTrue(subs([(45, .keeper)], heart: false).isEmpty)
+        XCTAssertTrue(subs([(10, .playing), (3, .resting), (10, .playing), (3, .resting), (10, .playing)]).isEmpty,
+                      "waiting for play to come back")
+        XCTAssertTrue(subs([(10, .playing), (0.7, .fetchingBall), (10, .playing)]).isEmpty)
     }
 
-    // (g) Offline reconciliation over a full synthetic match with one bench spell returns exactly
-    // an automatic subOut + subIn pair.
-    func testOfflineDetectEventsFindsOneBenchSpell() {
-        var track: [TrackPoint] = []
-        // On pitch 0...300, then
-        for t in stride(from: 0.0, through: 300.0, by: 5.0) {
-            track.append(point(place(x: 0.5, y: 0.5), t: t))
-        }
-        // Benched (10 m out) 305...600.
-        for t in stride(from: 305.0, through: 600.0, by: 5.0) {
-            track.append(point(outside(meters: 10), t: t))
-        }
-        // Back on pitch 605...900.
-        for t in stride(from: 605.0, through: 900.0, by: 5.0) {
-            track.append(point(place(x: 0.5, y: 0.5), t: t))
-        }
-
-        let events = AutoSubDetector.detectEvents(track: track, projector: projector,
-                                                  existingEvents: [],
-                                                  configuration: AutoSubDetectorConfiguration())
-        XCTAssertEqual(events.count, 2)
-        XCTAssertEqual(events.map(\.kind), [.subOut, .subIn])
-        XCTAssertTrue(events.allSatisfy { $0.source == .automatic })
-        XCTAssertEqual(events[0].date, epoch.addingTimeInterval(305), "subOut dated at bench start")
-        XCTAssertEqual(events[1].date, epoch.addingTimeInterval(605), "subIn dated at re-entry")
+    func testWarmingUpComesBeforeComingOn() throws {
+        let found = subs([(20, .playing), (9, .bench), (2, .warmingUp), (1, .bench), (15, .playing)])
+        XCTAssertEqual(found.map(\.kind), [.subOut, .subIn])
+        XCTAssertEqual(try XCTUnwrap(found.last).minute, 31, accuracy: 2.5)
     }
 
-    // (h) Low-accuracy fixes are blind: an "exit" made entirely of loose fixes triggers nothing.
+    func testTwoSpells() {
+        let found = subs([(15, .playing), (7, .bench), (12, .playing), (8, .bench), (10, .playing)])
+        XCTAssertEqual(found.map(\.kind), [.subOut, .subIn, .subOut, .subIn])
+        XCTAssertEqual(found.map(\.minute), found.map(\.minute).sorted())
+    }
+
+    func testManualEventsWin() {
+        let wrong = MatchEvent(kind: .subIn, date: epoch.addingTimeInterval(21 * 60))
+        XCTAssertFalse(subs([(20, .playing), (6, .bench), (15, .playing)], existing: [
+            MatchEvent(kind: .subOut, date: epoch.addingTimeInterval(20 * 60)), wrong
+        ]).contains { $0.minute < 26 && $0.kind == .subOut })
+    }
+
     func testLowAccuracyFixesDoNotTrigger() {
-        let detector = detector()
-        var events: [MatchEvent] = []
-        for t in stride(from: 0.0, through: 9.0, by: 1.0) {
-            if let e = detector.process(point: point(place(x: 0.5, y: 0.5), t: t), heartRate: nil) { events.append(e) }
+        let match = match([(20, .playing), (9, .bench)])
+        let blind = match.track.map { sample -> TrackPoint in
+            var sample = sample
+            sample.horizontalAccuracy = 60
+            return sample
         }
-        // 45 s "outside" but every fix is worse than maximumFixAccuracy (30 > 20 m).
-        for t in stride(from: 10.0, through: 55.0, by: 1.0) {
-            if let e = detector.process(point: point(outside(meters: 10), t: t, accuracy: 30), heartRate: nil) { events.append(e) }
-        }
+        XCTAssertTrue(AutoSubDetector.transitions(track: blind, projector: projector, existingEvents: []).isEmpty)
+    }
+
+    func testHalftimeArrivalAndLeavingAreNotSubs() {
+        let match = match([(30, .playing), (10, .bench), (30, .playing), (8, .bench)])
+        let events = AutoSubDetector.detectEvents(
+            track: match.track, projector: projector, existingEvents: [],
+            halftime: DateInterval(start: epoch.addingTimeInterval(30 * 60), duration: 600), heartRate: match.heartRate)
         XCTAssertTrue(events.isEmpty)
     }
 
-    // (i) A MatchEvent JSON without a "source" key decodes as .manual (wire back-compat).
+    func testTrackMostlyOffThePitchIsOnTheWrongPitch() {
+        let elsewhere = match([(40, .playing)]).track.map { sample -> TrackPoint in
+            var sample = sample
+            sample.coordinate = outside(meters: 80)
+            return sample
+        }
+        XCTAssertTrue(AutoSubDetector.detectEvents(track: elsewhere, projector: projector, existingEvents: []).isEmpty)
+    }
+
     func testMatchEventDecodesMissingSourceAsManual() throws {
         let json = """
         {"id":"11111111-2222-3333-4444-555555555555","kind":"flag","date":"1970-01-01T00:01:00Z"}
@@ -190,110 +197,47 @@ final class AutoSubDetectorTests: XCTestCase {
         XCTAssertEqual(object["source"] as? String, "automatic")
     }
 
-    // MARK: - Precision
-
-    /// Minutes on (true) or 10 m off (false) the pitch, one fix a second.
-    private func track(_ stretches: [(minutes: Double, isOn: Bool)]) -> [TrackPoint] {
-        var points: [TrackPoint] = []
-        var t = 0.0
-        for stretch in stretches {
-            let end = t + stretch.minutes * 60
-            while t < end {
-                points.append(point(stretch.isOn ? place(x: 0.5, y: 0.5) : outside(meters: 10), t: t))
-                t += 1
-            }
-        }
-        return points
-    }
-
-    private func detected(_ stretches: [(Double, Bool)], halftime: DateInterval? = nil) -> [String] {
-        AutoSubDetector.detectEvents(track: track(stretches.map { (minutes: $0.0, isOn: $0.1) }), projector: projector,
-                                     existingEvents: [], halftime: halftime)
-            .map { "\($0.kind.rawValue) \(Int($0.date.timeIntervalSince(epoch) / 60))" }
-    }
-
-    func testBriefStintsNeverFlap() {
-        XCTAssertEqual(detected([(10, true), (0.5, false), (0.5, true), (1, false), (1, true), (2, false), (20, true)]), [])
-        // On the bench, stepping on for half a minute to celebrate is not a stint.
-        XCTAssertEqual(detected([(20, true), (10, false), (0.5, true), (10, false), (20, true)]), ["subOut 20", "subIn 40"])
-    }
-
-    func testStrayFixesInsideDoNotEndABenchSpell() {
-        var points = track([(minutes: 20, isOn: true), (minutes: 8, isOn: false), (minutes: 20, isOn: true)])
-        for index in stride(from: 20 * 60 + 20, to: 28 * 60, by: 12) { points[index].coordinate = place(x: 0.5, y: 0.98) }
-        XCTAssertEqual(AutoSubDetector.detectEvents(track: points, projector: projector, existingEvents: []).map(\.kind),
-                       [.subOut, .subIn])
-    }
-
-    func testHalftimeArrivalAndLeavingAreNotSubs() {
-        let halftime = DateInterval(start: epoch.addingTimeInterval(41 * 60), duration: 8 * 60)
-        XCTAssertEqual(detected([(6, false), (34, true), (10, false), (40, true), (6, false)], halftime: halftime), [])
-    }
-
-    func testStartingOnTheBench() {
-        XCTAssertEqual(detected([(20, false), (40, true)]), ["subIn 20"])
-    }
-
-    func testTrackMostlyOffThePitchIsOnTheWrongPitch() {
-        XCTAssertEqual(detected([(10, true), (30, false), (10, true)]), [])
-    }
-
     // MARK: - Motion
 
-    private func trace(_ levels: [(seconds: Int, level: Double)]) -> MotionTrace {
-        var trace = MotionTrace(start: point(inside, t: 0).timestamp)
-        var t = 0
-        for stretch in levels {
-            for _ in 0..<(stretch.seconds / 5) {
-                trace.append(stretch.level, at: trace.start.addingTimeInterval(Double(t)))
-                t += 5
+    func testRunningIsLearnedFromTheWristThatDoesIt() {
+        var calibration = MotionCalibration()
+        for _ in 0..<30 { calibration.learn(level: 0.3, speed: 1.2) }
+        XCTAssertNil(calibration.runningLevel, "walking alone says nothing about running")
+        for _ in 0..<15 { calibration.learn(level: 1.1, speed: 3.2) }
+        XCTAssertEqual(try XCTUnwrap(calibration.runningLevel), 0.78, accuracy: 0.01)
+        XCTAssertFalse(calibration.isRunning(0.5), "clapping and talking")
+        XCTAssertTrue(calibration.isRunning(0.9))
+
+        var still = MotionCalibration()
+        for _ in 0..<30 { still.learn(level: 0.3, speed: 1.2) }
+        for _ in 0..<15 { still.learn(level: 0.35, speed: 3.2) }
+        XCTAssertNil(still.runningLevel, "a wrist that looks the same either way can't tell")
+    }
+
+    /// GPS loses quick feet; the wrist doesn't.
+    func testRunningTheWristSeesKeepsAPlayerOn() {
+        let match = match([(20, .playing), (9, .bench), (10, .playing)])
+        func subs(benchLevel: Double) -> [MatchEventKind] {
+            var trace = MotionTrace(start: epoch)
+            for (index, sample) in match.track.enumerated() where index.isMultiple(of: 5) {
+                let running = sample.speedMetersPerSecond >= 2.2
+                let onBench = (20 * 60..<29 * 60).contains(index)
+                trace.append(onBench ? (index % 40 < 10 ? benchLevel : 0.2) : running ? 1.1 : 0.3, at: sample.timestamp)
             }
+            return AutoSubDetector.transitions(track: match.track, projector: projector, existingEvents: [],
+                                               motion: trace).map(\.kind)
         }
-        return trace
-    }
-
-    private var inside: Coordinate2D { place(x: 0.5, y: 0.5) }
-
-    private func events(_ spots: [(seconds: Int, place: Coordinate2D)], motion: MotionTrace?) -> [MatchEvent] {
-        var t = 0.0
-        let track = spots.flatMap { spot in
-            (0..<spot.seconds).map { _ in
-                defer { t += 1 }
-                return point(spot.place, t: t)
-            }
-        }
-        return AutoSubDetector.transitions(track: track, projector: projector, existingEvents: [], motion: motion,
-                                           configuration: .init())
-    }
-
-    func testSittingStillBesideTheLineIsTheBench() {
-        // Two meters out: inside what GPS alone can call.
-        let spots = [(seconds: 300, place: inside), (300, outside(meters: 2))]
-        XCTAssertTrue(events(spots, motion: nil).isEmpty)
-        let subs = events(spots, motion: trace([(300, 0.6), (300, 0.04)]))
-        XCTAssertEqual(subs.map(\.kind), [.subOut])
-    }
-
-    func testRunningBesideTheLineIsNot() {
-        let spots = [(seconds: 300, place: inside), (400, outside(meters: 8))]
-        XCTAssertEqual(events(spots, motion: nil).map(\.kind), [.subOut])
-        XCTAssertTrue(events(spots, motion: trace([(700, 0.8)])).isEmpty)
-        XCTAssertEqual(events(spots, motion: trace([(700, 0.3)])).map(\.kind), [.subOut], "walking settles nothing")
-    }
-
-    func testBenchInsideTheOutlineIsNotComingOn() {
-        let spots = [(seconds: 300, place: inside), (300, outside(meters: 8)), (300, inside)]
-        let benched = trace([(300, 0.6), (600, 0.05)])
-        XCTAssertEqual(events(spots, motion: benched).map(\.kind), [.subOut])
-        XCTAssertEqual(events(spots, motion: trace([(300, 0.6), (300, 0.05), (300, 0.7)])).map(\.kind), [.subOut, .subIn])
+        XCTAssertEqual(subs(benchLevel: 0.4), [.subOut, .subIn], "pacing and clapping is still the bench")
+        XCTAssertEqual(subs(benchLevel: 1.2), [])
     }
 
     func testMotionTraceGapsAreUnknown() throws {
-        var trace = MotionTrace(start: Date(timeIntervalSinceReferenceDate: 0))
+        var trace = MotionTrace(start: epoch)
         trace.append(0.05, at: trace.start)
         trace.append(0.7, at: trace.start.addingTimeInterval(600))
-        XCTAssertNil(trace.reading(at: trace.start.addingTimeInterval(605)), "one sample in a minute says nothing")
-        XCTAssertTrue(trace.levels(inLast: 60, before: trace.start.addingTimeInterval(300)).isEmpty)
+        XCTAssertNil(trace.level(endingAt: trace.start.addingTimeInterval(300)))
+        XCTAssertFalse(trace.hasRun(before: trace.start.addingTimeInterval(605), runningLevel: 0.5),
+                       "one sample in a minute says nothing")
         XCTAssertEqual(try JSONDecoder().decode(MotionTrace.self, from: JSONEncoder().encode(trace)), trace)
     }
 }

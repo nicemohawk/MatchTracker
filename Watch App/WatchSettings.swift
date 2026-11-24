@@ -34,6 +34,7 @@ enum WatchSettings {
         static let sportID = "sportID"
         static let formatHistory = "formatHistory"
         static let units = "units"
+        static let motionRunningLevel = "motionRunningLevel"
     }
 
     /// The mirrored values. Guarded by `lock` — read from the main thread, written from whichever
@@ -43,6 +44,7 @@ enum WatchSettings {
         var doubleTapAction = DoubleTapAction.flag
         var sportID = SportProfile.soccer.id
         var formatHistory = FormatHistory()
+        var motionRunningLevel: Double?
     }
 
     private static let lock = NSLock()
@@ -70,6 +72,7 @@ enum WatchSettings {
         loaded.sportID = defaults.string(forKey: Key.sportID) ?? SportProfile.soccer.id
         loaded.formatHistory = defaults.data(forKey: Key.formatHistory)
             .flatMap { try? JSONDecoder().decode(FormatHistory.self, from: $0) } ?? FormatHistory()
+        loaded.motionRunningLevel = defaults.object(forKey: Key.motionRunningLevel) as? Double
         UnitSystem.override = defaults.string(forKey: Key.units).flatMap(UnitSystem.init(rawValue:))
         lock.lock()
         snapshot = loaded
@@ -109,6 +112,16 @@ enum WatchSettings {
             MatchLog.info("user: sport -> \(newValue)", category: "settings")
             write(\.sportID, newValue)
             store(newValue, forKey: Key.sportID)
+        }
+    }
+
+    /// What running looked like on this wrist last time GPS could say. Nil until it has.
+    static var motionRunningLevel: Double? {
+        get { read(\.motionRunningLevel) }
+        set {
+            guard let newValue else { return }
+            write(\.motionRunningLevel, newValue)
+            store(newValue, forKey: Key.motionRunningLevel)
         }
     }
 

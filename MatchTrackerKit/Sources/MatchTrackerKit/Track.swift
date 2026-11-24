@@ -139,7 +139,7 @@ public struct MatchRecord: Codable, Identifiable, Sendable {
     public var startedOnPhone: Bool?
 
     /// Bump when the sub or period detectors change enough to redo old matches.
-    public static let currentDetection = 1
+    public static let currentDetection = 2
 
     // Synthesized Codable: every added field is optional, so JSON written before they existed
     // still decodes cleanly (the keys are simply absent, `format` nil ≡ .match).

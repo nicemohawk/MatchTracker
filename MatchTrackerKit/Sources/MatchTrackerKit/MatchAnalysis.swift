@@ -139,8 +139,8 @@ public enum MatchAnalyzer {
         let halftime = input.format == .match
             ? PeriodDetector.halftime(track: track, events: input.events, interval: interval) : nil
         let derivedIntervals = PlayIntervalDeriver.playingIntervals(
-            track: track, field: field.rectangle, events: input.events, motion: input.motion,
-            matchStart: interval.start, matchEnd: interval.end, marginMeters: onFieldMarginMeters)
+            track: track, field: field.rectangle, events: input.events, heartRate: heartRate, motion: input.motion,
+            matchStart: interval.start, matchEnd: interval.end)
         // Nobody was playing after the last movement, however long the recording ran on.
         let forgotten = TrimAdvisor.suggestedEnd(recorded: interval, track: track, heartRate: heartRate,
                                                  field: field.rectangle).map { DateInterval(start: $0, end: interval.end) }

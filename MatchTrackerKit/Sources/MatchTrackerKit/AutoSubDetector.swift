@@ -2,174 +2,210 @@ import Foundation
 
 // MARK: - Automatic substitution detection
 //
-// Geometry-first by design. The only positive signal for "benched" is sustained presence
-// OUTSIDE the touchline — never low movement. Keepers and centre-backs can stand still for long
-// stretches while very much in the game, so a stationary player inside the pitch is always "on".
-// Heart-rate trend is a *tiebreaker* for fixes hovering in the ambiguous boundary band and can
-// only ever add evidence toward a pending sub-out; it never vetoes geometry and never forces a
-// transition on its own (a substitute warming up along the sideline has high HR yet is off).
-// Manual events win: a logged sub re-syncs the state machine and mutes auto output for a cooldown.
+// What coming off looks like, measured over years of one player's matches: minutes on end without a
+// run, slow but seldom still (a third to half of a bench spell is spent pacing), somewhere along a
+// touchline and as often just inside the drawn outline as outside it, with the heart rate falling
+// twenty to fifty beats. On the pitch, gaps of a minute or two between runs are ordinary, the typical
+// speed is a walk, and the heart rate stays up.
+//
+// No single one of those says "benched", so they're weighed together over the last two minutes by a
+// two-state filter. Sideways distance is what counts, as a share of the pitch's width: goalkeepers
+// live by the goal line, and on a narrow pitch everything is near a touchline. Manual events win.
 
 public struct AutoSubDetectorConfiguration: Sendable {
-    public var exitDistanceMeters: Double         // beyond-touchline distance that counts as off-pitch, default 5.0
-    /// Off-pitch time before subOut, and on-pitch time before subIn. These are also the shortest
-    /// bench spell and shortest stint that can be detected: anything briefer is fetching a ball,
-    /// a drink, or a wandering fix. Events are still dated at the crossing.
-    public var exitDwell: TimeInterval            // default 150
-    public var enterDwell: TimeInterval           // default 120
-    /// The same two when the wrist agrees: still for a minute off the pitch, or running on it.
-    public var stillExitDwell: TimeInterval       // default 75
-    public var playingEnterDwell: TimeInterval    // default 60
-    /// Share of contrary samples a pending transition survives; GPS strays at the touchline.
-    public var contradictionTolerance: Double     // default 0.2
-    public var maximumFixAccuracy: Double         // ignore worse fixes for boundary calls, default 20
-    public var manualOverrideCooldown: TimeInterval // auto suppressed after a manual sub event, default 60
+    public var maximumFixAccuracy: Double           // ignore worse fixes, default 20
+    public var manualOverrideCooldown: TimeInterval // auto suppressed after a manual sub event, default 300
 
     public init() {
-        exitDistanceMeters = 5.0
-        exitDwell = 150
-        enterDwell = 120
-        stillExitDwell = 75
-        playingEnterDwell = 60
-        contradictionTolerance = 0.2
         maximumFixAccuracy = 20
-        manualOverrideCooldown = 60
+        manualOverrideCooldown = 300
     }
 }
 
 public final class AutoSubDetector {
-    /// Detector lifecycle. `candidate*` states hold a provisional transition whose start date is
-    /// the moment the wearer first crossed the threshold — that's the date the emitted event
-    /// carries, not the (later) moment the dwell requirement is satisfied.
-    private enum State {
-        case onPitch
-        case candidateOff(since: Date)
-        case offPitch
-        case candidateOn(since: Date)
+    private static let binSeconds: TimeInterval = 5
+    /// Mean speed over a bin that counts as running, m/s: whatever a player's liveliest tenth is, but
+    /// no more than a jog and no less than a brisk walk. Not everyone's game has running in it.
+    private static let runningSpeeds = 1.5...2.2
+    private static let windowBins = 24          // two minutes
+    private static let runWindowBins = 12       // one minute
+    private static let heartRateMemory: TimeInterval = 600
+
+    private struct Bin {
+        var index: Int
+        var speed: Double
+        var edge: Double
+        var isRun: Bool
     }
 
     private let projector: FieldProjector
     private let configuration: AutoSubDetectorConfiguration
-    private var state: State
 
-    /// Samples seen, and how many contradicted it, since the pending transition began.
-    private var candidateSamples = 0
-    private var contradictions = 0
-    private static let minimumSamplesToContradict = 10
-
-    /// Auto emissions are swallowed until this instant after a manual sub event (manual wins).
+    private var isOnPitch: Bool
+    /// How much more likely benched than playing, as log odds.
+    private var logOdds: Double
+    private var start: Date?
+    private var bins: [Bin] = []
+    private var openBin: (index: Int, speeds: [Double], edges: [Double])?
+    private var previousPoint: TrackPoint?
+    private var lastRunBin: Int?
+    /// Where running began again after a minute without any.
+    private var runResumedBin: Int?
+    private var playingSpeeds: [Double] = []
+    private var runningSpeed = AutoSubDetector.runningSpeeds.upperBound
+    private var heartRates: [(date: Date, value: Double)] = []
     private var suppressUntil: Date?
-
-    /// Rolling heart-rate samples used only for the ambiguous-band tiebreak.
-    private var heartRateSamples: [(date: Date, value: Double)] = []
-    private let heartRatePeakWindow: TimeInterval = 180   // "rolling 3-min peak"
+    public private(set) var motion = MotionCalibration()
 
     public init(projector: FieldProjector,
                 configuration: AutoSubDetectorConfiguration = .init(),
                 initiallyOnPitch: Bool = true) {
         self.projector = projector
         self.configuration = configuration
-        self.state = initiallyOnPitch ? .onPitch : .offPitch
+        isOnPitch = initiallyOnPitch
+        logOdds = initiallyOnPitch ? -4 : 4
     }
 
-    /// Feed one live sample; returns a confirmed auto sub event (dated at the transition moment,
-    /// not the detection moment) or nil. `heartRate` is optional and used only for tiebreaks.
-    /// `motion` is the wrist's last minute: nobody playing hard is benched, nobody sitting still is on.
-    public func process(point: TrackPoint, heartRate: Double?, motion: MotionReading? = nil) -> MatchEvent? {
-        // Blind fix: too inaccurate to make a boundary call. Don't change state and don't reset a
-        // pending candidate — an uncertain sample must neither confirm nor contradict geometry.
+    /// Feed one live sample; returns a confirmed sub, dated when the player last ran before coming
+    /// off or first ran after coming on, or nil.
+    /// `motion` adds running the GPS is too slow to see, once it's known what running looks like on
+    /// this wrist.
+    public func process(point: TrackPoint, heartRate: Double?, motion trace: MotionTrace? = nil) -> MatchEvent? {
+        if let heartRate, heartRate > 0 { recordHeartRate(heartRate, at: point.timestamp) }
+        defer { previousPoint = point }
         guard point.horizontalAccuracy <= configuration.maximumFixAccuracy else { return nil }
 
-        if let heartRate { recordHeartRate(heartRate, at: point.timestamp) }
-
-        let distanceOutside = projector.distanceOutsideMeters(point.coordinate)
-        let isInside = distanceOutside <= 0
-        let isClearlyOff = distanceOutside > configuration.exitDistanceMeters
-        // Ambiguous band: outside the touchline but within the exit distance. On its own it holds
-        // the current state; only a clearly-falling HR lets it advance a pending sub-out.
-        let isAmbiguous = distanceOutside > 0 && !isClearlyOff
-        let heartRateFalling = isHeartRateClearlyFalling(current: heartRate)
-
-        switch state {
-        case .onPitch:
-            // A bench is often nearer the line than GPS can tell; sitting still settles it.
-            if isClearlyOff || (isAmbiguous && motion == .still) { begin(.candidateOff(since: point.timestamp)) }
-            return nil
-
-        case .candidateOff(let since):
-            if isContradicted(by: isInside) {
-                state = .onPitch                       // stepped back in before the dwell elapsed
-                return nil
-            }
-            // Running hard beside the pitch: the outline is off, or a substitute is warming up.
-            if motion == .playing {
-                state = .candidateOff(since: point.timestamp)
-                return nil
-            }
-            // A clearly-off sample always counts toward the dwell; an ambiguous sample counts only
-            // when HR is clearly falling or the wrist is still. Ambiguous-neutral samples hold the
-            // candidate open.
-            let countsTowardExit = isClearlyOff || (isAmbiguous && (heartRateFalling || motion == .still))
-            let dwell = motion == .still ? configuration.stillExitDwell : configuration.exitDwell
-            if countsTowardExit, point.timestamp.timeIntervalSince(since) >= dwell {
-                state = .offPitch
-                return emit(.subOut, at: since, detectedAt: point.timestamp)
-            }
-            return nil
-
-        case .offPitch:
-            if isInside { begin(.candidateOn(since: point.timestamp)) }
-            return nil
-
-        case .candidateOn(let since):
-            if isContradicted(by: isClearlyOff) {
-                state = .offPitch
-                return nil
-            }
-            // Sitting by the touchline with GPS a few meters out.
-            if motion == .still {
-                state = .candidateOn(since: point.timestamp)
-                return nil
-            }
-            let dwell = motion == .playing ? configuration.playingEnterDwell : configuration.enterDwell
-            if isInside, point.timestamp.timeIntervalSince(since) >= dwell {
-                state = .onPitch
-                return emit(.subIn, at: since, detectedAt: point.timestamp)
-            }
-            return nil
+        let start = start ?? point.timestamp
+        self.start = start
+        let index = Int(point.timestamp.timeIntervalSince(start) / Self.binSeconds)
+        let speed = speed(at: point)
+        let edge = projector.sidewaysShare(point.coordinate)
+        var event: MatchEvent?
+        if let open = openBin, open.index != index {
+            event = close(open, motion: trace)
+            openBin = nil
         }
+        if openBin == nil { openBin = (index, [], []) }
+        openBin?.speeds.append(speed)
+        openBin?.edges.append(edge)
+        return event
     }
 
-    private func begin(_ candidate: State) {
-        state = candidate
-        candidateSamples = 1
-        contradictions = 0
+    private func close(_ open: (index: Int, speeds: [Double], edges: [Double]), motion trace: MotionTrace?) -> MatchEvent? {
+        let speed = mean(open.speeds)
+        let end = date(ofBin: open.index + 1)
+        let level = trace?.level(endingAt: end)
+        if let level { motion.learn(level: level, speed: speed) }
+        let isRun = speed >= runningSpeed || motion.isRunning(level)
+        if isRun {
+            if open.index - (lastRunBin ?? 0) >= Self.runWindowBins { runResumedBin = open.index }
+            lastRunBin = open.index
+        }
+        if isOnPitch { playingSpeeds.append(speed) }
+        let isDue = bins.last.map { $0.index / 2 != open.index / 2 } ?? false
+        bins.append(Bin(index: open.index, speed: speed, edge: medianValue(open.edges), isRun: isRun))
+        bins.removeAll { $0.index <= open.index - Self.windowBins }
+        return isDue ? evaluate(at: open.index) : nil
     }
 
-    private func isContradicted(by isContrary: Bool) -> Bool {
-        candidateSamples += 1
-        if isContrary { contradictions += 1 }
-        return candidateSamples >= Self.minimumSamplesToContradict
-            && Double(contradictions) > configuration.contradictionTolerance * Double(candidateSamples)
+    /// Every ten seconds, weigh the last two minutes.
+    private func evaluate(at index: Int) -> MatchEvent? {
+        let lastMinute = bins.filter { $0.index > index - Self.runWindowBins }
+        guard bins.count >= 8, lastMinute.count >= 3 else { return nil }
+        let now = date(ofBin: index + 1)
+        if playingSpeeds.count >= 60 {
+            let liveliest = playingSpeeds.sorted()[playingSpeeds.count * 9 / 10]
+            runningSpeed = min(max(liveliest, Self.runningSpeeds.lowerBound), Self.runningSpeeds.upperBound)
+        }
+
+        // Either way can happen at any moment: off every forty minutes or so, back on every twelve.
+        let chance = 1 / (1 + exp(-logOdds))
+        let carried = chance * (1 - 1 / 72.0) + (1 - chance) / 240.0
+        logOdds = log(carried / (1 - carried)) + evidence(at: index, lastMinute: lastMinute, now: now) / 6
+        logOdds = min(max(logOdds, -5), 4)
+
+        if isOnPitch, logOdds > 2 {
+            isOnPitch = false
+            runResumedBin = nil
+            return emit(.subOut, at: date(ofBin: (lastRunBin ?? -1) + 1), detectedAt: now)
+        }
+        if !isOnPitch, logOdds < -1.5 {
+            isOnPitch = true
+            return emit(.subIn, at: date(ofBin: runResumedBin ?? index), detectedAt: now)
+        }
+        return nil
+    }
+
+    /// Positive for the bench. Each weight is how much likelier that reading was off than on.
+    private func evidence(at index: Int, lastMinute: [Bin], now: Date) -> Double {
+        let sinceRun = Double(index - (lastRunBin ?? bins.first?.index ?? index)) * Self.binSeconds
+        var evidence = Self.weight(sinceRun, below: [20, 60, 120, 180, 300], [-1.4, -0.7, -0.2, 0.6, 1.4, 2])
+        evidence += Self.weight(medianValue(bins.map(\.speed)), below: [0.4, 0.7, 1, 1.3], [1, 0.5, -0.1, -0.6, -1.2])
+        evidence += Self.weight(medianValue(bins.map(\.edge)), below: [-0.45, -0.3, -0.2, -0.1, 0, 0.12],
+                                [-2.6, -1.8, -0.9, 0, 0.8, 1.4, 2])
+        evidence += Self.weight(Double(lastMinute.filter(\.isRun).count), below: [1, 2, 3], [0.2, -0.4, -1.2, -2.4])
+        if let change = heartRateChange(at: now) {
+            evidence += Self.weight(change, below: [-35, -25, -18, -12, -6], [2, 1.3, 0.7, 0, -0.8, -1.4])
+        }
+        return evidence
+    }
+
+    private static func weight(_ value: Double, below edges: [Double], _ weights: [Double]) -> Double {
+        weights[edges.firstIndex { value < $0 } ?? edges.count]
     }
 
     /// Manual events win: re-sync detector state to the logged event and suppress auto output for
     /// the cooldown. Non-sub events are irrelevant to substitution tracking and ignored.
     public func recordManualEvent(_ event: MatchEvent) {
         switch event.kind {
-        case .subIn: state = .onPitch
-        case .subOut: state = .offPitch
+        case .subIn: (isOnPitch, logOdds) = (true, -4)
+        case .subOut: (isOnPitch, logOdds) = (false, 4)
         default: return
         }
         suppressUntil = event.date.addingTimeInterval(configuration.manualOverrideCooldown)
     }
 
+    private func emit(_ kind: MatchEventKind, at date: Date, detectedAt: Date) -> MatchEvent? {
+        if let suppressUntil, detectedAt < suppressUntil { return nil }
+        return MatchEvent(kind: kind, date: date, source: .automatic)
+    }
+
+    // MARK: Readings
+
+    private func date(ofBin index: Int) -> Date {
+        (start ?? .distantPast).addingTimeInterval(Double(index) * Self.binSeconds)
+    }
+
+    private func speed(at point: TrackPoint) -> Double {
+        if point.speedMetersPerSecond >= 0 { return point.speedMetersPerSecond }
+        guard let previousPoint else { return 0 }
+        let seconds = point.timestamp.timeIntervalSince(previousPoint.timestamp)
+        return seconds > 0 ? min(haversineMeters(previousPoint.coordinate, point.coordinate) / seconds, 10) : 0
+    }
+
+    private func recordHeartRate(_ value: Double, at date: Date) {
+        guard heartRates.last.map({ date > $0.date }) ?? true else { return }
+        heartRates.append((date, value))
+        heartRates.removeAll { $0.date < date.addingTimeInterval(-Self.heartRateMemory) }
+    }
+
+    /// The last half minute against what playing has lately taken. Nil until that's known.
+    private func heartRateChange(at date: Date) -> Double? {
+        let recent = heartRates.filter { $0.date >= date.addingTimeInterval(-30) }.map(\.value)
+        guard recent.count >= 2, let first = heartRates.first, date.timeIntervalSince(first.date) >= 60 else { return nil }
+        let sorted = heartRates.map(\.value).sorted()
+        return mean(recent) - sorted[min(sorted.count - 1, sorted.count * 3 / 4)]
+    }
+
+    // MARK: A finished match
+
     /// Every transition in a complete track: a replay through a fresh instance, respecting any
     /// existing manual sub events (their state + cooldown window). Sorted by date.
     static func transitions(track: [TrackPoint], projector: FieldProjector, existingEvents: [MatchEvent],
-                            motion: MotionTrace? = nil,
-                            configuration: AutoSubDetectorConfiguration) -> [MatchEvent] {
+                            heartRate: [HeartRateSample] = [], motion: MotionTrace? = nil,
+                            configuration: AutoSubDetectorConfiguration = .init()) -> [MatchEvent] {
         let orderedTrack = track.sorted { $0.timestamp < $1.timestamp }
+        let orderedHeartRate = heartRate.sorted { $0.date < $1.date }
         let manualSubs = existingEvents
             .filter { $0.kind == .subIn || $0.kind == .subOut }
             .sorted { $0.date < $1.date }
@@ -180,7 +216,7 @@ public final class AutoSubDetector {
                                        configuration: configuration,
                                        initiallyOnPitch: initiallyOnPitch)
 
-        var manualIndex = 0
+        var manualIndex = 0, heartRateIndex = 0
         var newEvents: [MatchEvent] = []
         for point in orderedTrack {
             // Apply any manual sub events whose time has arrived, so we honour their state and
@@ -189,12 +225,42 @@ public final class AutoSubDetector {
                 detector.recordManualEvent(manualSubs[manualIndex])
                 manualIndex += 1
             }
-            if let event = detector.process(point: point, heartRate: nil,
-                                            motion: motion?.reading(at: point.timestamp)) {
+            while heartRateIndex < orderedHeartRate.count, orderedHeartRate[heartRateIndex].date <= point.timestamp {
+                detector.recordHeartRate(orderedHeartRate[heartRateIndex].bpm, at: orderedHeartRate[heartRateIndex].date)
+                heartRateIndex += 1
+            }
+            if let event = detector.process(point: point, heartRate: nil, motion: motion) {
                 newEvents.append(event)
             }
         }
-        return newEvents.sorted { $0.date < $1.date }
+        return withoutSpellsTheHeartDenies(newEvents.sorted { $0.date < $1.date }, heartRate: orderedHeartRate)
+    }
+
+    /// A spell off during which the heart rate never came down was a quiet spell on.
+    private static func withoutSpellsTheHeartDenies(_ events: [MatchEvent], heartRate: [HeartRateSample]) -> [MatchEvent] {
+        guard let end = heartRate.last?.date else { return events }
+        func average(_ from: Date, _ to: Date) -> Double? {
+            let values = heartRate.filter { $0.date >= from && $0.date < to }.map(\.bpm)
+            return values.count >= 4 ? mean(values) : nil
+        }
+        var kept: [MatchEvent] = []
+        var index = 0
+        while index < events.count {
+            let off = events[index]
+            index += 1
+            guard off.kind == .subOut else {
+                kept.append(off)
+                continue
+            }
+            let back = index < events.count ? events[index] : nil
+            index += back == nil ? 0 : 1
+            if let before = average(off.date.addingTimeInterval(-120), off.date),
+               let during = average(off.date.addingTimeInterval(60), back?.date ?? end),
+               during > before - 8 { continue }
+            kept.append(off)
+            if let back { kept.append(back) }
+        }
+        return kept
     }
 
     /// The substitutions in a finished match worth putting in its timeline. Being off the pitch at
@@ -202,17 +268,18 @@ public final class AutoSubDetector {
     /// is mostly off the pitch is on the wrong pitch.
     public static func detectEvents(track: [TrackPoint], projector: FieldProjector,
                                     existingEvents: [MatchEvent], halftime: DateInterval? = nil,
-                                    motion: MotionTrace? = nil,
+                                    heartRate: [HeartRateSample] = [], motion: MotionTrace? = nil,
                                     configuration: AutoSubDetectorConfiguration = .init()) -> [MatchEvent] {
         let accurate = track.filter { $0.horizontalAccuracy <= configuration.maximumFixAccuracy }
         let inside = accurate.filter {
-            projector.isOnField($0.coordinate, marginMeters: configuration.exitDistanceMeters)
+            projector.isOnField($0.coordinate, marginMeters: 5)
         }
         guard let start = track.map(\.timestamp).min(), let end = track.map(\.timestamp).max(),
               inside.count * 2 >= accurate.count else { return [] }
 
         let events = transitions(track: track, projector: projector,
-                                 existingEvents: existingEvents, motion: motion, configuration: configuration)
+                                 existingEvents: existingEvents, heartRate: heartRate, motion: motion,
+                                 configuration: configuration)
         var kept: [MatchEvent] = []
         var index = 0
         while index < events.count {
@@ -241,27 +308,9 @@ public final class AutoSubDetector {
 
     /// How close to the start or end of a recording being off the pitch means nothing.
     private static let edgeOfMatch: TimeInterval = 600
+}
 
-    // MARK: - Emission / heart-rate helpers
-
-    private func emit(_ kind: MatchEventKind, at date: Date, detectedAt: Date) -> MatchEvent? {
-        // Manual events win: swallow auto output inside the post-manual cooldown window.
-        if let suppressUntil, detectedAt < suppressUntil { return nil }
-        return MatchEvent(kind: kind, date: date, source: .automatic)
-    }
-
-    private func recordHeartRate(_ value: Double, at date: Date) {
-        heartRateSamples.append((date, value))
-        let cutoff = date.addingTimeInterval(-heartRatePeakWindow)
-        heartRateSamples.removeAll { $0.date < cutoff }
-    }
-
-    /// A clearly-falling HR (current below 75% of the rolling 3-min peak) is the only condition
-    /// under which an ambiguous-band sample counts toward a pending sub-out. Minimal by intent.
-    private func isHeartRateClearlyFalling(current: Double?) -> Bool {
-        guard let current, current > 0 else { return false }
-        let peak = heartRateSamples.map(\.value).max() ?? current
-        guard peak > 0 else { return false }
-        return current < 0.75 * peak
-    }
+private func medianValue(_ values: [Double]) -> Double {
+    let sorted = values.sorted()
+    return sorted.isEmpty ? 0 : sorted[sorted.count / 2]
 }

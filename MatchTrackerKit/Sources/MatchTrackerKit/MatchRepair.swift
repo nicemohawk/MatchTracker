@@ -72,7 +72,8 @@ public extension MatchRecord {
 
     /// Swap the automatic subs and periods for what today's detectors find, once per detector
     /// version. Manual events are never touched, and a match with manual subs gets no others.
-    mutating func redetectEvents(track: [TrackPoint], projector: FieldProjector, halftime: DateInterval?) {
+    mutating func redetectEvents(track: [TrackPoint], projector: FieldProjector, halftime: DateInterval?,
+                                 heartRate: [HeartRateSample] = []) {
         guard (detection ?? 0) < Self.currentDetection, !track.isEmpty else { return }
         detection = Self.currentDetection
         events.removeAll {
@@ -80,7 +81,8 @@ public extension MatchRecord {
         }
         if !events.contains(where: { $0.kind == .subIn || $0.kind == .subOut }) {
             events += AutoSubDetector.detectEvents(track: track, projector: projector,
-                                                   existingEvents: events, halftime: halftime, motion: motion)
+                                                   existingEvents: events, halftime: halftime, heartRate: heartRate,
+                                                   motion: motion)
         }
         if let halftime, !events.contains(where: { $0.kind == .periodStart || $0.kind == .periodEnd }) {
             events += [MatchEvent(kind: .periodEnd, date: halftime.start, source: .automatic),

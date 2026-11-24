@@ -170,11 +170,11 @@ final class MatchDetailModel: ObservableObject {
     private func redetectEvents() {
         guard let record, let analytics, analytics.hasRoute,
               (record.detection ?? 0) < MatchRecord.currentDetection else { return }
-        let track = track
+        let track = track, heartRate = heartRateSeries.map { HeartRateSample(date: $0.date, bpm: $0.bpm) }
         Task {
             let redetected = await Task.detached(priority: .userInitiated) { () -> MatchRecord in
                 var record = record
-                record.redetectEvents(track: track, projector: analytics.projector, halftime: analytics.halftime)
+                record.redetectEvents(track: track, projector: analytics.projector, halftime: analytics.halftime, heartRate: heartRate)
                 return record
             }.value
             // An edit made meanwhile wins; detection runs again next time.

@@ -185,6 +185,15 @@ public struct FieldProjector: Sendable {
         contains(coordinate, toleranceMeters: marginMeters)
     }
 
+    /// How far past the nearer touchline, as a share of half the width: -1 on the long axis, 0 on the
+    /// line. Behind a goal line, however far behind it, when that's farther out.
+    func sidewaysShare(_ coordinate: Coordinate2D) -> Double {
+        guard rectangle.lengthMeters > 0, halfWidth > 0 else { return 0 }
+        let (long, short) = axisProjections(for: coordinate)
+        let sideways = abs(short) - halfWidth, behind = abs(long) - halfLength
+        return (behind > 0 ? max(sideways, behind) : sideways) / halfWidth
+    }
+
     /// How far (meters) the coordinate lies OUTSIDE the touchline rectangle; 0 when inside.
     /// This is the geometric signal `AutoSubDetector` keys off of. Internal by design — it is a
     /// detector implementation detail, not part of the public projection contract.

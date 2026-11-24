@@ -654,9 +654,12 @@ final class WorkoutManager: NSObject {
     /// Called with every fix and heart-rate sample: both keep arriving in the background.
     private func askIfStillPlaying(now: Date = Date()) {
         guard phase == .active, !askingStillPlaying else { return }
-        if motionRecorder.trace?.isActive(at: now) == true { lastMovingDate = now }
+        let runningLevel = autoSubDetector?.motion.runningLevel ?? WatchSettings.motionRunningLevel
+        if let runningLevel, motionRecorder.trace?.hasRun(before: now, runningLevel: runningLevel) == true {
+            lastMovingDate = now
+        }
         let stillSince = lastMovingDate ?? matchStartDate
-        let canTell = usesGPS || motionRecorder.trace?.reading(at: now) != nil
+        let canTell = usesGPS || runningLevel != nil
         let looksOver = (canTell && now.timeIntervalSince(stillSince) > stillnessBeforeAsking)
             || now.timeIntervalSince(matchStartDate) > durationBeforeAsking
         let askedRecently = lastAskedStillPlaying.map { now.timeIntervalSince($0) < 30 * 60 } ?? false
@@ -760,6 +763,7 @@ final class WorkoutManager: NSObject {
         // Built while the match is still live, because that's what `makeLiveUpdate` reports on.
         let finalUpdate = makeLiveUpdate()
         motionRecorder.stop()
+        if let runningLevel = autoSubDetector?.motion.runningLevel { WatchSettings.motionRunningLevel = runningLevel }
         let match = FinishingMatch(
             id: matchID, start: matchStartDate, end: end, format: matchFormat, fieldID: fieldID,
             events: events, fixes: isIndoor ? [] : routeRecorder.finish().filter { $0.point.timestamp <= end },
@@ -1434,11 +1438,10 @@ extension WorkoutManager {
     private func runAutoSubDetection(on points: [TrackPoint]) {
         guard let detector = autoSubDetector else { return }
         let latestHeartRate = heartRate > 0 ? heartRate : nil
-        let motion = motionRecorder.trace?.reading(at: Date())
         for point in points {
-            guard let event = detector.process(point: point, heartRate: latestHeartRate, motion: motion) else { continue }
+            guard let event = detector.process(point: point, heartRate: latestHeartRate, motion: motionRecorder.trace) else { continue }
             let elapsed = Int(point.timestamp.timeIntervalSince(matchStartDate))
-            MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count), motion \(motion.map { "\($0)" } ?? "unknown"))",
+            MatchLog.info("auto-sub: \(event.kind == .subOut ? "OUT" : "IN") at \(elapsed / 60):\(String(format: "%02d", elapsed % 60)) (point \(track.count), running level \(detector.motion.runningLevel.map { String(format: "%.2f", $0) } ?? "unknown"))",
                           category: "autosub")
             append(event, haptic: false)
             onPitch = event.kind != .subOut
