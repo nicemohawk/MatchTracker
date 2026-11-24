@@ -45,6 +45,7 @@ struct SettingsView: View {
                 fieldsSection
                 permissionsSection
                 dataSection
+                connectionsSection
                 privacySection
                 aboutSection
 #if DEBUG
@@ -224,6 +225,22 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: Connections
+
+    /// A place held for Strava until there's a developer account to connect with.
+    private var connectionsSection: some View {
+        Section {
+            LabeledContent("Strava", value: "Coming soon")
+                .foregroundStyle(.secondary)
+                .disabled(true)
+                .accessibilityElement(children: .combine)
+        } header: {
+            Text("Connections")
+        } footer: {
+            Text("For now, share a match’s FIT file from Export Data and upload it on Strava’s website.")
+        }
+    }
+
     private var fieldNames: [UUID: String] {
         Dictionary(fields.fields.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     }
@@ -240,9 +257,7 @@ struct SettingsView: View {
             } else {
                 Button("Record Guardian Consent") { showingConsentSheet = true }
             }
-            if let privacyPolicy = LegalLinks.privacyPolicy {
-                Link("Privacy Policy", destination: privacyPolicy)
-            }
+            Link("Privacy Policy", destination: LegalLinks.privacyPolicy)
             Button("Delete My Server Data", role: .destructive) { showingDeletionConfirmation = true }
                 .confirmationDialog("Delete everything this iPhone has uploaded?",
                                     isPresented: $showingDeletionConfirmation, titleVisibility: .visible) {
@@ -290,9 +305,7 @@ struct SettingsView: View {
         Section {
             LabeledContent("iPhone build", value: AppVersion.current)
             LabeledContent("Watch build", value: watchVersion.isEmpty ? "Not reported yet" : watchVersion)
-            if let termsOfUse = LegalLinks.termsOfUse {
-                Link("Terms of Use", destination: termsOfUse)
-            }
+            Link("Terms of Use", destination: LegalLinks.termsOfUse)
         } header: {
             Text("About")
         } footer: {

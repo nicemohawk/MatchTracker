@@ -222,6 +222,19 @@ final class DesignCapture: XCTestCase {
         screenshot("73-kit-summary")
     }
 
+    func testSettings() {
+        app.launchArguments += ["-hasOnboarded", "YES", "-asksAfterMatches", "NO", "-serverURLOverride", "http://127.0.0.1:9"]
+        app.launch()
+        handleHealthKitPrompt(app: app, timeout: 4)
+        sleep(3)
+        XCTAssertTrue(openSettings(app: app))
+        for page in 1...4 {
+            screenshot("74-settings-\(page)")
+            app.swipeUp()
+            sleep(1)
+        }
+    }
+
     func testEffort() {
         for pass in 1...2 {
             app.launch()

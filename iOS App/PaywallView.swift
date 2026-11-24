@@ -171,16 +171,11 @@ struct AlignedLabelStyle: LabelStyle {
     }
 }
 
-/// Links the terms and privacy policy once the owner has supplied them (see `LegalLinks`).
 private struct LegalPolicies: ViewModifier {
     func body(content: Content) -> some View {
-        if let terms = LegalLinks.termsOfUse, let privacy = LegalLinks.privacyPolicy {
-            content
-                .subscriptionStorePolicyDestination(url: terms, for: .termsOfService)
-                .subscriptionStorePolicyDestination(url: privacy, for: .privacyPolicy)
-                .storeButton(.visible, for: .policies)
-        } else {
-            content.storeButton(.hidden, for: .policies)
-        }
+        content
+            .subscriptionStorePolicyDestination(url: LegalLinks.termsOfUse, for: .termsOfService)
+            .subscriptionStorePolicyDestination(url: LegalLinks.privacyPolicy, for: .privacyPolicy)
+            .storeButton(.visible, for: .policies)
     }
 }
